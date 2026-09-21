@@ -16,6 +16,7 @@ public class HealthEndpointTests(WebApplicationFactory<Program> factory)
 {
     private readonly HttpClient _client = factory.CreateClient();
 
+
     [Fact]
     public async Task Health_says_the_process_is_alive()
     {
@@ -54,11 +55,24 @@ public class HealthEndpointTests(WebApplicationFactory<Program> factory)
         Assert.Equal("Healthy", await live.Content.ReadAsStringAsync());
     }
 
+    /// <summary>
+    /// Everything that is not a health probe is closed to a stranger.
+    ///
+    /// Deny by default, so a page added without an attribute is protected
+    /// rather than public. The opposite default fails silently: nobody
+    /// discovers the omission until the page is one that mattered.
+    /// </summary>
     [Fact]
-    public async Task The_application_serves_its_home_page()
+    public async Task An_unauthenticated_visitor_is_sent_to_sign_in()
     {
-        var response = await _client.GetAsync("/");
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+        });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var response = await client.GetAsync("/");
+
+        Assert.Equal(HttpStatusCode.Found, response.StatusCode);
+        Assert.Contains("/sign-in", response.Headers.Location!.OriginalString);
     }
 }

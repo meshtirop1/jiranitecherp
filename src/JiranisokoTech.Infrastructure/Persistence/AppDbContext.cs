@@ -3,6 +3,8 @@ using System.Text.Json;
 using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Domain.Audit;
 using JiranisokoTech.Domain.Common;
+using JiranisokoTech.Infrastructure.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -23,7 +25,7 @@ public class AppDbContext(
     DbContextOptions<AppDbContext> options,
     IClock clock,
     ICurrentUser currentUser)
-    : DbContext(options)
+    : IdentityDbContext<ApplicationUser, ApplicationRole, Guid>(options)
 {
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 

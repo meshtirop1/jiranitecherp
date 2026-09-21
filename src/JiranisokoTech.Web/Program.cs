@@ -1,5 +1,8 @@
 using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Infrastructure;
+using JiranisokoTech.Infrastructure.Identity;
+using JiranisokoTech.Infrastructure.Persistence;
+using JiranisokoTech.Web.Authorization;
 using JiranisokoTech.Web.Components;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -9,9 +12,20 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// Time as a dependency, so rules about probation ending, invoices falling
-// overdue and certificates expiring can be tested on a day that is not today.
-builder.Services.AddSingleton<IClock, SystemClock>();
+// The database, the clock, and the stores accounts are kept in.
+builder.Services.AddPersistence(builder.Configuration);
+
+// Accounts and sign-in, then authorization. Registered in that order because
+// the authorization fallback below assumes authentication exists.
+builder.Services.AddApplicationIdentity();
+builder.Services.AddPermissionAuthorization();
+
+// Who is acting, read from the request. This is what makes the audit trail
+// name people instead of recording a null on every entry.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
+
+builder.Services.AddScoped<RoleSeeder>();
 
 /*
  * Two health endpoints, answering two different questions.
@@ -53,19 +67,48 @@ if (app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseAntiforgery();
 
+/*
+ * Anonymous, deliberately, and the only two endpoints that are.
+ *
+ * Everything else is closed by the fallback policy — a page added without an
+ * attribute is protected rather than public, because the opposite default
+ * fails silently and nobody finds out until it matters. But an orchestrator
+ * cannot sign in, and a liveness probe that returns 302 to a login page reads
+ * as an unhealthy container and restarts it forever.
+ *
+ * Neither endpoint reveals anything: they answer "Healthy" or a status code.
+ */
 app.MapHealthChecks("/health", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("live"),
-});
+}).AllowAnonymous();
 
-app.MapHealthChecks("/ready");
+app.MapHealthChecks("/ready").AllowAnonymous();
 
 if (app.Environment.IsDevelopment())
 {
     // The document describes the API; it is not published to the internet.
     app.MapOpenApi();
+}
+
+/*
+ * The role matrix is applied on every start, not once at install.
+ *
+ * A permission added in code changes what the application checks, while a role
+ * keeps whatever it was created with — so without this, adding a permission
+ * grants it to nobody and the feature refuses its own users by name. Doing it
+ * here means the database cannot be out of step with the code that reads it.
+ */
+using (var scope = app.Services.CreateScope())
+{
+    var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await database.Database.EnsureCreatedAsync();
+
+    await scope.ServiceProvider.GetRequiredService<RoleSeeder>().SeedAsync();
 }
 
 app.MapStaticAssets();
