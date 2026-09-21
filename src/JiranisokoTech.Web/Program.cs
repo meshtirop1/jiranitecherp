@@ -4,6 +4,7 @@ using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Infrastructure.Persistence;
 using JiranisokoTech.Web.Authorization;
 using JiranisokoTech.Web.Components;
+using JiranisokoTech.Web.Identity;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
@@ -20,12 +21,18 @@ builder.Services.AddPersistence(builder.Configuration);
 builder.Services.AddApplicationIdentity();
 builder.Services.AddPermissionAuthorization();
 
+// Makes who is signed in available to components as a cascading value. Without
+// it AuthorizeView renders nothing at all — silently, which is the failure mode
+// that gets shipped.
+builder.Services.AddCascadingAuthenticationState();
+
 // Who is acting, read from the request. This is what makes the audit trail
 // name people instead of recording a null on every entry.
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 
 builder.Services.AddScoped<RoleSeeder>();
+builder.Services.AddScoped<OwnerSeeder>();
 
 /*
  * Two health endpoints, answering two different questions.
@@ -51,7 +58,7 @@ var app = builder.Build();
 
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Error", createScopeForErrors: true);
+    app.UseExceptionHandler("/error", createScopeForErrors: true);
     app.UseHsts();
 }
 
@@ -109,9 +116,26 @@ using (var scope = app.Services.CreateScope())
     await database.Database.EnsureCreatedAsync();
 
     await scope.ServiceProvider.GetRequiredService<RoleSeeder>().SeedAsync();
+
+    // And the first account, if this installation has none and one is
+    // configured. After that it is a no-op on every start.
+    await scope.ServiceProvider.GetRequiredService<OwnerSeeder>().SeedAsync();
 }
 
-app.MapStaticAssets();
+// Ending a session. A POST, so it cannot be triggered by a link.
+app.MapAuthenticationEndpoints();
+
+/*
+ * Anonymous, because a stylesheet has no account.
+ *
+ * Without this the deny-by-default policy catches every css, js and font file
+ * and answers each one with a redirect to the sign-in page — so the browser
+ * receives HTML where it asked for CSS, discards it, and renders the login form
+ * with no styling at all. The page is the first thing anybody ever sees of this
+ * system, the failure is invisible to any test that reads markup, and the
+ * assets are public files that ship inside the container regardless.
+ */
+app.MapStaticAssets().AllowAnonymous();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

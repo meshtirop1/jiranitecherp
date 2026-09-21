@@ -1,0 +1,26 @@
+@page "/denied"
+@using Microsoft.AspNetCore.Authorization
+@layout BareLayout
+@attribute [AllowAnonymous]
+
+@*
+    Reached by somebody who is signed in and lacks the permission, so it is
+    anonymous only in the sense that it must render without one — refusing
+    access to the page that explains a refusal is a loop.
+*@
+
+<PageTitle>Not permitted — Jiranisoko Delivery</PageTitle>
+
+<h1 class="bare__heading">Not permitted</h1>
+
+<p>
+    Your account is signed in, but it does not hold the permission this page
+    needs. Nothing has gone wrong and there is nothing to retry.
+</p>
+
+<p>
+    Permissions come with your role. If this is part of your work, ask an
+    administrator to grant it — they can see exactly what is missing.
+</p>
+
+<p><a href="/">Back to your work</a></p>

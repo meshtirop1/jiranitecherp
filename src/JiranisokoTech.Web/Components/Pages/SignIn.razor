@@ -1,0 +1,154 @@
+@page "/sign-in"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Infrastructure.Identity
+@using JiranisokoTech.Web.Identity
+@using Microsoft.AspNetCore.Authorization
+@layout BareLayout
+@attribute [AllowAnonymous]
+@inject SignInService Authentication
+@inject NavigationManager Navigation
+
+@*
+    Deliberately not interactive.
+
+    Signing in writes a cookie, and a cookie can only be written while the
+    response is still being composed. An interactive render happens over a
+    socket after the response has already gone, so an interactive version of
+    this page would look right, submit, and silently fail to do the one thing it
+    exists for.
+*@
+
+<PageTitle>Sign in — Jiranisoko Delivery</PageTitle>
+
+<h1 class="signin__title">Sign in</h1>
+<p class="signin__sub">Jiranisoko Tech Solutions delivery system</p>
+
+<EditForm Model="Input" method="post" OnValidSubmit="Submit" FormName="sign-in" class="signin__form">
+    <DataAnnotationsValidator />
+
+    @if (Refusal is not null)
+    {
+        @* Announced, not merely shown: without this a screen reader user
+           submits the form and is told nothing at all. *@
+        <p class="signin__refusal" role="alert">@Refusal</p>
+    }
+
+    <div class="signin__field">
+        <label for="email">Email</label>
+        <InputText id="email" @bind-Value="Input.Email" type="email" autocomplete="username" />
+        <ValidationMessage For="() => Input.Email" />
+    </div>
+
+    <div class="signin__field">
+        <label for="password">Password</label>
+        <InputText id="password" @bind-Value="Input.Password" type="password" autocomplete="current-password" />
+        <ValidationMessage For="() => Input.Password" />
+    </div>
+
+    <label class="signin__remember">
+        <InputCheckbox @bind-Value="Input.Remember" />
+        <span>Stay signed in on this device</span>
+    </label>
+
+    <button type="submit" class="signin__submit">Sign in</button>
+</EditForm>
+
+<p class="signin__note">
+    Accounts are opened by an administrator. There is no self-registration —
+    if you work here and cannot get in, ask them.
+</p>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    /*
+     * Backed by a field, with the setter refusing null.
+     *
+     * The form binder assigns this property on every POST — including one whose
+     * handler name is not ours, where it assigns null. A plain auto-property
+     * with an initializer is therefore null exactly when a stray post arrives,
+     * and the page throws instead of re-rendering the form.
+     */
+    private SignInInput _input = new();
+
+    [SupplyParameterFromForm]
+    private SignInInput Input
+    {
+        get => _input;
+        set => _input = value ?? new SignInInput();
+    }
+
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    private string? ReturnUrl { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private async Task Submit()
+    {
+        var outcome = await Authentication.PasswordSignInAsync(
+            Input.Email,
+            Input.Password,
+            Input.Remember,
+            HttpContext.Connection.RemoteIpAddress?.ToString(),
+            HttpContext.Request.Headers.UserAgent.ToString(),
+            HttpContext.RequestAborted);
+
+        if (outcome == SignInOutcome.Succeeded)
+        {
+            Navigation.NavigateTo(SafeReturnUrl(), forceLoad: true);
+            return;
+        }
+
+        /*
+         * One message for everything that is about credentials.
+         *
+         * "No such account" and "wrong password" told apart turn this form into
+         * a way of finding out who works here — ask it a thousand addresses and
+         * it answers each one. Lockout is said plainly because it describes the
+         * attempt rather than the account, and somebody locked out needs to know
+         * that waiting is the fix. A withdrawn account is sent to a person,
+         * because nothing they do at this form will help.
+         */
+        Refusal = outcome switch
+        {
+            SignInOutcome.LockedOut =>
+                "Too many attempts. Try again in fifteen minutes.",
+            SignInOutcome.Deactivated =>
+                "Access to this account has been withdrawn. Speak to your administrator.",
+            _ => "Those details do not match an account.",
+        };
+    }
+
+    /// <summary>Only ever somewhere inside this application.</summary>
+    /// <remarks>
+    /// An unchecked returnUrl is an open redirect: a link to our own sign-in
+    /// page that lands somebody on somebody else's site, wearing our domain in
+    /// the address bar on the way there. Relative paths only, and nothing
+    /// beginning // or /\ — a browser reads both as the start of a host.
+    /// </remarks>
+    private string SafeReturnUrl()
+    {
+        if (string.IsNullOrWhiteSpace(ReturnUrl)
+            || !ReturnUrl.StartsWith('/')
+            || ReturnUrl.StartsWith("//", StringComparison.Ordinal)
+            || ReturnUrl.StartsWith("/\\", StringComparison.Ordinal))
+        {
+            return "/";
+        }
+
+        return ReturnUrl;
+    }
+
+    private sealed class SignInInput
+    {
+        [Required(ErrorMessage = "Your email address is needed.")]
+        [EmailAddress(ErrorMessage = "That does not look like an email address.")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Your password is needed.")]
+        public string Password { get; set; } = string.Empty;
+
+        public bool Remember { get; set; }
+    }
+}

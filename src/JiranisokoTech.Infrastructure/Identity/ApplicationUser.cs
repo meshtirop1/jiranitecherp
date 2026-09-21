@@ -68,10 +68,24 @@ public sealed class ApplicationUser : IdentityUser<Guid>, IAuditable
     /// Columns the audit trail must never copy.
     /// </summary>
     /// <remarks>
-    /// Every one of these is a credential or a token. The audit table is read
-    /// by more people than this one, so a secret copied into it has leaked
+    /// Two different reasons, both deliberate.
+    ///
+    /// The first group are credentials and tokens. The audit table is read by
+    /// more people than this one, so a secret copied into it has leaked
     /// sideways — and the copy would outlive a password change, because audit
     /// entries are append-only by design.
+    ///
+    /// The second group is sign-in churn. Every successful sign-in moves
+    /// <see cref="LastSignedInAt"/> and every failure moves
+    /// <see cref="IdentityUser{TKey}.AccessFailedCount"/>, so auditing them
+    /// would put one entry per login attempt into the trail and bury the
+    /// changes people actually search it for. That story is already told, in
+    /// full and with the address it came from, in
+    /// <see cref="SignInRecord"/>.
+    ///
+    /// <see cref="IdentityUser{TKey}.LockoutEnd"/> is not excluded. It moves
+    /// rarely, it can also be set by an administrator deliberately, and that
+    /// is exactly the sort of act the trail is for.
     /// </remarks>
     public static IReadOnlySet<string> AuditExcludes { get; } = new HashSet<string>
     {
@@ -81,6 +95,9 @@ public sealed class ApplicationUser : IdentityUser<Guid>, IAuditable
         nameof(TwoFactorEnabled),
         nameof(NormalizedEmail),
         nameof(NormalizedUserName),
+
+        nameof(LastSignedInAt),
+        nameof(AccessFailedCount),
     };
 }
 

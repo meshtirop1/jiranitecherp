@@ -1,7 +1,19 @@
-﻿@page "/"
+@page "/"
+@using Microsoft.AspNetCore.Components.Authorization
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Jiranisoko Delivery</PageTitle>
 
-<h1>Hello, world!</h1>
+<AuthorizeView>
+    <h1>Good to see you, @(context.User.FindFirst("display_name")?.Value ?? "there")</h1>
 
-Welcome to your new app.
+    @*
+        Deliberately empty of modules. The work queues, approvals and projects
+        land here as each one is built; a dashboard of tiles that lead nowhere
+        would only teach people that half this application does not work.
+    *@
+    <p>
+        This is the delivery system for Jiranisoko Tech Solutions. It is being
+        built module by module, and your sign-in, roles and audit trail are in
+        place. Work queues and approvals follow.
+    </p>
+</AuthorizeView>

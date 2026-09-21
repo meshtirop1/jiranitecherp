@@ -11,11 +11,23 @@
     <link rel="stylesheet" href="@Assets["JiranisokoTech.Web.styles.css"]" />
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
-    <HeadOutlet @rendermode="InteractiveServer" />
+    <HeadOutlet />
 </head>
 
 <body>
-    <Routes @rendermode="InteractiveServer" />
+    @*
+        No global render mode, deliberately.
+
+        Signing in sets a cookie, and a cookie can only be written while the
+        response is still being composed — which means the page must be
+        statically rendered. With interactivity applied here it would apply to
+        every page including those, and the sign-in form would render fine and
+        then fail to do the one thing it exists for.
+
+        So interactivity is opted into per component with @@rendermode, and
+        anything that touches authentication stays static.
+    *@
+    <Routes />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>

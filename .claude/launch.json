@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "delivery",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "src/JiranisokoTech.Web",
+        "--no-launch-profile",
+        "--urls",
+        "http://localhost:5188"
+      ],
+      "port": 5188
+    }
+  ]
+}

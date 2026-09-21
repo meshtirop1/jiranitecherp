@@ -1,0 +1,18 @@
+@inherits LayoutComponentBase
+
+@*
+    For the pages somebody sees before they are anybody: sign-in, access denied,
+    the error page. No navigation, because every link in it would lead somewhere
+    they cannot go yet — a sidebar full of dead ends is a worse first impression
+    than no sidebar.
+*@
+
+<div class="bare">
+    <main class="bare__panel">
+        @Body
+    </main>
+
+    <footer class="bare__footer">
+        Jiranisoko Tech Solutions
+    </footer>
+</div>

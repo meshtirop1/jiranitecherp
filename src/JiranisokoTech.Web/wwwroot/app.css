@@ -58,3 +58,172 @@ h1:focus {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+/* --- Pages seen before you are anybody ---------------------------------- */
+
+.bare {
+    min-height: 100vh;
+    display: grid;
+    /* auto for the panel, 1fr to push the footer down without it floating in
+       the middle of a short page. */
+    grid-template-rows: 1fr auto;
+    justify-items: center;
+    padding: 2rem 1rem;
+    background-color: #f5f6f8;
+}
+
+.bare__panel {
+    width: 100%;
+    max-width: 24rem;
+    align-self: center;
+    padding: 2rem;
+    background: #fff;
+    border: 1px solid #e3e5e9;
+    border-radius: 6px;
+}
+
+.bare__heading {
+    font-size: 1.4rem;
+    margin-bottom: 1rem;
+}
+
+.bare__reference code {
+    word-break: break-all;
+}
+
+.bare__footer {
+    padding-top: 1.5rem;
+    font-size: 0.85rem;
+    color: #6b7280;
+}
+
+.signin__title {
+    font-size: 1.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.signin__sub {
+    margin-bottom: 1.5rem;
+    color: #6b7280;
+    font-size: 0.9rem;
+}
+
+.signin__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+}
+
+.signin__field label {
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.signin__field input {
+    padding: 0.5rem 0.6rem;
+    border: 1px solid #c8ccd4;
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+.signin__remember {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+    font-size: 0.9rem;
+}
+
+.signin__submit {
+    width: 100%;
+    padding: 0.6rem;
+    border: 0;
+    border-radius: 4px;
+    background-color: #1b6ec2;
+    color: #fff;
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+.signin__submit:hover {
+    background-color: #1861ac;
+}
+
+.signin__refusal {
+    margin-bottom: 1rem;
+    padding: 0.6rem 0.75rem;
+    border-left: 3px solid #b32121;
+    background-color: #fdf2f2;
+    color: #8a1b1b;
+    font-size: 0.9rem;
+}
+
+.signin__note {
+    margin-top: 1.5rem;
+    font-size: 0.8rem;
+    color: #6b7280;
+}
+
+.nav-who {
+    padding-top: 1rem;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* A button that reads as the links beside it, without pretending to be one
+   for a keyboard or a screen reader. */
+.nav-signout {
+    background: none;
+    border: 0;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
+}
+
+/* --- Your own account ---------------------------------------------------- */
+
+.account__facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.35rem 1.25rem;
+    margin-bottom: 2rem;
+}
+
+.account__facts dt {
+    font-weight: 600;
+    color: #4b5563;
+}
+
+.account__facts dd {
+    margin: 0;
+}
+
+.account__hint {
+    font-size: 0.9rem;
+    color: #6b7280;
+}
+
+.account__history {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.account__history th,
+.account__history td {
+    text-align: left;
+    padding: 0.4rem 0.75rem 0.4rem 0;
+    border-bottom: 1px solid #e3e5e9;
+    vertical-align: top;
+}
+
+.account__attempt--failed td {
+    color: #8a1b1b;
+}
+
+/* A user agent string is long and worth none of the width. */
+.account__agent {
+    max-width: 18rem;
+    overflow-wrap: anywhere;
+    color: #6b7280;
+}

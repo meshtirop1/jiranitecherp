@@ -21,6 +21,12 @@ services:
       # and never inside a connection string committed to a file.
       ConnectionStrings__Default: >-
         Host=db;Port=5432;Database=${POSTGRES_DB:-jiranisokotech};Username=${POSTGRES_USER:-jiranisokotech};Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # The first account, used once on an empty database and ignored ever
+      # after. Left blank the application still starts; it simply has nobody
+      # who can sign in, and says so in the log.
+      Bootstrap__OwnerEmail: ${OWNER_EMAIL:-}
+      Bootstrap__OwnerPassword: ${OWNER_PASSWORD:-}
+      Bootstrap__OwnerName: ${OWNER_NAME:-}
     ports:
       # Bound to localhost. The reverse proxy in front of this is what the
       # internet talks to; the application itself is never directly exposed.

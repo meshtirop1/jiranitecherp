@@ -1,5 +1,22 @@
-﻿@page "/not-found"
-@layout MainLayout
+@page "/not-found"
+@using Microsoft.AspNetCore.Authorization
+@layout BareLayout
+@attribute [AllowAnonymous]
 
-<h3>Not Found</h3>
-<p>Sorry, the content you are looking for does not exist.</p>
+@*
+    Anonymous because the status code middleware re-executes to this path for
+    whatever produced the 404 — including requests from somebody not signed in.
+    Behind the deny-by-default policy it would redirect to sign-in instead, and
+    a missing page would look like a session that had expired.
+*@
+
+<PageTitle>Page not found — Jiranisoko Delivery</PageTitle>
+
+<h1 class="bare__heading">Page not found</h1>
+
+<p>
+    There is nothing at this address. A link may be out of date, or the record
+    it pointed at may have been removed.
+</p>
+
+<p><a href="/">Back to your work</a></p>

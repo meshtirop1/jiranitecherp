@@ -1,5 +1,6 @@
 using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Infrastructure.Persistence;
+using JiranisokoTech.Web.Identity;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 
@@ -47,7 +48,22 @@ public static class IdentityConfiguration
                 options.Lockout.AllowedForNewUsers = true;
             })
             .AddEntityFrameworkStores<AppDbContext>()
+
+            /*
+             * Our own sign-in manager, registered here rather than left to the
+             * default. It carries two rules — a deactivated account cannot sign
+             * in, and a principal carries its owner's display name — and both
+             * have to hold on every route into a session, not only the login
+             * form. Registering the subclass is what makes that true for the
+             * remembered-cookie path and for anything added later.
+             */
+            .AddSignInManager<ApplicationSignInManager>()
             .AddDefaultTokenProviders();
+
+        // One place that knows an attempt has to be recorded. Spread across the
+        // pages that sign people in, the third one forgets, and the omission is
+        // invisible: sign-in still works and only the history is wrong.
+        services.AddScoped<SignInService>();
 
         /*
          * Permissions travel in the cookie, so a role change does not reach an

@@ -1,0 +1,147 @@
+@page "/account"
+@using System.Security.Claims
+@using JiranisokoTech.Infrastructure.Identity
+@using JiranisokoTech.Web.Identity
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@inject SignInService Authentication
+@inject UserManager<ApplicationUser> Users
+
+@*
+    Static, like everything else that touches the session. Nothing here needs
+    to change without a page load.
+*@
+
+<PageTitle>Your account — Jiranisoko Delivery</PageTitle>
+
+<h1>Your account</h1>
+
+@if (Person is null)
+{
+    <p>We could not find your account. Sign out and in again.</p>
+}
+else
+{
+    <dl class="account__facts">
+        <dt>Name</dt>
+        <dd>@Person.DisplayName</dd>
+
+        <dt>Email</dt>
+        <dd>@Person.Email</dd>
+
+        <dt>Role@(Roles.Count == 1 ? "" : "s")</dt>
+        <dd>@(Roles.Count == 0 ? "None yet" : string.Join(", ", Roles))</dd>
+
+        <dt>Times shown in</dt>
+        <dd>@Zone.Id</dd>
+    </dl>
+
+    <h2>Recent sign-ins</h2>
+
+    @*
+        Failures included, not only successes. The point of showing somebody
+        their own history is that they can spot an attempt that was not them,
+        and the attempts that were not them are usually the ones that failed.
+    *@
+    <p class="account__hint">
+        Every attempt on this account, successful or not. If you see one you do
+        not recognise, change your password and tell an administrator.
+    </p>
+
+    @if (History.Count == 0)
+    {
+        <p>Nothing recorded yet.</p>
+    }
+    else
+    {
+        <table class="account__history">
+            <thead>
+                <tr>
+                    <th scope="col">When</th>
+                    <th scope="col">Result</th>
+                    <th scope="col">From</th>
+                    <th scope="col">Device</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var attempt in History)
+                {
+                    <tr class="@(attempt.Succeeded ? "" : "account__attempt--failed")">
+                        <td>@TimeZoneInfo.ConvertTime(attempt.At, Zone).ToString("d MMM yyyy, HH:mm")</td>
+                        <td>@Describe(attempt.Outcome)</td>
+                        <td>@(attempt.IpAddress ?? "Unknown")</td>
+                        @* The browser's own description of itself: useful for
+                           recognising a device, and never to be trusted for
+                           anything, because it is a header a client chooses. *@
+                        <td class="account__agent">@(attempt.UserAgent ?? "Unknown")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private ApplicationUser? Person { get; set; }
+
+    private IList<string> Roles { get; set; } = [];
+
+    private List<SignInRecord> History { get; set; } = [];
+
+    private TimeZoneInfo Zone { get; set; } = TimeZoneInfo.Utc;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationState;
+        var id = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (!Guid.TryParse(id, out var userId))
+        {
+            return;
+        }
+
+        Person = await Users.FindByIdAsync(userId.ToString());
+
+        if (Person is null)
+        {
+            return;
+        }
+
+        Roles = await Users.GetRolesAsync(Person);
+        Zone = ZoneFor(Person.TimeZone);
+        History = await Authentication.HistoryFor(userId);
+    }
+
+    /// <summary>
+    /// The person's own zone, falling back to UTC rather than failing.
+    /// </summary>
+    /// <remarks>
+    /// Storage is UTC everywhere and this is a rendering decision, which is why
+    /// an unrecognised zone shows the page in UTC instead of throwing: a bad
+    /// value in one column should not cost somebody the page.
+    /// </remarks>
+    private static TimeZoneInfo ZoneFor(string id)
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(id);
+        }
+        catch (Exception exception) when (
+            exception is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            return TimeZoneInfo.Utc;
+        }
+    }
+
+    private static string Describe(SignInOutcome outcome) => outcome switch
+    {
+        SignInOutcome.Succeeded => "Signed in",
+        SignInOutcome.LockedOut => "Refused — account locked",
+        SignInOutcome.Deactivated => "Refused — account withdrawn",
+        SignInOutcome.SecondFactorRequired => "Password accepted, second step owed",
+        _ => "Refused",
+    };
+}
