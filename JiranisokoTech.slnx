@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/JiranisokoTech.Application/JiranisokoTech.Application.csproj" />
+    <Project Path="src/JiranisokoTech.Domain/JiranisokoTech.Domain.csproj" />
+    <Project Path="src/JiranisokoTech.Infrastructure/JiranisokoTech.Infrastructure.csproj" />
+    <Project Path="src/JiranisokoTech.Web/JiranisokoTech.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/JiranisokoTech.Tests/JiranisokoTech.Tests.csproj" />
+  </Folder>
+</Solution>

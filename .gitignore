@@ -1,0 +1,22 @@
+# Build output
+**/bin/
+**/obj/
+**/out/
+**/publish/
+
+# Local configuration and secrets
+.env
+**/appsettings.Development.json
+**/appsettings.Local.json
+*.user
+
+# Local databases
+*.db
+*.db-shm
+*.db-wal
+
+# Editors
+.vs/
+.vscode/
+.idea/
+*.swp

@@ -1,0 +1,23 @@
+# Anything produced by a build on a developer's machine. Copying these into the
+# image at best wastes layers, and at worst ships a stale binary that quietly
+# shadows the one the image just compiled.
+**/bin/
+**/obj/
+**/out/
+
+.git/
+.gitignore
+.vs/
+.vscode/
+.idea/
+
+**/appsettings.Development.json
+**/*.user
+**/.env
+**/*.db
+**/*.db-shm
+**/*.db-wal
+
+docker/
+docs/
+README.md

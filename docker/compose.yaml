@@ -1,0 +1,78 @@
+# The delivery system, as it will run on a host.
+#
+# `docker compose up` from the repository root:
+#     docker compose -f docker/compose.yaml up --build
+#
+# There is no `version:` key. It has been ignored by Compose v2 for years and
+# only ever produces a warning.
+
+name: jiranisokotech
+
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: 8080
+      # Composed from the parts below so the password is never written twice,
+      # and never inside a connection string committed to a file.
+      ConnectionStrings__Default: >-
+        Host=db;Port=5432;Database=${POSTGRES_DB:-jiranisokotech};Username=${POSTGRES_USER:-jiranisokotech};Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      # Bound to localhost. The reverse proxy in front of this is what the
+      # internet talks to; the application itself is never directly exposed.
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      db:
+        # Not merely "started". Postgres accepts connections a moment after the
+        # container is up, and a web process that starts in that gap dies on its
+        # first query.
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 20s
+      retries: 3
+
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-jiranisokotech}
+      POSTGRES_USER: ${POSTGRES_USER:-jiranisokotech}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # Without this the database is created with the host's locale, and text
+      # ordering changes under you on a different machine.
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=en-001"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    # No ports. Nothing outside this network needs to reach the database, and
+    # publishing 5432 to the host is how a database ends up on the internet.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jiranisokotech} -d ${POSTGRES_DB:-jiranisokotech}"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  cache:
+    image: redis:8-alpine
+    restart: unless-stopped
+    # Persistence on, because this will hold background job state as well as
+    # cache, and losing a queue on restart is not the same as losing a cache.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - cache-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  db-data:
+  cache-data:
