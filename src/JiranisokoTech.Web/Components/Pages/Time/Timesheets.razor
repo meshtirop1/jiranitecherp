@@ -1,0 +1,146 @@
+@page "/time/approvals"
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Infrastructure.Business
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.TimeApprove)]
+@inject BusinessQueries Queries
+@inject PeopleQueries People
+@inject TimesheetService Service
+@inject NavigationManager Navigation
+
+@*
+    Everything waiting, oldest day first — the opposite of the personal page,
+    which shows the newest. An approver is working through a backlog and wants
+    the thing that has been waiting longest; a person checking their own hours
+    wants what they just typed.
+*@
+
+<PageTitle>Timesheets — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Timesheets</h1>
+    <p class="subtle">@Waiting.Count waiting, @Total(Waiting.Sum(entry => entry.Minutes)) in all.</p>
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Me is null)
+{
+    <p class="refusal" role="alert">
+        Your sign-in is not linked to a staff record. Approving time records who
+        approved it, so there has to be somebody to record.
+    </p>
+}
+else if (Waiting.Count == 0)
+{
+    <p class="empty">Nothing waiting. Everything logged has been approved.</p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Hours waiting for approval</caption>
+        <thead>
+            <tr>
+                <th scope="col">Who</th>
+                <th scope="col">Day</th>
+                <th scope="col">Hours</th>
+                <th scope="col">Against</th>
+                <th scope="col">What</th>
+                <th scope="col"><span class="visually-hidden">Decision</span></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var entry in Waiting)
+            {
+                <tr>
+                    <td>@entry.EmployeeName</td>
+                    <td>@entry.On.ToString("ddd d MMM")</td>
+                    <td class="number">@entry.Duration</td>
+                    <td>@(entry.ProjectName ?? "—")</td>
+                    <td>
+                        @(entry.Note ?? "—")
+                        @if (!entry.IsBillable)
+                        {
+                            <span class="pill pill--quiet">Not billable</span>
+                        }
+                    </td>
+                    <td>
+                        @if (entry.EmployeeId == Me)
+                        {
+                            @*
+                                Nobody approves their own time. The domain refuses
+                                it, so the button would only ever produce an error
+                                — and a button that always fails teaches people to
+                                ignore errors.
+                            *@
+                            <span class="subtle">Yours</span>
+                        }
+                        else
+                        {
+                            <form method="post" @formname="@($"approve-{entry.Id}")"
+                                  @onsubmit="() => Approve(entry.Id)">
+                                <AntiforgeryToken />
+                                <button type="submit" class="button button--quiet">Approve</button>
+                            </form>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private Guid? Me { get; set; }
+
+    private List<TimeRow> Waiting { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationState;
+
+        if (Guid.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            Me = await People.EmployeeForAccountAsync(account);
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var waiting = await Queries.TimeAsync(awaitingApprovalOnly: true);
+
+        Waiting = waiting.OrderBy(entry => entry.On).ThenBy(entry => entry.EmployeeName).ToList();
+    }
+
+    private async Task Approve(Guid entryId)
+    {
+        Refusal = null;
+
+        try
+        {
+            await Service.ApproveAsync(entryId, Me!.Value);
+            Navigation.NavigateTo("/time/approvals", forceLoad: true);
+        }
+        catch (InvalidOperationException exception)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string Total(int minutes) =>
+        minutes % 60 == 0 ? $"{minutes / 60}h" : $"{minutes / 60}h {minutes % 60}m";
+}

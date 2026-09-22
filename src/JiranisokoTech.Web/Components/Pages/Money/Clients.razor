@@ -1,0 +1,168 @@
+@page "/clients"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Domain.Clients
+@using JiranisokoTech.Infrastructure.Business
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ClientsView)]
+@inject BusinessQueries Queries
+@inject ClientService Service
+@inject NavigationManager Navigation
+
+<PageTitle>Clients — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Clients</h1>
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ClientsManage)" Context="allowed">
+    <EditForm Model="Input" method="post" OnValidSubmit="TakeOn" FormName="take-on"
+              class="panel stack">
+        <DataAnnotationsValidator />
+
+        <h2>Take somebody on</h2>
+
+        <div class="fields">
+            <label>
+                <span>Name</span>
+                <InputText @bind-Value="Input.Name" />
+                <ValidationMessage For="() => Input.Name" />
+            </label>
+
+            <label>
+                <span>Code</span>
+                @*
+                    Offered rather than generated silently, because it goes on
+                    every invoice this client ever receives and a firm usually
+                    has one it already uses.
+                *@
+                <InputText @bind-Value="Input.Code" placeholder="From the name" />
+            </label>
+        </div>
+
+        <div class="fields">
+            <label>
+                <span>Who we deal with</span>
+                <InputText @bind-Value="Input.ContactName" />
+            </label>
+
+            <label>
+                <span>Their email</span>
+                <InputText @bind-Value="Input.ContactEmail" type="email" />
+                <ValidationMessage For="() => Input.ContactEmail" />
+            </label>
+        </div>
+
+        <button type="submit">Take them on</button>
+    </EditForm>
+</AuthorizeView>
+
+@if (All.Count == 0)
+{
+    <p class="empty">No clients yet.</p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Clients</caption>
+        <thead>
+            <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Code</th>
+                <th scope="col">Who we deal with</th>
+                <th scope="col">Terms</th>
+                <th scope="col">Projects</th>
+                <th scope="col">Owed</th>
+                <th scope="col">State</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var client in All)
+            {
+                <tr>
+                    <td>@client.Name</td>
+                    <td><code>@client.Code</code></td>
+                    <td>
+                        @(client.ContactName ?? "—")
+                        @if (client.ContactEmail is { } email)
+                        {
+                            <span class="subtle">@email</span>
+                        }
+                    </td>
+                    <td class="number">@client.PaymentTermDays days</td>
+                    <td class="number">@client.Projects</td>
+                    <td class="number">@(client.Owed?.ToString() ?? "—")</td>
+                    <td><span class="pill @PillFor(client.Status)">@Words.For(client.Status)</span></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private TakeOnInput _input = new();
+
+    [SupplyParameterFromForm]
+    private TakeOnInput Input
+    {
+        get => _input;
+        set => _input = value ?? new TakeOnInput();
+    }
+
+    private List<ClientRow> All { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync() => All = await Queries.ClientsAsync();
+
+    private async Task TakeOn()
+    {
+        Refusal = null;
+
+        try
+        {
+            await Service.TakeOnAsync(
+                Input.Name, Input.Code, Input.ContactName, Input.ContactEmail);
+
+            Navigation.NavigateTo("/clients", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string? PillFor(ClientStatus status) => status switch
+    {
+        ClientStatus.Active => "pill--done",
+        ClientStatus.Former => "pill--quiet",
+        _ => null,
+    };
+
+    private sealed class TakeOnInput
+    {
+        [Required(ErrorMessage = "The client's name.")]
+        [StringLength(200)]
+        public string Name { get; set; } = string.Empty;
+
+        [StringLength(60)]
+        public string? Code { get; set; }
+
+        [StringLength(200)]
+        public string? ContactName { get; set; }
+
+        [EmailAddress(ErrorMessage = "That does not look like an email address.")]
+        [StringLength(320)]
+        public string? ContactEmail { get; set; }
+    }
+}

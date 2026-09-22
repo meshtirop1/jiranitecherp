@@ -1,0 +1,249 @@
+@page "/leave"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Abstractions
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Domain.Time
+@using JiranisokoTech.Infrastructure.Business
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.LeaveAsk)]
+@inject BusinessQueries Queries
+@inject PeopleQueries People
+@inject LeaveService Service
+@inject IClock Clock
+@inject NavigationManager Navigation
+
+<PageTitle>My leave — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>My leave</h1>
+</div>
+
+@if (Me is null)
+{
+    <p class="refusal" role="alert">
+        Your sign-in is not linked to a staff record, so there is nobody to book
+        leave for. An administrator can link them on the People page.
+    </p>
+}
+else
+{
+    <EditForm Model="Input" method="post" OnValidSubmit="Ask" FormName="ask" class="panel stack">
+        <DataAnnotationsValidator />
+
+        <h2>Ask for time off</h2>
+
+        @if (Refusal is not null)
+        {
+            <p class="refusal" role="alert">@Refusal</p>
+        }
+
+        <label>
+            <span>What kind</span>
+            <InputSelect @bind-Value="Input.Kind">
+                @foreach (var kind in Enum.GetValues<LeaveKind>())
+                {
+                    <option value="@kind">@Words.For(kind)</option>
+                }
+            </InputSelect>
+        </label>
+
+        <div class="fields">
+            <label>
+                <span>From</span>
+                <InputDate @bind-Value="Input.From" />
+                <ValidationMessage For="() => Input.From" />
+            </label>
+
+            <label>
+                <span>To</span>
+                <InputDate @bind-Value="Input.To" />
+                <ValidationMessage For="() => Input.To" />
+            </label>
+        </div>
+
+        @*
+            Said rather than enforced by disabling the date field: sickness is
+            the one kind that is recorded afterwards, and a date control that
+            silently changes its own limits as the dropdown moves is a control
+            nobody trusts.
+        *@
+        <p class="subtle">
+            Weekends are not counted. Only sickness can be dated in the past —
+            everything else is asked for before it is taken.
+        </p>
+
+        <label>
+            <span>Why</span>
+            <InputText @bind-Value="Input.Reason" />
+            <ValidationMessage For="() => Input.Reason" />
+        </label>
+
+        <button type="submit">Ask</button>
+    </EditForm>
+
+    @if (Mine.Count == 0)
+    {
+        <p class="empty">You have not asked for any leave.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Leave you have asked for</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Kind</th>
+                    <th scope="col">When</th>
+                    <th scope="col">Days</th>
+                    <th scope="col">Why</th>
+                    <th scope="col">State</th>
+                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var leave in Mine)
+                {
+                    <tr>
+                        <td>@Words.For(leave.Kind)</td>
+                        <td>@Span(leave)</td>
+                        <td class="number">@leave.Days</td>
+                        <td>@leave.Reason</td>
+                        <td>
+                            <span class="pill @PillFor(leave.Status)">@Words.For(leave.Status)</span>
+                            @if (leave.Outcome is { } outcome)
+                            {
+                                <span class="subtle">@outcome</span>
+                            }
+                        </td>
+                        <td class="actions">
+                            @if (leave.Status == LeaveStatus.Draft)
+                            {
+                                <form method="post" @formname="@($"submit-{leave.Id}")"
+                                      @onsubmit="() => Submit(leave.Id)">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="button button--quiet">Send for approval</button>
+                                </form>
+                            }
+
+                            @if (leave.Status is LeaveStatus.Draft or LeaveStatus.AwaitingApproval
+                                or LeaveStatus.Approved)
+                            {
+                                <form method="post" @formname="@($"cancel-{leave.Id}")"
+                                      @onsubmit="() => Cancel(leave.Id)">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="button button--quiet">Cancel</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private AskInput _input = new();
+
+    [SupplyParameterFromForm]
+    private AskInput Input
+    {
+        get => _input;
+        set => _input = value ?? new AskInput();
+    }
+
+    private Guid? Me { get; set; }
+
+    private List<LeaveRow> Mine { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Input.From == default)
+        {
+            Input.From = Clock.Today;
+            Input.To = Clock.Today;
+        }
+
+        var state = await AuthenticationState;
+
+        if (Guid.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            Me = await People.EmployeeForAccountAsync(account);
+        }
+
+        if (Me is not null)
+        {
+            Mine = await Queries.LeaveAsync(employeeId: Me);
+        }
+    }
+
+    private async Task Ask()
+    {
+        await TryAsync(async () =>
+        {
+            var leave = await Service.AskForAsync(
+                Me!.Value, Input.Kind, Input.From, Input.To, Input.Reason);
+
+            // Asked and sent in one act. A draft that sits unsent is the most
+            // common way a request never gets decided, and nobody fills in a
+            // leave form meaning to keep it to themselves.
+            await Service.SubmitAsync(leave.Id);
+        });
+    }
+
+    private Task Submit(Guid leaveId) => TryAsync(() => Service.SubmitAsync(leaveId));
+
+    private Task Cancel(Guid leaveId) => TryAsync(() => Service.CancelAsync(leaveId));
+
+    private async Task TryAsync(Func<Task> act)
+    {
+        Refusal = null;
+
+        try
+        {
+            await act();
+            Navigation.NavigateTo("/leave", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+
+            if (Me is not null)
+            {
+                Mine = await Queries.LeaveAsync(employeeId: Me);
+            }
+        }
+    }
+
+    private static string Span(LeaveRow leave) => leave.From == leave.To
+        ? leave.From.ToString("ddd d MMM yyyy")
+        : $"{leave.From:ddd d MMM} to {leave.To:ddd d MMM yyyy}";
+
+    private static string? PillFor(LeaveStatus status) => status switch
+    {
+        LeaveStatus.Approved => "pill--done",
+        LeaveStatus.Refused or LeaveStatus.Cancelled => "pill--quiet",
+        _ => null,
+    };
+
+    private sealed class AskInput
+    {
+        public LeaveKind Kind { get; set; } = LeaveKind.Annual;
+
+        public DateOnly From { get; set; }
+
+        public DateOnly To { get; set; }
+
+        [Required(ErrorMessage = "Say why. Whoever decides this has to know what they are agreeing to.")]
+        [StringLength(500)]
+        public string Reason { get; set; } = string.Empty;
+    }
+}

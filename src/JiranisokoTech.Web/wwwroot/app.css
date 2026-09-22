@@ -693,3 +693,163 @@ code.key {
 .bare__panel--wide {
     max-width: 42rem;
 }
+
+/* --- the business screens -------------------------------------------------
+   Time, leave, expenses, clients and invoices. These reuse .grid, .stack,
+   .pill, .actions and .empty from above; what follows is only what those
+   screens needed that nothing else did. Note the names: not .row and not
+   .figure, because Bootstrap is loaded ahead of this file and already means
+   something by both. */
+
+/* Several fields that belong together on one line, wrapping to a column when
+   there is no room. Named .fields rather than .row because Bootstrap's .row is
+   a grid row with negative margins, and it would win. */
+.fields {
+    display: flex;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+}
+
+.fields > label {
+    flex: 1 1 8rem;
+}
+
+/* A figure in a table. Right-aligned and tabular so that columns of money and
+   hours line up on the digit rather than on the character — the only way a
+   column of numbers can be read down. Not .figure: that is Bootstrap's, and it
+   sets display:inline-block, which on a table cell is a broken table. */
+.number {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* A form or a block of related controls, lifted off the page. */
+.panel {
+    padding: 1.25rem;
+    background: #fff;
+    border: 1px solid #e3e5e9;
+    border-radius: 6px;
+    max-width: 38rem;
+}
+
+.panel h2,
+.panel h3 {
+    margin-top: 0;
+    font-size: 1.05rem;
+}
+
+/* A checkbox reads along the line with its words, not above them, so it opts
+   out of the column .stack label sets. */
+.stack label.check {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 400;
+}
+
+.stack label.check input {
+    width: auto;
+}
+
+.crumbs {
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+.plain {
+    list-style: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+/* A second-rank button: the same shape, without the weight that says "this is
+   the thing to do on this page". Tables are full of these and a row of solid
+   blue buttons tells a reader nothing about which one matters. */
+.button--quiet {
+    background: #fff;
+    color: #1b6ec2;
+}
+
+.button--quiet:hover {
+    background: #eef4fb;
+}
+
+/* The acts at the foot of a page, stacked rather than in a line because each
+   carries its own explanation. */
+.actions--page {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1.5rem;
+}
+
+.pill--done { background: #e6f4ea; color: #1e6b32; }
+.pill--quiet { background: #eef1f5; color: #6b7280; }
+.pill--danger { background: #fdf2f2; color: #8a1b1b; }
+
+/* The week at a glance above the timesheet. Seven equal columns that become a
+   scrolling strip on a narrow screen rather than squeezing to illegibility —
+   a day with 7h in it needs the width that says so. */
+.week {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(4.5rem, 1fr));
+    gap: 0.5rem;
+    margin: 1rem 0 1.5rem;
+    overflow-x: auto;
+}
+
+.week__day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.6rem 0.4rem;
+    background: #f5f6f8;
+    border: 1px solid #e3e5e9;
+    border-radius: 6px;
+}
+
+.week__day--today {
+    border-color: #1b6ec2;
+    background: #eef4fb;
+}
+
+.week__name {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6b7280;
+}
+
+.week__date {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.week__hours {
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+    color: #4b5563;
+}
+
+/* --- three classes that were asked for and never defined ------------------
+   Found by the stylesheet test rather than by looking, which is the point of
+   it: an undefined class does not fail, warn, or look broken to any tool. It
+   just renders plain. */
+
+/* The sign-in form itself. Its fields were styled and its container was not,
+   so the submit button sat hard against the last field on the most-seen page
+   in the system. */
+.signin__form {
+    display: flex;
+    flex-direction: column;
+}
+
+/* The error bar's background is its own, so the link takes its colour from it
+   rather than from the page's link colour. */
+#blazor-error-ui .reload {
+    color: inherit;
+    text-decoration: underline;
+}

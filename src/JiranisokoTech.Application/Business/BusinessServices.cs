@@ -170,6 +170,7 @@ public sealed class TimesheetService(
         Guid? workItemId = null,
         Guid? projectId = null,
         string? note = null,
+        bool billable = true,
         CancellationToken cancellationToken = default)
     {
         if (await people.FindAsync(employeeId, cancellationToken) is not { } person)
@@ -198,7 +199,7 @@ public sealed class TimesheetService(
                 + $"That would take the day past {LongestDayMinutes / 60} hours.");
         }
 
-        var entry = TimeEntry.Log(employeeId, on, minutes, workItemId, projectId, note);
+        var entry = TimeEntry.Log(employeeId, on, minutes, workItemId, projectId, note, billable);
 
         business.Add(entry);
         await business.SaveAsync(cancellationToken);

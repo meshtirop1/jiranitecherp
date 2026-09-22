@@ -19,6 +19,21 @@ public enum LeaveKind
     Unpaid = 3,
     Compassionate = 4,
     Study = 5,
+
+    /// <summary>
+    /// Three months, under section 29 of the Employment Act.
+    /// </summary>
+    /// <remarks>
+    /// Statutory, not discretionary, and the same is true of paternity leave
+    /// below. A leave system for a Kenyan employer that does not name them
+    /// forces the two entitlements every employee is certain to ask about into
+    /// "annual" or "unpaid", which misstates the record and understates what the
+    /// person is owed.
+    /// </remarks>
+    Maternity = 6,
+
+    /// <summary>Two weeks, under the same section.</summary>
+    Paternity = 7,
 }
 
 public enum LeaveStatus

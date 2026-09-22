@@ -120,6 +120,86 @@ public class PermissionTests
         Assert.Contains(Permissions.TasksDeploy, head);
     }
 
+    /// <summary>
+    /// Every role a person actually holds lets them log their own hours, ask for
+    /// leave and claim money back.
+    /// </summary>
+    /// <remarks>
+    /// The one lesson this system has learned twice. An engineer could not open
+    /// the work board because no role held tasks.view_own; an interviewer could
+    /// submit a scorecard for an interview they could not open. Both were the
+    /// same mistake — a permission granted for doing a thing, with nothing
+    /// granted for reaching it. Self-service is where that mistake is most
+    /// expensive, because it locks out the majority of the staff.
+    ///
+    /// Interviewer is exempt: it is designed to be worn alongside another role,
+    /// and that role carries these.
+    /// </remarks>
+    [Fact]
+    public void Everybody_who_works_here_can_log_time_ask_for_leave_and_claim_expenses()
+    {
+        foreach (var role in Roles.All.Where(role => role != Roles.Interviewer))
+        {
+            var held = Roles.PermissionsFor(role);
+
+            Assert.Contains(Permissions.TimeLogOwn, held);
+            Assert.Contains(Permissions.LeaveAsk, held);
+            Assert.Contains(Permissions.ExpensesClaim, held);
+        }
+    }
+
+    /// <summary>
+    /// Approving a claim and paying it are held by different people.
+    /// </summary>
+    /// <remarks>
+    /// Except at the top, where somebody has to be able to do everything. Below
+    /// that, one person holding both can approve their own reimbursement and
+    /// record it as paid.
+    /// </remarks>
+    [Fact]
+    public void Approving_an_expense_and_paying_it_are_not_the_same_hands()
+    {
+        var both = Roles.All
+            .Where(role => role is not (Roles.Owner or Roles.Administrator))
+            .Where(role => Roles.PermissionsFor(role).Contains(Permissions.ExpensesApprove)
+                && Roles.PermissionsFor(role).Contains(Permissions.ExpensesPay))
+            .ToList();
+
+        Assert.Empty(both);
+    }
+
+    /// <summary>
+    /// Drafting an invoice and sending it are likewise separate.
+    /// </summary>
+    [Fact]
+    public void Drafting_an_invoice_and_sending_it_are_not_the_same_hands()
+    {
+        var both = Roles.All
+            .Where(role => role is not (Roles.Owner or Roles.Administrator))
+            .Where(role => Roles.PermissionsFor(role).Contains(Permissions.InvoicesManage)
+                && Roles.PermissionsFor(role).Contains(Permissions.InvoicesSend))
+            .ToList();
+
+        Assert.Empty(both);
+    }
+
+    /// <summary>
+    /// Anybody who can submit a scorecard can open the interview it is for.
+    /// </summary>
+    [Fact]
+    public void A_scorecard_cannot_be_asked_for_without_a_way_to_see_the_interview()
+    {
+        foreach (var role in Roles.All)
+        {
+            var held = Roles.PermissionsFor(role);
+
+            if (held.Contains(Permissions.ScorecardsSubmit))
+            {
+                Assert.Contains(Permissions.InterviewsView, held);
+            }
+        }
+    }
+
     // --- the machinery -----------------------------------------------------
 
     [Fact]

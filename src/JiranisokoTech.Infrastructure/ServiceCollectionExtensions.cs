@@ -132,6 +132,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkRepository, WorkRepository>();
         services.AddScoped<WorkService>();
         services.AddScoped<WorkQueries>();
+        services.AddScoped<BusinessQueries>();
 
         // Reactions between modules. People knows nothing about work items and
         // must not; the event is what carries a departure across to the board.

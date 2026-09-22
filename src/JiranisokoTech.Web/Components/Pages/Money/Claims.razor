@@ -1,0 +1,225 @@
+@page "/expenses/claims"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Domain.Money
+@using JiranisokoTech.Infrastructure.Business
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ExpensesViewAll)]
+@inject BusinessQueries Queries
+@inject PeopleQueries People
+@inject ExpenseService Service
+@inject NavigationManager Navigation
+
+@*
+    Waiting and approved-but-unpaid on one page, because they are two halves of
+    the same obligation: the firm has agreed to hand money back and has not done
+    it yet. Splitting them across two screens is how a claim sits approved for
+    three months.
+*@
+
+<PageTitle>Expense claims — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Expense claims</h1>
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<section>
+    <h2>Waiting for a decision</h2>
+
+    @if (Waiting.Count == 0)
+    {
+        <p class="empty">Nothing waiting.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Claims waiting for a decision</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Who</th>
+                    <th scope="col">Spent on</th>
+                    <th scope="col">What</th>
+                    <th scope="col">Category</th>
+                    <th scope="col">Amount</th>
+                    <th scope="col"><span class="visually-hidden">Decision</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var claim in Waiting)
+                {
+                    <tr>
+                        <td>@claim.EmployeeName</td>
+                        <td>@claim.SpentOn.ToString("d MMM yyyy")</td>
+                        <td>@claim.Description</td>
+                        <td>@Words.For(claim.Category)</td>
+                        <td class="number">@claim.Amount</td>
+                        <td class="actions">
+                            @if (claim.EmployeeId == Me)
+                            {
+                                @* Deciding your own claim is the whole point of
+                                   having somebody decide it. *@
+                                <span class="subtle">Yours</span>
+                            }
+                            else
+                            {
+                                <form method="post" @formname="@($"approve-{claim.Id}")"
+                                      @onsubmit="() => Decide(claim.Id, true)">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="button button--quiet">Approve</button>
+                                </form>
+
+                                @*
+                                    A refusal carries a reason, so it is a field
+                                    and a button. An EditForm rather than a plain
+                                    one, because under static rendering only a
+                                    submit handler runs — an @onchange on the text
+                                    box would never fire, and the reason would
+                                    arrive empty every time.
+                                *@
+                                <EditForm Model="Refusing" method="post"
+                                          FormName="@($"refuse-{claim.Id}")"
+                                          OnValidSubmit="() => Decide(claim.Id, false)"
+                                          class="inline">
+                                    <DataAnnotationsValidator />
+                                    <InputText @bind-Value="Refusing.Reason" placeholder="Why not" />
+                                    <button type="submit" class="danger">Refuse</button>
+                                    <ValidationMessage For="() => Refusing.Reason" />
+                                </EditForm>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+<section>
+    <h2>Approved, not yet paid</h2>
+
+    @if (Owing.Count == 0)
+    {
+        <p class="empty">Nothing outstanding.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Claims approved and awaiting payment</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Who</th>
+                    <th scope="col">What</th>
+                    <th scope="col">Amount</th>
+                    <th scope="col"><span class="visually-hidden">Payment</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var claim in Owing)
+                {
+                    <tr>
+                        <td>@claim.EmployeeName</td>
+                        <td>@claim.Description</td>
+                        <td class="number">@claim.Amount</td>
+                        <td>
+                            <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ExpensesPay)">
+                                <Authorized>
+                                    <form method="post" @formname="@($"pay-{claim.Id}")"
+                                          @onsubmit="() => Pay(claim.Id)">
+                                        <AntiforgeryToken />
+                                        <button type="submit" class="button button--quiet">Mark paid</button>
+                                    </form>
+                                </Authorized>
+                                <NotAuthorized>
+                                    @*
+                                        Approving a claim and paying it are
+                                        deliberately different permissions, so most
+                                        people looking at this list can see the
+                                        debt and not settle it.
+                                    *@
+                                    <span class="subtle">The office pays these.</span>
+                                </NotAuthorized>
+                            </AuthorizeView>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private RefusalInput _refusing = new();
+
+    [SupplyParameterFromForm]
+    private RefusalInput Refusing
+    {
+        get => _refusing;
+        set => _refusing = value ?? new RefusalInput();
+    }
+
+    private Guid? Me { get; set; }
+
+    private List<ClaimRow> Waiting { get; set; } = [];
+
+    private List<ClaimRow> Owing { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationState;
+
+        if (Guid.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            Me = await People.EmployeeForAccountAsync(account);
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Waiting = await Queries.ClaimsAsync(status: ClaimStatus.AwaitingApproval);
+        Owing = await Queries.ClaimsAsync(status: ClaimStatus.Approved);
+    }
+
+    private Task Decide(Guid claimId, bool approved) =>
+        TryAsync(() => Service.RecordDecisionAsync(claimId, approved, Refusing.Reason));
+
+    private Task Pay(Guid claimId) => TryAsync(() => Service.PayAsync(claimId, null));
+
+    private async Task TryAsync(Func<Task> act)
+    {
+        Refusal = null;
+
+        try
+        {
+            await act();
+            Navigation.NavigateTo("/expenses/claims", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private sealed class RefusalInput
+    {
+        [Required(ErrorMessage = "Say why. Whoever claimed this has to know what was wrong with it.")]
+        [StringLength(500)]
+        public string Reason { get; set; } = string.Empty;
+    }
+}

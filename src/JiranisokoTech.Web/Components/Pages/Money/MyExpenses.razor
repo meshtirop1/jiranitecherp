@@ -1,0 +1,245 @@
+@page "/expenses"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Abstractions
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Domain.Money
+@using JiranisokoTech.Infrastructure.Business
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@using Cash = JiranisokoTech.Domain.Common.Money
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ExpensesClaim)]
+@inject BusinessQueries Queries
+@inject PeopleQueries People
+@inject ExpenseService Service
+@inject IClock Clock
+@inject NavigationManager Navigation
+
+<PageTitle>My expenses — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>My expenses</h1>
+    @if (Owed is { } owed)
+    {
+        <p class="subtle">@owed approved and not yet paid.</p>
+    }
+</div>
+
+@if (Me is null)
+{
+    <p class="refusal" role="alert">
+        Your sign-in is not linked to a staff record, so there is nobody to
+        reimburse. An administrator can link them on the People page.
+    </p>
+}
+else
+{
+    <EditForm Model="Input" method="post" OnValidSubmit="Claim" FormName="claim" class="panel stack">
+        <DataAnnotationsValidator />
+
+        <h2>Claim something back</h2>
+
+        @if (Refusal is not null)
+        {
+            <p class="refusal" role="alert">@Refusal</p>
+        }
+
+        <label>
+            <span>What it was</span>
+            <InputText @bind-Value="Input.Description" />
+            <ValidationMessage For="() => Input.Description" />
+        </label>
+
+        <div class="fields">
+            <label>
+                <span>Amount (KES)</span>
+                @*
+                    Shillings and cents typed as shillings, converted to minor
+                    units on the way in. Money is stored as an integer count of
+                    the smallest unit; a decimal that survives all the way to the
+                    database is a rounding error waiting for a month end.
+                *@
+                <InputNumber @bind-Value="Input.Amount" step="0.01" min="0.01" />
+                <ValidationMessage For="() => Input.Amount" />
+            </label>
+
+            <label>
+                <span>Spent on</span>
+                <InputDate @bind-Value="Input.SpentOn" max="@Clock.Today.ToString("yyyy-MM-dd")" />
+            </label>
+
+            <label>
+                <span>Category</span>
+                <InputSelect @bind-Value="Input.Category">
+                    @foreach (var category in Enum.GetValues<ExpenseCategory>())
+                    {
+                        <option value="@category">@Words.For(category)</option>
+                    }
+                </InputSelect>
+            </label>
+        </div>
+
+        <button type="submit">Claim it</button>
+    </EditForm>
+
+    @if (Mine.Count == 0)
+    {
+        <p class="empty">You have not claimed anything.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">What you have claimed</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Spent on</th>
+                    <th scope="col">What</th>
+                    <th scope="col">Category</th>
+                    <th scope="col">Amount</th>
+                    <th scope="col">State</th>
+                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var claim in Mine)
+                {
+                    <tr>
+                        <td>@claim.SpentOn.ToString("d MMM yyyy")</td>
+                        <td>@claim.Description</td>
+                        <td>@Words.For(claim.Category)</td>
+                        <td class="number">@claim.Amount</td>
+                        <td>
+                            <span class="pill @PillFor(claim.Status)">@Words.For(claim.Status)</span>
+                            @if (claim.Outcome is { } outcome)
+                            {
+                                <span class="subtle">@outcome</span>
+                            }
+                        </td>
+                        <td class="actions">
+                            @if (claim.Status == ClaimStatus.Draft)
+                            {
+                                <form method="post" @formname="@($"submit-{claim.Id}")"
+                                      @onsubmit="() => Submit(claim.Id)">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="button button--quiet">Send for approval</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private ClaimInput _input = new();
+
+    [SupplyParameterFromForm]
+    private ClaimInput Input
+    {
+        get => _input;
+        set => _input = value ?? new ClaimInput();
+    }
+
+    private Guid? Me { get; set; }
+
+    private List<ClaimRow> Mine { get; set; } = [];
+
+    private Cash? Owed { get; set; }
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Input.SpentOn == default)
+        {
+            Input.SpentOn = Clock.Today;
+        }
+
+        var state = await AuthenticationState;
+
+        if (Guid.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            Me = await People.EmployeeForAccountAsync(account);
+        }
+
+        if (Me is not null)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        Mine = await Queries.ClaimsAsync(employeeId: Me);
+
+        var approved = Mine.Where(claim => claim.Status == ClaimStatus.Approved).ToList();
+
+        Owed = approved.Count == 0
+            ? null
+            : approved.Aggregate(
+                Cash.Zero(approved[0].Amount.Currency),
+                (running, claim) => running + claim.Amount);
+    }
+
+    private async Task Claim()
+    {
+        await TryAsync(async () =>
+        {
+            var claim = await Service.ClaimAsync(
+                Me!.Value,
+                Cash.Of((long)Math.Round(Input.Amount * 100m, MidpointRounding.ToEven), "KES"),
+                Input.Category,
+                Input.SpentOn,
+                Input.Description);
+
+            await Service.SubmitAsync(claim.Id);
+        });
+    }
+
+    private Task Submit(Guid claimId) => TryAsync(() => Service.SubmitAsync(claimId));
+
+    private async Task TryAsync(Func<Task> act)
+    {
+        Refusal = null;
+
+        try
+        {
+            await act();
+            Navigation.NavigateTo("/expenses", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException
+                or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string? PillFor(ClaimStatus status) => status switch
+    {
+        ClaimStatus.Paid => "pill--done",
+        ClaimStatus.Refused or ClaimStatus.Withdrawn => "pill--quiet",
+        _ => null,
+    };
+
+    private sealed class ClaimInput
+    {
+        [Required(ErrorMessage = "Say what the money went on.")]
+        [StringLength(300)]
+        public string Description { get; set; } = string.Empty;
+
+        [Range(0.01, 10_000_000, ErrorMessage = "An amount above zero.")]
+        public decimal Amount { get; set; }
+
+        public DateOnly SpentOn { get; set; }
+
+        public ExpenseCategory Category { get; set; } = ExpenseCategory.Travel;
+    }
+}

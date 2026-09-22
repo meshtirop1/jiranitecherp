@@ -1,0 +1,290 @@
+@page "/time"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Abstractions
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Domain.Work
+@using JiranisokoTech.Infrastructure.Business
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Infrastructure.Work
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.TimeLogOwn)]
+@inject BusinessQueries Queries
+@inject WorkQueries Work
+@inject PeopleQueries People
+@inject TimesheetService Timesheets
+@inject IClock Clock
+@inject NavigationManager Navigation
+
+@*
+    One page, because logging an hour and checking what you logged are the same
+    act. A separate "add" screen would mean leaving the only view that tells you
+    whether you have already put the morning down.
+*@
+
+<PageTitle>My time — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>My time</h1>
+    <p class="subtle">@Total(Week.Values.Sum()) this week.</p>
+</div>
+
+@if (Me is null)
+{
+    <p class="refusal" role="alert">
+        Your sign-in is not linked to a staff record, so there is nobody to log
+        hours against. An administrator can link them on the People page.
+    </p>
+}
+else
+{
+    <section class="week" aria-label="This week">
+        @foreach (var day in Days)
+        {
+            var minutes = Week.GetValueOrDefault(day);
+
+            <div class="week__day @(day == Today ? "week__day--today" : null)">
+                <span class="week__name">@day.ToString("ddd")</span>
+                <span class="week__date">@day.Day</span>
+                <span class="week__hours">@(minutes == 0 ? "—" : Total(minutes))</span>
+            </div>
+        }
+    </section>
+
+    <EditForm Model="Input" method="post" OnValidSubmit="Log" FormName="log" class="panel stack">
+        <DataAnnotationsValidator />
+
+        <h2>Log a day</h2>
+
+        @if (Refusal is not null)
+        {
+            <p class="refusal" role="alert">@Refusal</p>
+        }
+
+        <div class="fields">
+            <label>
+                <span>Day</span>
+                <InputDate @bind-Value="Input.On" max="@Today.ToString("yyyy-MM-dd")" />
+                <ValidationMessage For="() => Input.On" />
+            </label>
+
+            <label>
+                <span>Hours</span>
+                @*
+                    Hours and minutes as two fields rather than a decimal. "1.5"
+                    and "1:30" are the same to a person and different to a parser,
+                    and the one that gets typed is whichever the last system
+                    wanted.
+                *@
+                <InputNumber @bind-Value="Input.Hours" min="0" max="16" />
+                <ValidationMessage For="() => Input.Hours" />
+            </label>
+
+            <label>
+                <span>Minutes</span>
+                <InputNumber @bind-Value="Input.Minutes" min="0" max="59" step="5" />
+                <ValidationMessage For="() => Input.Minutes" />
+            </label>
+        </div>
+
+        <label>
+            <span>Project</span>
+            <InputSelect @bind-Value="Input.ProjectId">
+                <option value="">Nothing in particular</option>
+                @foreach (var project in Projects)
+                {
+                    <option value="@project.Id">@project.Name</option>
+                }
+            </InputSelect>
+        </label>
+
+        <label>
+            <span>What you did</span>
+            <InputText @bind-Value="Input.Note" />
+        </label>
+
+        <label class="check">
+            <InputCheckbox @bind-Value="Input.IsBillable" />
+            <span>Billable to the client</span>
+        </label>
+
+        <button type="submit">Log it</button>
+    </EditForm>
+
+    @if (Entries.Count == 0)
+    {
+        <p class="empty">Nothing logged yet.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Hours you have logged</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Day</th>
+                    <th scope="col">Hours</th>
+                    <th scope="col">Against</th>
+                    <th scope="col">What</th>
+                    <th scope="col">State</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in Entries)
+                {
+                    <tr>
+                        <td>@entry.On.ToString("ddd d MMM")</td>
+                        <td class="number">@entry.Duration</td>
+                        <td>@(entry.ProjectName ?? "—")</td>
+                        <td>@(entry.Note ?? "—")</td>
+                        <td>
+                            @if (entry.IsInvoiced)
+                            {
+                                <span class="pill pill--done">Invoiced</span>
+                            }
+                            else if (entry.IsApproved)
+                            {
+                                <span class="pill pill--done">Approved@(entry.ApprovedBy is { } by ? $" by {by}" : null)</span>
+                            }
+                            else
+                            {
+                                <span class="pill">Waiting</span>
+                            }
+
+                            @if (!entry.IsBillable)
+                            {
+                                <span class="pill pill--quiet">Not billable</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private LogInput _input = new();
+
+    [SupplyParameterFromForm]
+    private LogInput Input
+    {
+        get => _input;
+        set => _input = value ?? new LogInput();
+    }
+
+    private Guid? Me { get; set; }
+
+    private DateOnly Today { get; set; }
+
+    private List<DateOnly> Days { get; set; } = [];
+
+    private Dictionary<DateOnly, int> Week { get; set; } = [];
+
+    private List<TimeRow> Entries { get; set; } = [];
+
+    private List<ProjectRow> Projects { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Today = Clock.Today;
+
+        // Monday first. DayOfWeek counts from Sunday, which is not how a working
+        // week is read anywhere this firm operates.
+        var monday = Today.AddDays(-(((int)Today.DayOfWeek + 6) % 7));
+        Days = Enumerable.Range(0, 7).Select(monday.AddDays).ToList();
+
+        // Only when the form has not come back from a post. Assigning
+        // unconditionally would throw away the day somebody picked every time
+        // their entry was refused.
+        if (Input.On == default)
+        {
+            Input.On = Today;
+        }
+
+        var state = await AuthenticationState;
+
+        if (Guid.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            Me = await People.EmployeeForAccountAsync(account);
+        }
+
+        if (Me is null)
+        {
+            return;
+        }
+
+        Projects = await Work.ProjectsAsync(runningOnly: true);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Week = await Queries.DailyMinutesAsync(Me!.Value, Days[0], Days[^1]);
+        Entries = await Queries.TimeAsync(employeeId: Me);
+    }
+
+    private async Task Log()
+    {
+        Refusal = null;
+
+        try
+        {
+            await Timesheets.LogAsync(
+                Me!.Value,
+                Input.On,
+                (Input.Hours * 60) + Input.Minutes,
+                projectId: Input.ProjectId,
+                note: Input.Note,
+                billable: Input.IsBillable);
+
+            // Straight back to the same page so the week strip and the list both
+            // reflect what was just logged. A redirect rather than a re-render,
+            // because a refresh should not re-post the form.
+            Navigation.NavigateTo("/time", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException
+                or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string Total(int minutes) => minutes % 60 == 0
+        ? $"{minutes / 60}h"
+        : minutes < 60 ? $"{minutes}m" : $"{minutes / 60}h {minutes % 60}m";
+
+    private sealed class LogInput
+    {
+        public DateOnly On { get; set; }
+
+        [Range(0, 16, ErrorMessage = "Between 0 and 16 hours.")]
+        public int Hours { get; set; }
+
+        [Range(0, 59, ErrorMessage = "Between 0 and 59 minutes.")]
+        public int Minutes { get; set; }
+
+        public Guid? ProjectId { get; set; }
+
+        [StringLength(500)]
+        public string? Note { get; set; }
+
+        /// <summary>
+        /// Billable unless said otherwise.
+        /// </summary>
+        /// <remarks>
+        /// Defaulted on because the alternative loses the firm money silently:
+        /// an hour that should have been billed and was not never appears on any
+        /// screen, whereas an hour wrongly marked billable is caught by the
+        /// person approving the timesheet.
+        /// </remarks>
+        public bool IsBillable { get; set; } = true;
+    }
+}

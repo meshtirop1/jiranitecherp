@@ -1,0 +1,475 @@
+@page "/invoices/{Id:guid}"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Abstractions
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Domain.Money
+@using JiranisokoTech.Infrastructure.Business
+@using JiranisokoTech.Infrastructure.Work
+@using Microsoft.AspNetCore.Authorization
+@using Cash = JiranisokoTech.Domain.Common.Money
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.InvoicesView)]
+@inject BusinessQueries Queries
+@inject WorkQueries Work
+@inject InvoiceService Service
+@inject IClock Clock
+@inject NavigationManager Navigation
+
+@*
+    The whole invoice on one page, including the two acts that change it. An
+    invoice is a document: reading it and adding a line to it are the same task,
+    and sending somebody to a separate screen to add a line means they cannot see
+    the total they are adding to.
+*@
+
+@if (Invoice is null)
+{
+    <PageTitle>Invoice not found — Jiranisoko Delivery</PageTitle>
+
+    <h1>No such invoice</h1>
+    <p>Nothing here has that number. <a href="/invoices">Back to invoices</a>.</p>
+}
+else
+{
+    <PageTitle>@Invoice.Number — Jiranisoko Delivery</PageTitle>
+
+    <nav class="crumbs"><a href="/invoices">Invoices</a></nav>
+
+    <div class="page-head">
+        <h1>@Invoice.Number</h1>
+        <span class="pill @PillFor(Invoice.Status)">@Words.For(Invoice.Status)</span>
+        @if (Invoice.DueOn < Clock.Today
+            && Invoice.Status is InvoiceStatus.Sent or InvoiceStatus.PartlyPaid)
+        {
+            <span class="pill pill--danger">Overdue</span>
+        }
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    <dl class="facts">
+        <dt>Client</dt>
+        <dd>@ClientName</dd>
+
+        <dt>Issued</dt>
+        <dd>@Invoice.IssuedOn.ToString("d MMMM yyyy")</dd>
+
+        <dt>Due</dt>
+        <dd>@Invoice.DueOn.ToString("d MMMM yyyy")</dd>
+
+        <dt>Total</dt>
+        <dd class="number">@Invoice.Total</dd>
+
+        <dt>Paid</dt>
+        <dd class="number">@Invoice.Paid</dd>
+
+        <dt>Outstanding</dt>
+        <dd class="number">@Invoice.Outstanding</dd>
+
+        @if (Invoice.Status == InvoiceStatus.Void && Invoice.Outcome is { } outcome)
+        {
+            <dt>Voided because</dt>
+            <dd>@outcome</dd>
+        }
+    </dl>
+
+    <section>
+        <h2>Lines</h2>
+
+        @if (Invoice.Lines.Count == 0)
+        {
+            <p class="empty">Nothing on it yet. An invoice with no lines cannot be sent.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Invoice lines</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">What</th>
+                        <th scope="col">Quantity</th>
+                        <th scope="col">Each</th>
+                        <th scope="col">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in Invoice.Lines)
+                    {
+                        <tr>
+                            <td>@line.Description</td>
+                            <td class="number">@line.Quantity</td>
+                            <td class="number">@line.UnitPrice</td>
+                            <td class="number">@line.Amount</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <th scope="row" colspan="3">Total</th>
+                        <td class="number">@Invoice.Total</td>
+                    </tr>
+                </tfoot>
+            </table>
+        }
+
+        @if (Invoice.Status == InvoiceStatus.Draft)
+        {
+            <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.InvoicesManage)"
+                           Context="allowed">
+                <EditForm Model="Line" method="post" OnValidSubmit="AddLine" FormName="line"
+                          class="panel stack">
+                    <DataAnnotationsValidator />
+
+                    <h3>Add a line</h3>
+
+                    <label>
+                        <span>What</span>
+                        <InputText @bind-Value="Line.Description" />
+                        <ValidationMessage For="() => Line.Description" />
+                    </label>
+
+                    <div class="fields">
+                        <label>
+                            <span>Quantity</span>
+                            <InputNumber @bind-Value="Line.Quantity" min="1" />
+                            <ValidationMessage For="() => Line.Quantity" />
+                        </label>
+
+                        <label>
+                            <span>Each (@Invoice.Currency)</span>
+                            <InputNumber @bind-Value="Line.UnitPrice" step="0.01" min="0.01" />
+                            <ValidationMessage For="() => Line.UnitPrice" />
+                        </label>
+                    </div>
+
+                    <button type="submit">Add it</button>
+                </EditForm>
+
+                @if (Projects.Count > 0)
+                {
+                    @*
+                        Billing approved hours is the reason the timesheet exists.
+                        Done here rather than on the timesheet screen because this
+                        is where somebody decides what a client is charged.
+                    *@
+                    <EditForm Model="Billing" method="post" OnValidSubmit="BillTime"
+                              FormName="bill" class="panel stack">
+                        <DataAnnotationsValidator />
+
+                        <h3>Bill approved hours</h3>
+
+                        <div class="fields">
+                            <label>
+                                <span>Project</span>
+                                <InputSelect @bind-Value="Billing.ProjectId">
+                                    @foreach (var project in Projects)
+                                    {
+                                        <option value="@project.Id">@project.Name</option>
+                                    }
+                                </InputSelect>
+                            </label>
+
+                            <label>
+                                <span>Per hour (@Invoice.Currency)</span>
+                                <InputNumber @bind-Value="Billing.HourlyRate" step="0.01" min="0.01" />
+                                <ValidationMessage For="() => Billing.HourlyRate" />
+                            </label>
+                        </div>
+
+                        <p class="subtle">
+                            Approved, billable hours not already on an invoice. Each
+                            one is marked as billed, so it cannot reach a second
+                            invoice.
+                        </p>
+
+                        <button type="submit">Bill them</button>
+                    </EditForm>
+                }
+            </AuthorizeView>
+        }
+    </section>
+
+    @if (Invoice.Payments.Count > 0)
+    {
+        <section>
+            <h2>Payments</h2>
+
+            <table class="grid">
+                <caption class="visually-hidden">Payments received</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">When</th>
+                        <th scope="col">Amount</th>
+                        <th scope="col">Reference</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var payment in Invoice.Payments)
+                    {
+                        <tr>
+                            <td>@payment.On.ToString("d MMM yyyy")</td>
+                            @*
+                                A payment carries the count of minor units and
+                                not a currency. An invoice is in one currency and
+                                a payment against it is in that one by
+                                definition; storing it twice would let the two
+                                disagree.
+                            *@
+                            <td class="number">@Cash.Of(payment.MinorUnits, Invoice.Currency)</td>
+                            <td>@(payment.Reference ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+
+    <section class="actions actions--page">
+        @if (Invoice.Status == InvoiceStatus.Draft)
+        {
+            <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.InvoicesSend)"
+                           Context="allowed">
+                <Authorized>
+                    <form method="post" @formname="send" @onsubmit="Send">
+                        <AntiforgeryToken />
+                        <button type="submit">Send it</button>
+                    </form>
+                    <p class="subtle">
+                        Sending freezes the invoice. After this it can be paid or
+                        voided, not edited.
+                    </p>
+                </Authorized>
+                <NotAuthorized>
+                    <p class="subtle">
+                        This is ready to send. Drafting and sending are separate
+                        permissions, so somebody else does that.
+                    </p>
+                </NotAuthorized>
+            </AuthorizeView>
+        }
+
+        @if (Invoice.Status is InvoiceStatus.Sent or InvoiceStatus.PartlyPaid)
+        {
+            <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.InvoicesManage)"
+                           Context="allowed">
+                <EditForm Model="Received" method="post" OnValidSubmit="RecordPayment"
+                          FormName="payment" class="panel stack">
+                    <DataAnnotationsValidator />
+
+                    <h3>Record a payment</h3>
+
+                    <div class="fields">
+                        <label>
+                            <span>Amount (@Invoice.Currency)</span>
+                            <InputNumber @bind-Value="Received.Amount" step="0.01" min="0.01" />
+                            <ValidationMessage For="() => Received.Amount" />
+                        </label>
+
+                        <label>
+                            <span>When</span>
+                            <InputDate @bind-Value="Received.On" />
+                        </label>
+
+                        <label>
+                            <span>Reference</span>
+                            <InputText @bind-Value="Received.Reference" placeholder="M-Pesa code, or the bank's" />
+                        </label>
+                    </div>
+
+                    <button type="submit">Record it</button>
+                </EditForm>
+
+                @if (Invoice.Payments.Count == 0)
+                {
+                    @*
+                        Only while nothing has been paid. Once money has arrived
+                        with this number on it the aggregate refuses to void the
+                        invoice — it would leave a payment belonging to nothing —
+                        so offering the button would offer a certain refusal.
+                    *@
+                    <EditForm Model="Voiding" method="post" OnValidSubmit="Void" FormName="void"
+                              class="inline">
+                        <DataAnnotationsValidator />
+                        <InputText @bind-Value="Voiding.Reason" placeholder="Why it is being voided" />
+                        <button type="submit" class="danger">Void it</button>
+                        <ValidationMessage For="() => Voiding.Reason" />
+                    </EditForm>
+                }
+                else
+                {
+                    <p class="subtle">
+                        Money has been received against this invoice, so it cannot
+                        be voided. A credit note is the way back from here.
+                    </p>
+                }
+            </AuthorizeView>
+        }
+    </section>
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private LineInput _line = new();
+
+    [SupplyParameterFromForm(FormName = "line")]
+    private LineInput Line
+    {
+        get => _line;
+        set => _line = value ?? new LineInput();
+    }
+
+    private BillingInput _billing = new();
+
+    [SupplyParameterFromForm(FormName = "bill")]
+    private BillingInput Billing
+    {
+        get => _billing;
+        set => _billing = value ?? new BillingInput();
+    }
+
+    private PaymentInput _received = new();
+
+    [SupplyParameterFromForm(FormName = "payment")]
+    private PaymentInput Received
+    {
+        get => _received;
+        set => _received = value ?? new PaymentInput();
+    }
+
+    private VoidInput _voiding = new();
+
+    [SupplyParameterFromForm(FormName = "void")]
+    private VoidInput Voiding
+    {
+        get => _voiding;
+        set => _voiding = value ?? new VoidInput();
+    }
+
+    private Invoice? Invoice { get; set; }
+
+    private string ClientName { get; set; } = string.Empty;
+
+    private List<ProjectRow> Projects { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    private string? Note { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Received.On == default)
+        {
+            Received.On = Clock.Today;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Invoice = await Queries.InvoiceAsync(Id);
+
+        if (Invoice is null)
+        {
+            return;
+        }
+
+        ClientName = (await Queries.ClientAsync(Invoice.ClientId))?.Name ?? "A client since removed";
+        Projects = await Work.ProjectsAsync(runningOnly: true);
+    }
+
+    private Task AddLine() => TryAsync(() => Service.AddLineAsync(
+        Id, Line.Description, Line.Quantity, Minor(Line.UnitPrice)));
+
+    private Task BillTime() => TryAsync(() => Service.BillTimeAsync(
+        Id, Billing.ProjectId!.Value, Minor(Billing.HourlyRate)));
+
+    private Task Send() => TryAsync(() => Service.SendAsync(Id));
+
+    private Task RecordPayment() => TryAsync(() => Service.RecordPaymentAsync(
+        Id, Minor(Received.Amount), Received.On, Received.Reference));
+
+    private Task Void() => TryAsync(() => Service.VoidAsync(Id, Voiding.Reason));
+
+    /// <summary>
+    /// Shillings as typed, into the integer count of cents Money holds.
+    /// </summary>
+    /// <remarks>
+    /// Banker's rounding on the half, which is what accounting expects. The
+    /// currency comes from the invoice rather than the form: an invoice is in one
+    /// currency and the aggregate refuses a figure in any other, so offering a
+    /// choice here would only produce a refusal.
+    /// </remarks>
+    private Cash Minor(decimal shillings) => Cash.Of(
+        (long)Math.Round(shillings * 100m, MidpointRounding.ToEven), Invoice!.Currency);
+
+    private async Task TryAsync(Func<Task> act)
+    {
+        Refusal = null;
+
+        try
+        {
+            await act();
+            Navigation.NavigateTo($"/invoices/{Id}", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException
+                or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string? PillFor(InvoiceStatus status) => status switch
+    {
+        InvoiceStatus.Paid => "pill--done",
+        InvoiceStatus.Void => "pill--quiet",
+        _ => null,
+    };
+
+    private sealed class LineInput
+    {
+        [Required(ErrorMessage = "Say what is being charged for.")]
+        [StringLength(300)]
+        public string Description { get; set; } = string.Empty;
+
+        [Range(1, 100_000, ErrorMessage = "At least one of something.")]
+        public int Quantity { get; set; } = 1;
+
+        [Range(0.01, 100_000_000, ErrorMessage = "A price above zero.")]
+        public decimal UnitPrice { get; set; }
+    }
+
+    private sealed class BillingInput
+    {
+        [Required(ErrorMessage = "Which project's hours.")]
+        public Guid? ProjectId { get; set; }
+
+        [Range(0.01, 1_000_000, ErrorMessage = "An hourly rate above zero.")]
+        public decimal HourlyRate { get; set; }
+    }
+
+    private sealed class PaymentInput
+    {
+        [Range(0.01, 100_000_000, ErrorMessage = "An amount above zero.")]
+        public decimal Amount { get; set; }
+
+        public DateOnly On { get; set; }
+
+        [StringLength(100)]
+        public string? Reference { get; set; }
+    }
+
+    private sealed class VoidInput
+    {
+        [Required(ErrorMessage = "Say why. A voided invoice with no reason is an unexplained gap in the numbering.")]
+        [StringLength(500)]
+        public string Reason { get; set; } = string.Empty;
+    }
+}

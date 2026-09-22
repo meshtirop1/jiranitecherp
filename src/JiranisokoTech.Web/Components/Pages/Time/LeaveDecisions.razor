@@ -1,0 +1,188 @@
+@page "/leave/decisions"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Domain.Time
+@using JiranisokoTech.Infrastructure.Business
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.LeaveApprove)]
+@inject BusinessQueries Queries
+@inject PeopleQueries People
+@inject LeaveService Service
+@inject NavigationManager Navigation
+
+<PageTitle>Leave — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Leave</h1>
+    <p class="subtle">@Waiting.Count waiting.</p>
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<section>
+    <h2>Waiting for a decision</h2>
+
+    @if (Waiting.Count == 0)
+    {
+        <p class="empty">Nothing waiting.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Leave waiting for a decision</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Who</th>
+                    <th scope="col">Kind</th>
+                    <th scope="col">When</th>
+                    <th scope="col">Days</th>
+                    <th scope="col">Why</th>
+                    <th scope="col"><span class="visually-hidden">Decision</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var leave in Waiting)
+                {
+                    <tr>
+                        <td>@leave.EmployeeName</td>
+                        <td>@Words.For(leave.Kind)</td>
+                        <td>@Span(leave)</td>
+                        <td class="number">@leave.Days</td>
+                        <td>@leave.Reason</td>
+                        <td class="actions">
+                            @if (leave.EmployeeId == Me)
+                            {
+                                <span class="subtle">Yours</span>
+                            }
+                            else
+                            {
+                                <form method="post" @formname="@($"approve-{leave.Id}")"
+                                      @onsubmit="() => Decide(leave.Id, true)">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="button button--quiet">Approve</button>
+                                </form>
+
+                                <EditForm Model="Refusing" method="post"
+                                          FormName="@($"refuse-{leave.Id}")"
+                                          OnValidSubmit="() => Decide(leave.Id, false)"
+                                          class="inline">
+                                    <DataAnnotationsValidator />
+                                    <InputText @bind-Value="Refusing.Reason" placeholder="Why not" />
+                                    <button type="submit" class="danger">Refuse</button>
+                                    <ValidationMessage For="() => Refusing.Reason" />
+                                </EditForm>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+<section>
+    @*
+        Who is away next, and it is the reason this page is not only a queue. A
+        decision about one person's fortnight off is a decision about who is in
+        the office that fortnight, and that is not visible from a request on its
+        own.
+    *@
+    <h2>Approved and coming up</h2>
+
+    @if (Upcoming.Count == 0)
+    {
+        <p class="empty">Nobody is booked off.</p>
+    }
+    else
+    {
+        <ul class="plain">
+            @foreach (var leave in Upcoming)
+            {
+                <li>
+                    <strong>@leave.EmployeeName</strong> — @Words.For(leave.Kind),
+                    @Span(leave) (@leave.Days @(leave.Days == 1 ? "day" : "days"))
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private RefusalInput _refusing = new();
+
+    [SupplyParameterFromForm]
+    private RefusalInput Refusing
+    {
+        get => _refusing;
+        set => _refusing = value ?? new RefusalInput();
+    }
+
+    private Guid? Me { get; set; }
+
+    private List<LeaveRow> Waiting { get; set; } = [];
+
+    private List<LeaveRow> Upcoming { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationState;
+
+        if (Guid.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            Me = await People.EmployeeForAccountAsync(account);
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var waiting = await Queries.LeaveAsync(status: LeaveStatus.AwaitingApproval);
+        Waiting = waiting.OrderBy(leave => leave.From).ToList();
+
+        var approved = await Queries.LeaveAsync(status: LeaveStatus.Approved);
+        Upcoming = approved.OrderBy(leave => leave.From).ToList();
+    }
+
+    private Task Decide(Guid leaveId, bool approved) =>
+        TryAsync(() => Service.RecordDecisionAsync(leaveId, approved, Refusing.Reason));
+
+    private async Task TryAsync(Func<Task> act)
+    {
+        Refusal = null;
+
+        try
+        {
+            await act();
+            Navigation.NavigateTo("/leave/decisions", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string Span(LeaveRow leave) => leave.From == leave.To
+        ? leave.From.ToString("ddd d MMM yyyy")
+        : $"{leave.From:ddd d MMM} to {leave.To:ddd d MMM yyyy}";
+
+    private sealed class RefusalInput
+    {
+        [Required(ErrorMessage = "Say why. The person who asked has to know.")]
+        [StringLength(500)]
+        public string Reason { get; set; } = string.Empty;
+    }
+}

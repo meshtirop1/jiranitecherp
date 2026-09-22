@@ -1,0 +1,221 @@
+using System.Net;
+using JiranisokoTech.Application.Authorization;
+using JiranisokoTech.Infrastructure.Identity;
+using JiranisokoTech.Tests.Identity;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.DependencyInjection;
+using Roles = JiranisokoTech.Application.Authorization.Roles;
+
+namespace JiranisokoTech.Tests.Web;
+
+/// <summary>
+/// The six business screens, and the question these tests exist to answer: can
+/// the people who need a page actually open it?
+/// </summary>
+/// <remarks>
+/// Twice now this system has shipped a permission somebody held with no way to
+/// reach the page it applied to — the work board an engineer could not open, the
+/// scorecard an interviewer could not see the interview for. Both built, both
+/// passed their unit tests, both useless. A page reached over HTTP as a
+/// particular role is the only test that catches it.
+/// </remarks>
+public class BusinessPageTests(ApplicationFactory factory) : IClassFixture<ApplicationFactory>
+{
+    private const string Password = "a-long-enough-password";
+
+    [Theory]
+    [InlineData("/time")]
+    [InlineData("/time/approvals")]
+    [InlineData("/leave")]
+    [InlineData("/leave/decisions")]
+    [InlineData("/expenses")]
+    [InlineData("/expenses/claims")]
+    [InlineData("/clients")]
+    [InlineData("/invoices")]
+    public async Task A_stranger_is_sent_to_sign_in(string path)
+    {
+        using var browser = factory.CreateBrowser();
+
+        var response = await browser.GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.Found, response.StatusCode);
+        Assert.Contains("/sign-in", response.Headers.Location!.OriginalString);
+    }
+
+    /// <summary>
+    /// A developer — the role holding least — can open all three self-service
+    /// pages.
+    /// </summary>
+    /// <remarks>
+    /// The most important test in this file. Logging hours, asking for leave and
+    /// claiming expenses are what the majority of the staff use this system for,
+    /// and a developer is the role most likely to have been forgotten when a
+    /// permission was added to the wrong list.
+    /// </remarks>
+    [Theory]
+    [InlineData("/time", "My time")]
+    [InlineData("/leave", "My leave")]
+    [InlineData("/expenses", "My expenses")]
+    public async Task A_developer_can_open_their_own_pages(string path, string heading)
+    {
+        var browser = await SignedInAsync("dev@jiranisokotech.co.ke", Roles.Developer);
+
+        var response = await browser.GetAsync(path);
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains(heading, html);
+    }
+
+    /// <summary>
+    /// And is refused the pages about everybody else.
+    /// </summary>
+    [Theory]
+    [InlineData("/time/approvals")]
+    [InlineData("/leave/decisions")]
+    [InlineData("/expenses/claims")]
+    [InlineData("/clients")]
+    [InlineData("/invoices")]
+    public async Task A_developer_cannot_open_the_pages_about_everybody_else(string path)
+    {
+        var browser = await SignedInAsync("dev2@jiranisokotech.co.ke", Roles.Developer);
+
+        var response = await browser.GetAsync(path);
+
+        // Signed in but not permitted: sent to the refusal page rather than back
+        // to sign-in, because signing in again would not help.
+        Assert.Equal(HttpStatusCode.Found, response.StatusCode);
+        Assert.Contains("/denied", response.Headers.Location!.OriginalString);
+    }
+
+    [Theory]
+    [InlineData("/time/approvals", "Timesheets")]
+    [InlineData("/leave/decisions", "Leave")]
+    [InlineData("/expenses/claims", "Expense claims")]
+    public async Task A_department_head_can_open_what_they_sign_off(string path, string heading)
+    {
+        var browser = await SignedInAsync("head@jiranisokotech.co.ke", Roles.DepartmentHead);
+
+        var response = await browser.GetAsync(path);
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains(heading, html);
+    }
+
+    [Theory]
+    [InlineData("/clients", "Clients")]
+    [InlineData("/invoices", "Invoices")]
+    public async Task A_delivery_manager_can_open_the_money_pages(string path, string heading)
+    {
+        var browser = await SignedInAsync("pm@jiranisokotech.co.ke", Roles.ProjectManager);
+
+        var response = await browser.GetAsync(path);
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains(heading, html);
+    }
+
+    /// <summary>
+    /// A head can see the debt and not settle it.
+    /// </summary>
+    /// <remarks>
+    /// Approving a claim and paying it are separate permissions, and this checks
+    /// that the separation reaches the screen rather than stopping at the role
+    /// matrix. The page says who does pay them, because a control that is simply
+    /// absent reads as a system that cannot do the thing.
+    /// </remarks>
+    [Fact]
+    public async Task A_head_is_not_offered_the_button_that_pays_a_claim()
+    {
+        var browser = await SignedInAsync("head2@jiranisokotech.co.ke", Roles.DepartmentHead);
+
+        var response = await browser.GetAsync("/expenses/claims");
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.DoesNotContain("Mark paid", html);
+    }
+
+    /// <summary>
+    /// Every link in the navigation opens for the role it is shown to.
+    /// </summary>
+    /// <remarks>
+    /// The navigation puts each link behind the permission its page checks, which
+    /// makes the two claims easy to keep in step and easy to get wrong in the
+    /// same edit. This walks what a developer is actually shown and opens each
+    /// one.
+    /// </remarks>
+    [Fact]
+    public async Task Every_link_a_developer_is_shown_opens()
+    {
+        var browser = await SignedInAsync("dev3@jiranisokotech.co.ke", Roles.Developer);
+
+        var response = await browser.GetAsync("/");
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // Attribute order and the "active" class are the renderer's business, so
+        // this matches a class containing nav-link rather than equalling it, and
+        // takes the href from whichever side of it the attribute lands.
+        var found = System.Text.RegularExpressions.Regex
+            .Matches(
+                html,
+                """<a[^>]*?(?:class="[^"]*nav-link[^"]*"[^>]*?href="([^"]*)"|href="([^"]*)"[^>]*?class="[^"]*nav-link[^"]*")""")
+            .Select(match => match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Value)
+            .ToList();
+
+        // Home is href="" and is not a separate page to open.
+        var links = found.Where(href => href.Length > 0).Distinct().ToList();
+
+        Assert.True(
+            links.Count > 0,
+            $"The navigation rendered no links at all. Anchors found: [{string.Join("|", found)}]");
+
+        foreach (var link in links)
+        {
+            var page = await browser.GetAsync("/" + link.TrimStart('/'));
+
+            Assert.True(
+                page.StatusCode == HttpStatusCode.OK,
+                $"The navigation offered /{link} but opening it gave {(int)page.StatusCode}.");
+        }
+    }
+
+    private async Task<HttpClient> SignedInAsync(string email, string role)
+    {
+        using (var scope = factory.Services.CreateScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+
+            if (await users.FindByEmailAsync(email) is null)
+            {
+                await factory.CreateAccountAsync(email, Password, email);
+            }
+
+            var stored = await users.FindByEmailAsync(email);
+
+            if (!await users.IsInRoleAsync(stored!, role))
+            {
+                await users.AddToRoleAsync(stored!, role);
+            }
+        }
+
+        var browser = factory.CreateBrowser();
+
+        var form = await browser.GetAsync("/sign-in");
+        var fields = HtmlForm.Fill(
+            await form.Content.ReadAsStringAsync(),
+            new Dictionary<string, string>
+            {
+                ["Input.Email"] = email,
+                ["Input.Password"] = Password,
+            });
+
+        await browser.PostAsync("/sign-in", new FormUrlEncodedContent(fields));
+
+        return browser;
+    }
+}

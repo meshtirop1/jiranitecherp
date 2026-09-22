@@ -54,6 +54,68 @@
                     </div>
                 </AuthorizeView>
 
+                @*
+                    The three self-service links, first among the business ones
+                    because they are what most people here open this system for.
+                    Each sits behind the permission every working role holds, so
+                    they are effectively always shown — which is the point.
+                *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.TimeLogOwn)"
+                               Context="myTime">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="time">My time</NavLink>
+                    </div>
+                </AuthorizeView>
+
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.LeaveAsk)"
+                               Context="myLeave">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="leave">My leave</NavLink>
+                    </div>
+                </AuthorizeView>
+
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ExpensesClaim)"
+                               Context="myExpenses">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="expenses">My expenses</NavLink>
+                    </div>
+                </AuthorizeView>
+
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.TimeApprove)"
+                               Context="timesheets">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="time/approvals">Timesheets</NavLink>
+                    </div>
+                </AuthorizeView>
+
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.LeaveApprove)"
+                               Context="leaveDecisions">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="leave/decisions">Leave</NavLink>
+                    </div>
+                </AuthorizeView>
+
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ExpensesViewAll)"
+                               Context="claims">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="expenses/claims">Expense claims</NavLink>
+                    </div>
+                </AuthorizeView>
+
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ClientsView)"
+                               Context="clients">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="clients">Clients</NavLink>
+                    </div>
+                </AuthorizeView>
+
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.InvoicesView)"
+                               Context="invoices">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="invoices">Invoices</NavLink>
+                    </div>
+                </AuthorizeView>
+
                 @* Each link is behind the permission the page itself checks,
                    so nobody is shown a door that will refuse them. *@
                 <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.EmployeesView)"

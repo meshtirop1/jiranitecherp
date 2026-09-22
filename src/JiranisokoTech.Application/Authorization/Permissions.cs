@@ -44,7 +44,67 @@ public static class Permissions
     public const string ApplicationsManage = "applications.manage";
     public const string ApplicationsHire = "applications.hire";
     public const string InterviewsSchedule = "interviews.schedule";
+
+    /// <summary>
+    /// See an interview and what the panel said.
+    /// </summary>
+    /// <remarks>
+    /// Separate from scheduling one, and the reason is the same one that forced
+    /// tasks.view_own into being: an interviewer who may submit a scorecard but
+    /// cannot open the interview has been given a permission they cannot use.
+    /// </remarks>
+    public const string InterviewsView = "interviews.view";
     public const string ScorecardsSubmit = "scorecards.submit";
+
+    // --- clients -----------------------------------------------------------
+    public const string ClientsView = "clients.view";
+    public const string ClientsManage = "clients.manage";
+
+    // --- time and leave ----------------------------------------------------
+
+    /// <summary>
+    /// Log and correct one's own hours.
+    /// </summary>
+    /// <remarks>
+    /// Held by every role that a person actually is, rather than granted. The
+    /// same goes for asking for leave and claiming an expense: these are things
+    /// an employee does about themselves, and a role that cannot do them
+    /// describes somebody who does not work here.
+    /// </remarks>
+    public const string TimeLogOwn = "time.log_own";
+    public const string TimeViewAll = "time.view_all";
+    public const string TimeApprove = "time.approve";
+    public const string LeaveAsk = "leave.ask";
+    public const string LeaveViewAll = "leave.view_all";
+    public const string LeaveApprove = "leave.approve";
+
+    // --- money -------------------------------------------------------------
+    public const string ExpensesClaim = "expenses.claim";
+    public const string ExpensesViewAll = "expenses.view_all";
+    public const string ExpensesApprove = "expenses.approve";
+
+    /// <summary>
+    /// Mark a claim paid.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not the same permission as approving one. Approval says the
+    /// claim is legitimate; payment says money has left the account. One person
+    /// holding both can approve their own reimbursement and record it as paid,
+    /// which is the oldest expense fraud there is.
+    /// </remarks>
+    public const string ExpensesPay = "expenses.pay";
+    public const string InvoicesView = "invoices.view";
+    public const string InvoicesManage = "invoices.manage";
+
+    /// <summary>
+    /// Send an invoice to a client, which freezes it.
+    /// </summary>
+    /// <remarks>
+    /// Separate from drafting one for the same reason payment is separate from
+    /// approval: drafting is bookkeeping, sending is a demand for money going
+    /// out of the firm under its name.
+    /// </remarks>
+    public const string InvoicesSend = "invoices.send";
 
     // --- delivery ----------------------------------------------------------
     public const string ProjectsViewAll = "projects.view_all";
@@ -82,7 +142,16 @@ public static class Permissions
         EmployeesView, EmployeesManage, DepartmentsView, DepartmentsManage,
 
         RequisitionsCreate, RequisitionsView, PostingsManage, CandidatesView,
-        ApplicationsManage, ApplicationsHire, InterviewsSchedule, ScorecardsSubmit,
+        ApplicationsManage, ApplicationsHire, InterviewsSchedule, InterviewsView,
+        ScorecardsSubmit,
+
+        ClientsView, ClientsManage,
+
+        TimeLogOwn, TimeViewAll, TimeApprove,
+        LeaveAsk, LeaveViewAll, LeaveApprove,
+
+        ExpensesClaim, ExpensesViewAll, ExpensesApprove, ExpensesPay,
+        InvoicesView, InvoicesManage, InvoicesSend,
 
         ProjectsViewAll, ProjectsViewMember, ProjectsManage,
         TasksViewAll, TasksViewOwn, TasksCreate, TasksAssign, TasksUpdateOwn, TasksSubmit,
@@ -139,6 +208,18 @@ public static class Roles
                 Permissions.RequisitionsView, Permissions.PostingsManage,
                 Permissions.CandidatesView, Permissions.ApplicationsManage,
                 Permissions.ApplicationsHire, Permissions.InterviewsSchedule,
+                Permissions.InterviewsView,
+
+                // Everybody who works here logs hours, asks for leave and
+                // claims money back. These are not privileges; a role without
+                // them describes somebody who does not work here.
+                Permissions.TimeLogOwn, Permissions.LeaveAsk, Permissions.ExpensesClaim,
+
+                // Leave is HR's book to keep, and hours are how absence is
+                // reconciled against it.
+                Permissions.LeaveViewAll, Permissions.LeaveApprove,
+                Permissions.TimeViewAll,
+
                 Permissions.AuditView, Permissions.ReportsView,
             ],
 
@@ -156,7 +237,20 @@ public static class Roles
                 Permissions.ApprovalsDecide,
                 Permissions.RequisitionsCreate, Permissions.RequisitionsView,
                 Permissions.CandidatesView, Permissions.InterviewsSchedule,
-                Permissions.ScorecardsSubmit,
+                Permissions.InterviewsView, Permissions.ScorecardsSubmit,
+
+                // Everybody who works here logs hours, asks for leave and
+                // claims money back. These are not privileges; a role without
+                // them describes somebody who does not work here.
+                Permissions.TimeLogOwn, Permissions.LeaveAsk, Permissions.ExpensesClaim,
+
+                // A head signs off their team's hours, absence and spending.
+                // Not payment: that is the office's job, and a head who could
+                // both approve and pay could reimburse themselves.
+                Permissions.TimeViewAll, Permissions.TimeApprove,
+                Permissions.LeaveViewAll, Permissions.LeaveApprove,
+                Permissions.ExpensesViewAll, Permissions.ExpensesApprove,
+
                 Permissions.AuditView, Permissions.ReportsView,
             ],
 
@@ -167,6 +261,18 @@ public static class Roles
                 Permissions.TasksViewAll, Permissions.TasksViewOwn, Permissions.TasksCreate,
                 Permissions.TasksAssign, Permissions.TasksReview,
                 Permissions.ApprovalsDecide,
+
+                // Everybody who works here logs hours, asks for leave and
+                // claims money back. These are not privileges; a role without
+                // them describes somebody who does not work here.
+                Permissions.TimeLogOwn, Permissions.LeaveAsk, Permissions.ExpensesClaim,
+
+                // A delivery manager bills the work, so they hold the clients
+                // and the draft invoices. Sending one is somebody else's.
+                Permissions.ClientsView, Permissions.ClientsManage,
+                Permissions.TimeViewAll, Permissions.TimeApprove,
+                Permissions.InvoicesView, Permissions.InvoicesManage,
+
                 Permissions.AuditView, Permissions.ReportsView,
             ],
 
@@ -179,11 +285,20 @@ public static class Roles
                 // main users, and a board they cannot look at is not one.
                 Permissions.TasksViewOwn,
                 Permissions.TasksUpdateOwn, Permissions.TasksSubmit,
+
+                // Everybody who works here logs hours, asks for leave and
+                // claims money back. These are not privileges; a role without
+                // them describes somebody who does not work here.
+                Permissions.TimeLogOwn, Permissions.LeaveAsk, Permissions.ExpensesClaim,
             ],
 
             [Interviewer] =
             [
-                Permissions.CandidatesView, Permissions.ScorecardsSubmit,
+                // Worn alongside another role, so no self-service here — the
+                // other role carries it. But scoring an interview you cannot
+                // open is the tasks.view_own mistake all over again.
+                Permissions.CandidatesView, Permissions.InterviewsView,
+                Permissions.ScorecardsSubmit,
             ],
         };
 

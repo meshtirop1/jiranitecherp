@@ -26,7 +26,13 @@ public sealed class TimeEntry : Entity, IAuditable
     }
 
     private TimeEntry(
-        Guid employeeId, DateOnly on, int minutes, Guid? workItemId, Guid? projectId, string? note)
+        Guid employeeId,
+        DateOnly on,
+        int minutes,
+        Guid? workItemId,
+        Guid? projectId,
+        string? note,
+        bool billable)
     {
         EmployeeId = employeeId;
         On = on;
@@ -34,6 +40,7 @@ public sealed class TimeEntry : Entity, IAuditable
         WorkItemId = workItemId;
         ProjectId = projectId;
         Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+        IsBillable = billable;
 
         Raise(new TimeLogged(Id, employeeId, on, Minutes, projectId));
     }
@@ -44,8 +51,9 @@ public sealed class TimeEntry : Entity, IAuditable
         int minutes,
         Guid? workItemId = null,
         Guid? projectId = null,
-        string? note = null) =>
-        new(employeeId, on, minutes, workItemId, projectId, note);
+        string? note = null,
+        bool billable = true) =>
+        new(employeeId, on, minutes, workItemId, projectId, note, billable);
 
     public Guid EmployeeId { get; private init; }
 

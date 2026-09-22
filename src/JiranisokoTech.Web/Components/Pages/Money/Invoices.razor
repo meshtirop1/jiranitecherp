@@ -1,0 +1,179 @@
+@page "/invoices"
+@using JiranisokoTech.Application.Abstractions
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Domain.Clients
+@using JiranisokoTech.Domain.Money
+@using JiranisokoTech.Infrastructure.Business
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.InvoicesView)]
+@inject BusinessQueries Queries
+@inject InvoiceService Service
+@inject IClock Clock
+@inject NavigationManager Navigation
+
+<PageTitle>Invoices — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Invoices</h1>
+    @if (Outstanding is { } owed)
+    {
+        <p class="subtle">@owed outstanding@(Overdue > 0 ? $", {Overdue} overdue" : null).</p>
+    }
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.InvoicesManage)" Context="allowed">
+    @if (Billable.Count == 0)
+    {
+        <p class="subtle">No current client to invoice.</p>
+    }
+    else
+    {
+        @*
+            An EditForm, not a plain form with an @onchange on the select. Under
+            static rendering only the submit handler runs, so a change handler
+            would never fire and the chosen client would never reach the server.
+        *@
+        <EditForm Model="Input" method="post" OnValidSubmit="Draft" FormName="draft"
+                  class="panel inline">
+            <label>
+                <span>Draft an invoice for</span>
+                <InputSelect @bind-Value="Input.ClientId">
+                    @foreach (var client in Billable)
+                    {
+                        <option value="@client.Id">@client.Name</option>
+                    }
+                </InputSelect>
+            </label>
+
+            <button type="submit">Draft it</button>
+        </EditForm>
+    }
+</AuthorizeView>
+
+@if (All.Count == 0)
+{
+    <p class="empty">No invoices yet.</p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Invoices</caption>
+        <thead>
+            <tr>
+                <th scope="col">Number</th>
+                <th scope="col">Client</th>
+                <th scope="col">Issued</th>
+                <th scope="col">Due</th>
+                <th scope="col">Total</th>
+                <th scope="col">Outstanding</th>
+                <th scope="col">State</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var invoice in All)
+            {
+                <tr>
+                    <td><a href="/invoices/@invoice.Id"><code>@invoice.Number</code></a></td>
+                    <td>@invoice.ClientName</td>
+                    <td>@invoice.IssuedOn.ToString("d MMM yyyy")</td>
+                    <td>@invoice.DueOn.ToString("d MMM yyyy")</td>
+                    <td class="number">@invoice.Total</td>
+                    <td class="number">@invoice.Outstanding</td>
+                    <td>
+                        <span class="pill @PillFor(invoice.Status)">@Words.For(invoice.Status)</span>
+                        @if (invoice.IsOverdueOn(Today))
+                        {
+                            <span class="pill pill--danger">Overdue</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private DraftInput _input = new();
+
+    [SupplyParameterFromForm]
+    private DraftInput Input
+    {
+        get => _input;
+        set => _input = value ?? new DraftInput();
+    }
+
+    private DateOnly Today { get; set; }
+
+    private List<InvoiceRow> All { get; set; } = [];
+
+    private List<ClientRow> Billable { get; set; } = [];
+
+    private Domain.Common.Money? Outstanding { get; set; }
+
+    private int Overdue { get; set; }
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Today = Clock.Today;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        All = await Queries.InvoicesAsync();
+        Billable = await Queries.ClientsAsync(status: ClientStatus.Active);
+
+        // The default for the dropdown, so submitting it without touching it
+        // drafts for the first client rather than for nobody.
+        Input.ClientId ??= Billable.FirstOrDefault()?.Id;
+
+        var unsettled = All
+            .Where(invoice => invoice.Status is InvoiceStatus.Sent or InvoiceStatus.PartlyPaid)
+            .ToList();
+
+        Outstanding = unsettled.Count == 0
+            ? null
+            : unsettled.Aggregate(
+                Domain.Common.Money.Zero(unsettled[0].Outstanding.Currency),
+                (running, invoice) => running + invoice.Outstanding);
+
+        Overdue = unsettled.Count(invoice => invoice.IsOverdueOn(Today));
+    }
+
+    private async Task Draft()
+    {
+        Refusal = null;
+
+        try
+        {
+            var invoice = await Service.DraftAsync(Input.ClientId!.Value);
+            Navigation.NavigateTo($"/invoices/{invoice.Id}", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string? PillFor(InvoiceStatus status) => status switch
+    {
+        InvoiceStatus.Paid => "pill--done",
+        InvoiceStatus.Void => "pill--quiet",
+        _ => null,
+    };
+
+    private sealed class DraftInput
+    {
+        public Guid? ClientId { get; set; }
+    }
+}

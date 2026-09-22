@@ -46,9 +46,10 @@ nothing claims to work that does not.
 | ✅ | Leave — overlaps refused, weekends not counted, only sickness datable in the past |
 | ✅ | Expenses — claims, approval, payment as a separate state from approval |
 | ✅ | Invoices — numbered in sequence, totals summed not stored, approved hours billed once |
-| ✅ | 399 tests |
+| ✅ | Screens for all six — logging a day, asking for leave, claiming, approving, billing |
+| ✅ | Every class a page uses is a class some stylesheet defines, and a test says so |
+| ✅ | 427 tests |
 | ☐ | Requiring two-step sign-in of anybody. It is offered, not compulsory |
-| ☐ | Screens for the six modules above. The rules and the tests are there; the pages are not |
 | ☐ | Reporting, documents, a public API, integrations, settings, search |
 
 **Docker has not been run against this.** It is not installed on the machine
@@ -62,7 +63,7 @@ but unverified. First person with a Docker host should expect to fix something.
 Needs the .NET 10 SDK. Nothing else — the test suite does not require Docker.
 
 ```bash
-dotnet test                              # 399 tests
+dotnet test                              # 427 tests
 dotnet run --project src/JiranisokoTech.Web
 ```
 
