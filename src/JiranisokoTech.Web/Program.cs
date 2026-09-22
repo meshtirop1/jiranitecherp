@@ -117,7 +117,9 @@ if (app.Environment.IsDevelopment())
 using (var scope = app.Services.CreateScope())
 {
     var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await database.Database.EnsureCreatedAsync();
+
+    await database.PrepareAsync(
+        scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Database"));
 
     await scope.ServiceProvider.GetRequiredService<RoleSeeder>().SeedAsync();
 

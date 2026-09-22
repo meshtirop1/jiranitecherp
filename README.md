@@ -27,8 +27,8 @@ nothing claims to work that does not.
 | ✅ | Outbox dispatcher — at-least-once, backoff, claims, dead-lettering, sweeping |
 | ✅ | `/health` and `/ready`, answering different questions |
 | ✅ | Dockerfile and Compose — Postgres, Redis, non-root, tests run in the build |
-| ✅ | 97 tests |
-| ☐ | Migrations. The schema is still created with `EnsureCreated` |
+| ✅ | Migrations, applied on start, with a test that catches a model change without one |
+| ✅ | 105 tests |
 | ☐ | Two-factor, and the screens for administering accounts |
 | ☐ | Every business module. See the checklist |
 
@@ -43,7 +43,7 @@ but unverified. First person with a Docker host should expect to fix something.
 Needs the .NET 10 SDK. Nothing else — the test suite does not require Docker.
 
 ```bash
-dotnet test                              # 97 tests
+dotnet test                              # 105 tests
 dotnet run --project src/JiranisokoTech.Web
 ```
 
