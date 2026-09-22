@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using JiranisokoTech.Application.Abstractions;
+using JiranisokoTech.Domain.Approvals;
 using JiranisokoTech.Domain.Audit;
 using JiranisokoTech.Domain.Common;
 using JiranisokoTech.Domain.People;
@@ -32,6 +33,8 @@ public class AppDbContext(
     public DbSet<Department> Departments => Set<Department>();
 
     public DbSet<Employee> Employees => Set<Employee>();
+
+    public DbSet<ApprovalRequest> Approvals => Set<ApprovalRequest>();
 
     public DbSet<Project> Projects => Set<Project>();
 

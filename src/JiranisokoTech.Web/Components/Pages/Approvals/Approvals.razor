@@ -1,0 +1,239 @@
+@page "/approvals"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Approvals
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Domain.Approvals
+@using JiranisokoTech.Infrastructure.Approvals
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Web.Authorization
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ApprovalsDecide)]
+@inject ApprovalQueries Queries
+@inject ApprovalService Service
+@inject PeopleQueries People
+
+<PageTitle>Approvals — Jiranisoko Delivery</PageTitle>
+
+<h1>Approvals</h1>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Done is not null)
+{
+    <p class="done" role="status">@Done</p>
+}
+
+@if (Me is null)
+{
+    <p class="subtle">
+        Your sign-in is not linked to a staff record, so nothing can be waiting on
+        you. An administrator can link them on the People page.
+    </p>
+}
+else if (Mine.Count == 0)
+{
+    <p class="empty">Nothing is waiting on you.</p>
+}
+else
+{
+    <h2>Waiting on you</h2>
+
+    @foreach (var request in Mine)
+    {
+        <article class="approval">
+            <h3 class="approval__what">@Describe(request)</h3>
+
+            <p class="approval__meta">
+                Asked by @request.RequestedByName, @request.RequestedAt.ToString("d MMM yyyy")
+                — step @Position(request) of @request.Steps.Count
+            </p>
+
+            @* The steps already taken, so somebody deciding can see what the
+               people before them said rather than deciding blind. *@
+            <ol class="approval__steps">
+                @foreach (var step in request.Steps)
+                {
+                    <li class="approval__step approval__step--@step.Status.ToString().ToLowerInvariant()">
+                        @step.DeciderName — @Say(step.Status)
+                        @if (step.Note is { } note)
+                        {
+                            <span class="approval__note">@note</span>
+                        }
+                    </li>
+                }
+            </ol>
+
+            <div class="actions">
+                <form method="post" @formname="@($"approve-{request.Id}")"
+                      @onsubmit="() => Approve(request.Id)">
+                    <AntiforgeryToken />
+                    <button type="submit">Approve</button>
+                </form>
+
+                @*
+                    A refusal has to carry a reason, so it is a field and a
+                    button rather than a button on its own. The person who asked
+                    has to know what to change.
+                *@
+                <EditForm Model="Refusing" method="post" FormName="@($"refuse-{request.Id}")"
+                          OnValidSubmit="() => Refuse(request.Id)" class="inline">
+                    <DataAnnotationsValidator />
+                    <InputText @bind-Value="Refusing.Reason" placeholder="Why not" />
+                    <button type="submit" class="danger">Refuse</button>
+                    <ValidationMessage For="() => Refusing.Reason" />
+                </EditForm>
+            </div>
+        </article>
+    }
+}
+
+<AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.AuditView)" Context="overseer">
+    <h2>Everything still open</h2>
+
+    @if (Open.Count == 0)
+    {
+        <p class="empty">Nothing is waiting anywhere.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <thead>
+                <tr>
+                    <th scope="col">What</th>
+                    <th scope="col">Asked by</th>
+                    <th scope="col">Waiting on</th>
+                    <th scope="col">Since</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var request in Open)
+                {
+                    <tr>
+                        <td>@Describe(request)</td>
+                        <td>@request.RequestedByName</td>
+                        @*
+                            Named, and with how long it has sat there. A chain
+                            waiting three weeks on one person is the thing
+                            somebody opens this page to find.
+                        *@
+                        <td>@(request.WaitingOnName ?? "Nobody")</td>
+                        <td>@Age(request.RequestedAt)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</AuthorizeView>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private RefusalInput _refusing = new();
+
+    [SupplyParameterFromForm]
+    private RefusalInput Refusing
+    {
+        get => _refusing;
+        set => _refusing = value ?? new RefusalInput();
+    }
+
+    private Guid? Me { get; set; }
+
+    private List<ApprovalRow> Mine { get; set; } = [];
+
+    private List<ApprovalRow> Open { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        if (Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            Me = await People.EmployeeForAccountAsync(account);
+        }
+
+        Mine = Me is { } me ? await Queries.WaitingOnAsync(me) : [];
+        Open = user.HasPermission(Permissions.AuditView) ? await Queries.PendingAsync() : [];
+    }
+
+    private Task Approve(Guid id) =>
+        Run(() => Service.ApproveAsync(id, Me!.Value), "Approved.");
+
+    private Task Refuse(Guid id) =>
+        Run(() => Service.RefuseAsync(id, Me!.Value, Refusing.Reason), "Refused.");
+
+    private async Task Run(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+            Refusing = new RefusalInput();
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    /// <summary>
+    /// What is being decided, in words.
+    /// </summary>
+    /// <remarks>
+    /// The subject is a type name and an identifier, because approvals are kept
+    /// away from the things they are about. Until each module supplies its own
+    /// description this reads the action, which is at least a sentence rather
+    /// than a pair of identifiers.
+    /// </remarks>
+    private static string Describe(ApprovalRow request) =>
+        request.Action.Replace('.', ' ').Replace('_', ' ') + " — " + request.SubjectType;
+
+    private static int Position(ApprovalRow request) =>
+        request.Steps.FirstOrDefault(step => step.Status == StepStatus.Waiting)?.Order ?? 0;
+
+    private static string Say(StepStatus status) => status switch
+    {
+        StepStatus.Waiting => "waiting",
+        StepStatus.Approved => "approved",
+        StepStatus.Refused => "refused",
+        _ => "passed over",
+    };
+
+    /// <summary>How long it has been sitting there, which is the point of the column.</summary>
+    private static string Age(DateTimeOffset since)
+    {
+        var days = (int)(DateTimeOffset.UtcNow - since).TotalDays;
+
+        return days switch
+        {
+            0 => "today",
+            1 => "a day",
+            < 14 => $"{days} days",
+            _ => $"{days / 7} weeks",
+        };
+    }
+
+    private sealed class RefusalInput
+    {
+        [Required(ErrorMessage = "Say why. The person who asked has to know what to change.")]
+        [StringLength(2000)]
+        public string Reason { get; set; } = string.Empty;
+    }
+}

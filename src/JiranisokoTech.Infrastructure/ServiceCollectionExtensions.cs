@@ -2,9 +2,11 @@ using System.Reflection;
 using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Domain.People;
 using JiranisokoTech.Domain.Common;
+using JiranisokoTech.Application.Approvals;
 using JiranisokoTech.Application.People;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Infrastructure.Messaging;
+using JiranisokoTech.Infrastructure.Approvals;
 using JiranisokoTech.Infrastructure.People;
 using JiranisokoTech.Infrastructure.Work;
 using JiranisokoTech.Infrastructure.Persistence;
@@ -83,6 +85,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPeopleRepository, PeopleRepository>();
         services.AddScoped<PeopleService>();
         services.AddScoped<PeopleQueries>();
+
+        services.AddScoped<IApprovalRepository, ApprovalRepository>();
+        services.AddScoped<ApprovalService>();
+        services.AddScoped<ApprovalQueries>();
 
         services.AddScoped<IWorkRepository, WorkRepository>();
         services.AddScoped<WorkService>();
