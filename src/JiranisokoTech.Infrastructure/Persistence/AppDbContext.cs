@@ -3,6 +3,7 @@ using System.Text.Json;
 using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Domain.Approvals;
 using JiranisokoTech.Domain.Clients;
+using JiranisokoTech.Domain.Documents;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Time;
 using JiranisokoTech.Domain.Audit;
@@ -70,6 +71,8 @@ public class AppDbContext(
     /// The firm's own details. One row, and the key is a constant.
     /// </summary>
     public DbSet<FirmSettings> Settings => Set<FirmSettings>();
+
+    public DbSet<Attachment> Attachments => Set<Attachment>();
 
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 

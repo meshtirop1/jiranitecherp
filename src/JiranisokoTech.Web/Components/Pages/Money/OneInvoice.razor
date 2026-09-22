@@ -3,9 +3,13 @@
 @using JiranisokoTech.Application.Abstractions
 @using JiranisokoTech.Application.Authorization
 @using JiranisokoTech.Application.Business
+@using JiranisokoTech.Application.Documents
+@using JiranisokoTech.Domain.Documents
 @using JiranisokoTech.Application.Settings
 @using JiranisokoTech.Domain.Money
 @using JiranisokoTech.Infrastructure.Business
+@using System.Security.Claims
+@using JiranisokoTech.Infrastructure.People
 @using JiranisokoTech.Infrastructure.Work
 @using Microsoft.AspNetCore.Authorization
 @using Cash = JiranisokoTech.Domain.Common.Money
@@ -14,6 +18,8 @@
 @inject WorkQueries Work
 @inject InvoiceService Service
 @inject SettingsService Firm
+@inject DocumentService Files
+@inject PeopleQueries People
 @inject IClock Clock
 @inject NavigationManager Navigation
 
@@ -258,6 +264,53 @@ else
         </section>
     }
 
+    @*
+        Purchase orders, signed delivery notes, whatever the client sent back.
+        On the invoice rather than in a documents section somewhere else,
+        because the question is always "what came with this invoice" and never
+        "show me all documents".
+    *@
+    <section class="standing">
+        <h2>Attached</h2>
+
+        @if (Attached.Count == 0)
+        {
+            <p class="empty">Nothing attached.</p>
+        }
+        else
+        {
+            <ul class="plain">
+                @foreach (var file in Attached)
+                {
+                    <li>
+                        <a href="/documents/@file.Id">@file.FileName</a>
+                        <span class="subtle">
+                            @file.Size, @file.UploadedAt.ToString("d MMM yyyy")@(file.Note is { } note ? $" — {note}" : null)
+                        </span>
+                    </li>
+                }
+            </ul>
+        }
+
+        <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.InvoicesManage)"
+                       Context="attaching">
+            @*
+                A plain file input inside a plain multipart form. Blazor's
+                InputFile needs an interactive circuit and this page has none;
+                the file arrives on HttpContext.Request.Form instead.
+            *@
+            <EditForm Model="Attaching" method="post" OnValidSubmit="Attach" FormName="attach"
+                      enctype="multipart/form-data" class="inline">
+                <label>
+                    <span class="visually-hidden">A file</span>
+                    <input type="file" name="document" />
+                </label>
+                <InputText @bind-Value="Attaching.Note" placeholder="What it is" />
+                <button type="submit" class="button button--quiet">Attach</button>
+            </EditForm>
+        </AuthorizeView>
+    </section>
+
     <section class="actions actions--page">
         @if (Invoice.Status == InvoiceStatus.Draft)
         {
@@ -372,6 +425,15 @@ else
         set => _received = value ?? new PaymentInput();
     }
 
+    private AttachInput _attaching = new();
+
+    [SupplyParameterFromForm(FormName = "attach")]
+    private AttachInput Attaching
+    {
+        get => _attaching;
+        set => _attaching = value ?? new AttachInput();
+    }
+
     private VoidInput _voiding = new();
 
     [SupplyParameterFromForm(FormName = "void")]
@@ -381,6 +443,14 @@ else
         set => _voiding = value ?? new VoidInput();
     }
 
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private Guid? Me { get; set; }
+
     private Invoice? Invoice { get; set; }
 
     private string ClientName { get; set; } = string.Empty;
@@ -388,6 +458,8 @@ else
     private JiranisokoTech.Domain.Settings.FirmSettings Us { get; set; } = null!;
 
     private List<ProjectRow> Projects { get; set; } = [];
+
+    private List<Attachment> Attached { get; set; } = [];
 
     private string? Refusal { get; set; }
 
@@ -405,6 +477,14 @@ else
 
     private async Task LoadAsync()
     {
+        // Who is attaching, so the row records a person rather than a null.
+        var state = await AuthenticationState;
+
+        if (Guid.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            Me = await People.EmployeeForAccountAsync(account);
+        }
+
         Us = await Firm.CurrentAsync();
         Invoice = await Queries.InvoiceAsync(Id);
 
@@ -415,6 +495,7 @@ else
 
         ClientName = (await Queries.ClientAsync(Invoice.ClientId))?.Name ?? "A client since removed";
         Projects = await Work.ProjectsAsync(runningOnly: true);
+        Attached = await Files.ForAsync(AttachedTo.Invoice, Id);
     }
 
     private Task AddLine() => TryAsync(() => Service.AddLineAsync(
@@ -429,6 +510,21 @@ else
         Id, Minor(Received.Amount), Received.On, Received.Reference));
 
     private Task Void() => TryAsync(() => Service.VoidAsync(Id, Voiding.Reason));
+
+    private Task Attach() => TryAsync(async () =>
+    {
+        var file = Request?.Request.Form.Files["document"];
+
+        if (file is not { Length: > 0 })
+        {
+            throw new InvalidOperationException("Choose a file first.");
+        }
+
+        await using var contents = file.OpenReadStream();
+
+        await Files.AttachAsync(
+            AttachedTo.Invoice, Id, contents, file.FileName, file.Length, Me, Attaching.Note);
+    });
 
     /// <summary>
     /// Shillings as typed, into the integer count of cents Money holds.
@@ -498,6 +594,12 @@ else
 
         [StringLength(100)]
         public string? Reference { get; set; }
+    }
+
+    private sealed class AttachInput
+    {
+        [StringLength(500)]
+        public string? Note { get; set; }
     }
 
     private sealed class VoidInput

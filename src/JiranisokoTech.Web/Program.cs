@@ -177,6 +177,9 @@ app.MapAuthenticationEndpoints();
 // A CV, to somebody allowed to read it.
 app.MapCvEndpoints();
 
+// And any other attachment, to somebody allowed to read what it is attached to.
+app.MapDocumentEndpoints();
+
 /*
  * Anonymous, because a stylesheet has no account.
  *

@@ -17,6 +17,8 @@ using JiranisokoTech.Infrastructure.Mail;
 using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Infrastructure.People;
 using JiranisokoTech.Application.Settings;
+using JiranisokoTech.Application.Documents;
+using JiranisokoTech.Infrastructure.Documents;
 using JiranisokoTech.Infrastructure.Reporting;
 using JiranisokoTech.Infrastructure.Search;
 using JiranisokoTech.Infrastructure.Settings;
@@ -139,6 +141,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<BusinessQueries>();
         services.AddScoped<ReportingQueries>();
         services.AddScoped<SearchQueries>();
+
+        services.Configure<DocumentStoreOptions>(
+            configuration.GetSection(DocumentStoreOptions.Section));
+        services.AddScoped<IAttachmentRepository, AttachmentRepository>();
+        services.AddSingleton<IDocumentStore, FileDocumentStore>();
+        services.AddScoped<DocumentService>();
 
         services.AddScoped<ISettingsRepository, SettingsRepository>();
         services.AddScoped<SettingsService>();

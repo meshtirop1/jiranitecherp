@@ -72,8 +72,9 @@ RUN apt-get update \
     && apt-get install --no-install-recommends --yes curl \
     && rm -rf /var/lib/apt/lists/*
 
-# The directory the signing key ring is written to, created and handed to the
-# application's user before that user takes over.
+# The directories written to at runtime — the signing key ring, attachments and
+# CVs — created and handed to the application's user before that user takes
+# over.
 #
 # The order matters and is not obvious. A named volume mounted here takes its
 # ownership from whatever the image has at this path, so if the directory does
@@ -83,7 +84,7 @@ RUN apt-get update \
 # token, because the first thing that needs a key is the first form anybody
 # opens. Which is to say: a 500 on the page everyone lands on, from a directory
 # permission.
-RUN mkdir -p /keys && chown app:app /keys
+RUN mkdir -p /keys /documents /cvs && chown app:app /keys /documents /cvs
 
 # Non-root. The base image ships an `app` user for exactly this; a web process
 # running as root inside a container is one container escape away from being

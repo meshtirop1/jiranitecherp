@@ -40,6 +40,11 @@ services:
       # The key ring that signs cookies, on a volume rather than in the
       # container. Without it every deploy signs the whole firm out.
       DataProtection__KeyRingPath: /keys
+      # Attachments and CVs, on volumes for the same reason the keys are: a
+      # deploy replaces the container, and a client's signed contract is not
+      # something to lose on a Tuesday.
+      Documents__Directory: /documents
+      Cvs__Directory: /cvs
       # The networks a proxy may send X-Forwarded-For from, if there is one.
       # Left unset the application reads the address it can see, which behind a
       # proxy is the proxy — see ReverseProxy.cs for why that is not simply
@@ -47,6 +52,8 @@ services:
       Proxy__TrustedNetworks__0: ${PROXY_NETWORK:-}
     volumes:
       - keys:/keys
+      - documents:/documents
+      - cvs:/cvs
     ports:
       # Bound to localhost. The reverse proxy in front of this is what the
       # internet talks to; the application itself is never directly exposed.
@@ -107,3 +114,5 @@ volumes:
   db-data:
   cache-data:
   keys:
+  documents:
+  cvs:
