@@ -20,6 +20,9 @@ builder.Services.AddPersistence(builder.Configuration);
 // here after it commits, which is the only way the two can be made to agree.
 builder.Services.AddMessaging(builder.Configuration);
 
+// The business modules.
+builder.Services.AddModules();
+
 // Accounts and sign-in, then authorization. Registered in that order because
 // the authorization fallback below assumes authentication exists.
 builder.Services.AddApplicationIdentity();

@@ -1,7 +1,9 @@
 using System.Reflection;
 using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Domain.Common;
+using JiranisokoTech.Application.People;
 using JiranisokoTech.Infrastructure.Messaging;
+using JiranisokoTech.Infrastructure.People;
 using JiranisokoTech.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -68,6 +70,16 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<OutboxDispatcher>();
         services.AddHostedService<OutboxProcessor>();
+
+        return services;
+    }
+
+    /// <summary>The business modules, and the storage each one asks for.</summary>
+    public static IServiceCollection AddModules(this IServiceCollection services)
+    {
+        services.AddScoped<IPeopleRepository, PeopleRepository>();
+        services.AddScoped<PeopleService>();
+        services.AddScoped<PeopleQueries>();
 
         return services;
     }

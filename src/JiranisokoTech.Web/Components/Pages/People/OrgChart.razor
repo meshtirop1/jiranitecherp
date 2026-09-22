@@ -1,0 +1,69 @@
+@page "/org-chart"
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.EmployeesView)]
+@inject PeopleQueries People
+
+@*
+    Nested lists rather than boxes and connecting lines.
+
+    A reporting structure is a tree, and a nested list is what a tree is in
+    HTML — so a screen reader reads it as a structure, keyboard focus moves
+    through it, and it survives a phone without anything being redrawn. Boxes
+    joined by SVG look more like a chart and are worse at every one of those.
+*@
+
+<PageTitle>Organisation — Jiranisoko Delivery</PageTitle>
+
+<h1>Organisation</h1>
+
+@if (Roots.Count == 0)
+{
+    <p class="empty">Nobody on the staff list yet.</p>
+}
+else
+{
+    <p class="subtle">
+        Everybody currently here. People who have left are not shown, and anybody
+        whose manager has left appears at the top until they are placed again.
+    </p>
+
+    <ul class="chart">
+        @foreach (var root in Roots)
+        {
+            <li>@Branch(root)</li>
+        }
+    </ul>
+}
+
+@code {
+    private List<ChartNode> Roots { get; set; } = [];
+
+    protected override async Task OnInitializedAsync() => Roots = await People.ChartAsync();
+
+    private RenderFragment Branch(ChartNode node) =>
+        @<div class="chart__node">
+            <a class="chart__name" href="/people/@node.Person.Id">@node.Person.FullName</a>
+
+            @if (node.Person.JobTitle is { } title)
+            {
+                <span class="chart__title">@title</span>
+            }
+
+            @if (node.Person.DepartmentName is { } department)
+            {
+                <span class="chart__department">@department</span>
+            }
+
+            @if (node.Reports.Count > 0)
+            {
+                <ul class="chart">
+                    @foreach (var report in node.Reports)
+                    {
+                        <li>@Branch(report)</li>
+                    }
+                </ul>
+            }
+        </div>;
+}

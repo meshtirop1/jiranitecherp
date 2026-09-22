@@ -227,3 +227,223 @@ h1:focus {
     overflow-wrap: anywhere;
     color: #6b7280;
 }
+
+/* --- Working screens ----------------------------------------------------- */
+
+.page-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.subtle {
+    color: #6b7280;
+}
+
+.empty {
+    padding: 1.5rem;
+    background: #f5f6f8;
+    border-radius: 6px;
+    color: #4b5563;
+}
+
+.count {
+    font-size: 0.85rem;
+    color: #6b7280;
+}
+
+.grid {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+}
+
+.grid th,
+.grid td {
+    text-align: left;
+    padding: 0.5rem 0.75rem 0.5rem 0;
+    border-bottom: 1px solid #e3e5e9;
+    vertical-align: top;
+}
+
+.grid th {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6b7280;
+}
+
+/* A closed department is still listed, because everything that ever named it
+   still names it. It reads as past rather than present. */
+.row--closed td {
+    color: #9ca3af;
+}
+
+.row-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.pill {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    background: #eef1f5;
+    color: #374151;
+}
+
+.pill--active { background: #e6f4ea; color: #1e6b32; }
+.pill--invited { background: #fff4e5; color: #8a5300; }
+.pill--suspended { background: #fdf2f2; color: #8a1b1b; }
+.pill--left { background: #eef1f5; color: #6b7280; }
+
+.filters {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin: 1rem 0 1.5rem;
+}
+
+.filters label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.8rem;
+    color: #4b5563;
+}
+
+.filters input,
+.filters select,
+.stack input,
+.stack select,
+.stack textarea,
+.inline input,
+.inline select {
+    padding: 0.4rem 0.5rem;
+    border: 1px solid #c8ccd4;
+    border-radius: 4px;
+    font-size: 0.95rem;
+}
+
+.filters__clear {
+    font-size: 0.85rem;
+    padding-bottom: 0.5rem;
+}
+
+.stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    max-width: 30rem;
+    margin-bottom: 2rem;
+}
+
+.stack label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.inline {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+}
+
+.actions {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+button,
+.button {
+    padding: 0.4rem 0.9rem;
+    border: 1px solid #1b6ec2;
+    border-radius: 4px;
+    background: #1b6ec2;
+    color: #fff;
+    font-size: 0.9rem;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+}
+
+button:hover,
+.button:hover { background: #1861ac; }
+
+button.danger {
+    background: #b32121;
+    border-color: #b32121;
+}
+
+button.danger:hover { background: #8a1b1b; }
+
+.facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.35rem 1.5rem;
+    margin: 1.5rem 0;
+}
+
+.facts dt { font-weight: 600; color: #4b5563; }
+.facts dd { margin: 0; }
+
+.refusal {
+    padding: 0.6rem 0.75rem;
+    border-left: 3px solid #b32121;
+    background: #fdf2f2;
+    color: #8a1b1b;
+}
+
+.done {
+    padding: 0.6rem 0.75rem;
+    border-left: 3px solid #1e6b32;
+    background: #e6f4ea;
+    color: #1e6b32;
+}
+
+.reports { padding-left: 1.2rem; }
+
+/* The organisation as nested lists: a tree in HTML is a tree, so a screen
+   reader reads the structure and a phone needs nothing redrawn. */
+.chart,
+.chart ul {
+    list-style: none;
+    padding-left: 1.25rem;
+    border-left: 1px solid #e3e5e9;
+    margin: 0.35rem 0;
+}
+
+.chart > li { margin: 0.35rem 0; }
+
+.chart__node { padding: 0.15rem 0; }
+
+.chart__name { font-weight: 600; }
+
+.chart__title,
+.chart__department {
+    font-size: 0.82rem;
+    color: #6b7280;
+    margin-left: 0.5rem;
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}

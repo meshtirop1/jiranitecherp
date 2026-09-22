@@ -1,0 +1,132 @@
+@page "/people"
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Domain.People
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.EmployeesView)]
+@inject PeopleQueries People
+
+@*
+    Static. The filters are a GET form, so every view of this list has an
+    address somebody can bookmark or send to a colleague — which an interactive
+    filter, held in the memory of one circuit, does not.
+*@
+
+<PageTitle>People — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>People</h1>
+
+    <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.EmployeesManage)">
+        <a class="button" href="/people/new">Add someone</a>
+    </AuthorizeView>
+</div>
+
+<form method="get" class="filters">
+    <label>
+        <span>Search</span>
+        <input type="search" name="q" value="@Search" placeholder="Name or job title" />
+    </label>
+
+    <label>
+        <span>Department</span>
+        <select name="department">
+            <option value="">Everyone</option>
+            @foreach (var (id, name) in Departments.OrderBy(entry => entry.Value))
+            {
+                <option value="@id" selected="@(DepartmentId == id)">@name</option>
+            }
+        </select>
+    </label>
+
+    <label>
+        <span>Status</span>
+        <select name="status">
+            <option value="">Any</option>
+            @foreach (var state in Enum.GetValues<EmploymentStatus>())
+            {
+                <option value="@state" selected="@(Status == state)">@state</option>
+            }
+        </select>
+    </label>
+
+    <button type="submit">Filter</button>
+    <a class="filters__clear" href="/people">Clear</a>
+</form>
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">Nobody matches that. @(Total == 0 ? "There is nobody on the staff list yet." : "")</p>
+}
+else
+{
+    <p class="count">@Rows.Count of @Total</p>
+
+    <table class="grid">
+        <thead>
+            <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Job title</th>
+                <th scope="col">Department</th>
+                <th scope="col">Reports to</th>
+                <th scope="col">Status</th>
+                <th scope="col">Account</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var person in Rows)
+            {
+                <tr>
+                    <td><a href="/people/@person.Id">@person.FullName</a></td>
+                    <td>@(person.JobTitle ?? "—")</td>
+                    <td>@(person.DepartmentName ?? "—")</td>
+                    <td>@(person.ReportsToName ?? "—")</td>
+                    <td><span class="pill pill--@person.Status.ToString().ToLowerInvariant()">@Describe(person)</span></td>
+                    @* Named plainly: "no account" is a thing an administrator
+                       has to act on, not a blank cell to wonder about. *@
+                    <td>@(person.HasAccount ? "Yes" : "No account")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "q")]
+    private string? Search { get; set; }
+
+    [SupplyParameterFromQuery(Name = "department")]
+    private Guid? DepartmentId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? StatusName { get; set; }
+
+    private EmploymentStatus? Status =>
+        Enum.TryParse<EmploymentStatus>(StatusName, out var status) ? status : null;
+
+    private List<PersonRow> Rows { get; set; } = [];
+
+    private Dictionary<Guid, string> Departments { get; set; } = [];
+
+    private int Total { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Departments = await People.DepartmentNamesAsync();
+        Rows = await People.RosterAsync(DepartmentId, Status, Search);
+        Total = (await People.RosterAsync()).Count;
+    }
+
+    /// <summary>
+    /// The status, with the fact that makes it actionable.
+    /// </summary>
+    /// <remarks>
+    /// "Invited" on its own tells somebody nothing they can use. "Starts 5 Oct"
+    /// answers the question they actually had.
+    /// </remarks>
+    private static string Describe(PersonRow person) => person.Status switch
+    {
+        EmploymentStatus.Invited => $"Starts {person.StartsOn:d MMM}",
+        _ => person.Status.ToString(),
+    };
+}

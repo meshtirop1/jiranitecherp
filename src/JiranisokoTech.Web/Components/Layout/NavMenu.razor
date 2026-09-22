@@ -1,3 +1,4 @@
+@using JiranisokoTech.Application.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 
 <div class="top-row ps-3 navbar navbar-dark">
@@ -17,6 +18,25 @@
                         <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
                     </NavLink>
                 </div>
+
+                @* Each link is behind the permission the page itself checks,
+                   so nobody is shown a door that will refuse them. *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.EmployeesView)"
+                               Context="people">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="people">People</NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="org-chart">Organisation</NavLink>
+                    </div>
+                </AuthorizeView>
+
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.DepartmentsView)"
+                               Context="departments">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="departments">Departments</NavLink>
+                    </div>
+                </AuthorizeView>
 
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="account">

@@ -1,0 +1,205 @@
+@page "/departments"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.People
+@using JiranisokoTech.Domain.People
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.DepartmentsView)]
+@inject PeopleQueries People
+@inject PeopleService Service
+
+<PageTitle>Departments — Jiranisoko Delivery</PageTitle>
+
+<h1>Departments</h1>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">No departments yet.</p>
+}
+else
+{
+    <table class="grid">
+        <thead>
+            <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Address</th>
+                <th scope="col">Head</th>
+                <th scope="col">People</th>
+                <th scope="col">State</th>
+                <AuthorizeView Policy="@ManagePolicy" Context="manage">
+                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                </AuthorizeView>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var department in Rows)
+            {
+                <tr class="@(department.IsActive ? "" : "row--closed")">
+                    <td>@department.Name</td>
+                    <td><code>@department.Slug</code></td>
+                    @*
+                        A vacancy is shown as a vacancy rather than as a blank.
+                        A post nobody noticed was empty is worse than one that
+                        says so.
+                    *@
+                    <td>@(department.HeadName ?? "Vacant")</td>
+                    <td>@department.Headcount</td>
+                    <td>@(department.IsActive ? "Open" : "Closed")</td>
+
+                    <AuthorizeView Policy="@ManagePolicy" Context="manage">
+                        <td class="row-actions">
+                            @*
+                                The chosen head is read from the posted form
+                                rather than bound. Binding needs a form name
+                                fixed at compile time, and there is one form per
+                                department here — so the value comes back the
+                                plain way, by the name on the element.
+                            *@
+                            <form method="post" @formname="@($"head-{department.Id}")"
+                                  @onsubmit="() => SetHead(department.Id)" class="inline">
+                                <AntiforgeryToken />
+                                <select name="head">
+                                    <option value="">Vacant</option>
+                                    @foreach (var candidate in Candidates)
+                                    {
+                                        <option value="@candidate.Id"
+                                                selected="@(candidate.Id == department.HeadEmployeeId)">
+                                            @candidate.FullName
+                                        </option>
+                                    }
+                                </select>
+                                <button type="submit">Set head</button>
+                            </form>
+
+                            @if (department.IsActive)
+                            {
+                                <form method="post" @formname="@($"close-{department.Id}")"
+                                      @onsubmit="() => Close(department.Id)">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="danger">Close</button>
+                                </form>
+                            }
+                            else
+                            {
+                                <form method="post" @formname="@($"open-{department.Id}")"
+                                      @onsubmit="() => Reopen(department.Id)">
+                                    <AntiforgeryToken />
+                                    <button type="submit">Reopen</button>
+                                </form>
+                            }
+                        </td>
+                    </AuthorizeView>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<AuthorizeView Policy="@ManagePolicy" Context="permitted">
+    <h2>Open a department</h2>
+
+    <EditForm Model="Input" method="post" OnValidSubmit="Open" FormName="open-department" class="stack">
+        <DataAnnotationsValidator />
+
+        <label>
+            <span>Name</span>
+            <InputText @bind-Value="Input.Name" />
+            <ValidationMessage For="() => Input.Name" />
+        </label>
+
+        <label>
+            <span>Description</span>
+            <InputTextArea @bind-Value="Input.Description" rows="2" />
+        </label>
+
+        <button type="submit">Open it</button>
+    </EditForm>
+</AuthorizeView>
+
+@code {
+    private const string ManagePolicy =
+        PermissionClaim.PolicyPrefix + Permissions.DepartmentsManage;
+
+    private OpenInput _input = new();
+
+    [SupplyParameterFromForm]
+    private OpenInput Input
+    {
+        get => _input;
+        set => _input = value ?? new OpenInput();
+    }
+
+    private List<DepartmentRow> Rows { get; set; } = [];
+
+    private List<PersonRow> Candidates { get; set; } = [];
+
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Rows = await People.DepartmentsAsync();
+
+        // Somebody who has left cannot hold a post, so they are not offered.
+        Candidates = (await People.RosterAsync())
+            .Where(person => person.Status != EmploymentStatus.Left)
+            .ToList();
+    }
+
+    /// <summary>The head chosen in the row that was submitted.</summary>
+    private Guid? Chosen =>
+        Request is not null
+        && Guid.TryParse(Request.Request.Form["head"].ToString(), out var id)
+            ? id
+            : null;
+
+    private Task Open() => Run(async () =>
+    {
+        await Service.OpenDepartmentAsync(Input.Name, description: Input.Description);
+        Input = new OpenInput();
+    });
+
+    private Task SetHead(Guid departmentId) =>
+        Run(() => Service.AppointHeadAsync(departmentId, Chosen));
+
+    private Task Close(Guid departmentId) => Run(() => Service.CloseDepartmentAsync(departmentId));
+
+    private Task Reopen(Guid departmentId) => Run(() => Service.ReopenDepartmentAsync(departmentId));
+
+    private async Task Run(Func<Task> work)
+    {
+        Refusal = null;
+
+        try
+        {
+            await work();
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private sealed class OpenInput
+    {
+        [Required(ErrorMessage = "A name is needed.")]
+        [StringLength(120)]
+        public string Name { get; set; } = string.Empty;
+
+        [StringLength(2000)]
+        public string? Description { get; set; }
+    }
+}

@@ -1,0 +1,141 @@
+@page "/people/new"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.People
+@using JiranisokoTech.Domain.People
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.EmployeesManage)]
+@inject PeopleQueries People
+@inject PeopleService Service
+@inject NavigationManager Navigation
+
+<PageTitle>Add someone — Jiranisoko Delivery</PageTitle>
+
+<h1>Add someone</h1>
+
+<p class="subtle">
+    This makes the record. They will show as starting on the date below, and can
+    be recorded as having started when the day comes.
+</p>
+
+<EditForm Model="Input" method="post" OnValidSubmit="Submit" FormName="hire" class="stack">
+    <DataAnnotationsValidator />
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    <label>
+        <span>Full name</span>
+        <InputText @bind-Value="Input.FullName" />
+        <ValidationMessage For="() => Input.FullName" />
+    </label>
+
+    <label>
+        <span>Job title</span>
+        <InputText @bind-Value="Input.JobTitle" />
+    </label>
+
+    <label>
+        <span>Starts on</span>
+        <InputDate @bind-Value="Input.StartsOn" />
+        <ValidationMessage For="() => Input.StartsOn" />
+    </label>
+
+    <label>
+        <span>Department</span>
+        <InputSelect @bind-Value="Input.DepartmentId">
+            <option value="">None yet</option>
+            @foreach (var (id, name) in Departments.OrderBy(entry => entry.Value))
+            {
+                <option value="@id">@name</option>
+            }
+        </InputSelect>
+    </label>
+
+    <label>
+        <span>Reports to</span>
+        <InputSelect @bind-Value="Input.ReportsToId">
+            <option value="">Nobody — top of the firm</option>
+            @foreach (var candidate in Candidates)
+            {
+                <option value="@candidate.Id">@candidate.FullName</option>
+            }
+        </InputSelect>
+    </label>
+
+    <button type="submit">Add them</button>
+</EditForm>
+
+<p><a href="/people">Back to people</a></p>
+
+@code {
+    private HireInput _input = new();
+
+    [SupplyParameterFromForm]
+    private HireInput Input
+    {
+        get => _input;
+        set => _input = value ?? new HireInput();
+    }
+
+    private Dictionary<Guid, string> Departments { get; set; } = [];
+
+    private List<PersonRow> Candidates { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Departments = await People.DepartmentNamesAsync();
+
+        Candidates = (await People.RosterAsync())
+            .Where(person => person.Status != EmploymentStatus.Left)
+            .ToList();
+    }
+
+    private async Task Submit()
+    {
+        Refusal = null;
+
+        try
+        {
+            var employee = await Service.HireAsync(
+                Input.FullName,
+                Input.StartsOn,
+                Input.DepartmentId,
+                Input.JobTitle,
+                Input.ReportsToId);
+
+            Navigation.NavigateTo($"/people/{employee.Id}", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+    }
+
+    private sealed class HireInput
+    {
+        [Required(ErrorMessage = "A name is needed.")]
+        [StringLength(200)]
+        public string FullName { get; set; } = string.Empty;
+
+        [StringLength(150)]
+        public string? JobTitle { get; set; }
+
+        /// <summary>
+        /// Today by default, which is right for somebody already working and
+        /// obvious to change for somebody joining later.
+        /// </summary>
+        [Required]
+        public DateOnly StartsOn { get; set; } = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        public Guid? DepartmentId { get; set; }
+
+        public Guid? ReportsToId { get; set; }
+    }
+}

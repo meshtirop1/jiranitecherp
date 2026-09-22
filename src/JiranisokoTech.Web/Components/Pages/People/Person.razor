@@ -1,0 +1,329 @@
+@page "/people/{id:guid}"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.People
+@using JiranisokoTech.Domain.People
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.EmployeesView)]
+@inject PeopleQueries People
+@inject PeopleService Service
+
+@*
+    Static, like everything that changes something.
+
+    Each form carries its own model, bound by form name. Several forms on one
+    statically rendered page is the case that needs saying out loud: the browser
+    posts one of them, the framework matches the posted handler to the form
+    name, and only that form's model is filled. Without the FormName on each
+    [SupplyParameterFromForm] they would all try to bind the same post.
+*@
+
+<PageTitle>@(Row?.FullName ?? "Person") — Jiranisoko Delivery</PageTitle>
+
+@if (Row is null)
+{
+    <h1>Not on the staff list</h1>
+    <p>There is nobody here with that identifier.</p>
+    <p><a href="/people">Back to people</a></p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Row.FullName</h1>
+        <span class="pill pill--@Row.Status.ToString().ToLowerInvariant()">@Row.Status</span>
+    </div>
+
+    <p class="subtle">@(Row.JobTitle ?? "No job title recorded")</p>
+
+    @if (Refusal is not null)
+    {
+        @* Shown as the service wrote it. Those messages say what to do
+           differently, which a generic apology throws away. *@
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <dl class="facts">
+        <dt>Department</dt>
+        <dd>@(Row.DepartmentName ?? "None")</dd>
+
+        <dt>Reports to</dt>
+        <dd>
+            @if (Row.ReportsToId is { } manager)
+            {
+                <a href="/people/@manager">@Row.ReportsToName</a>
+            }
+            else
+            {
+                <text>Nobody — top of the firm</text>
+            }
+        </dd>
+
+        <dt>@(Row.Status == EmploymentStatus.Invited ? "Starts" : "Started")</dt>
+        <dd>@Row.StartsOn.ToString("d MMMM yyyy")</dd>
+
+        <dt>Capacity</dt>
+        <dd>@Row.WeeklyCapacityHours hours a week</dd>
+
+        <dt>Sign-in</dt>
+        <dd>@(Row.HasAccount ? "Has an account" : "No account yet")</dd>
+    </dl>
+
+    @if (Reports.Count > 0)
+    {
+        <h2>Reports to @Row.FullName</h2>
+        <ul class="reports">
+            @foreach (var report in Reports)
+            {
+                <li>
+                    <a href="/people/@report.Id">@report.FullName</a>
+                    — @(report.JobTitle ?? "no job title")
+                </li>
+            }
+        </ul>
+    }
+
+    <AuthorizeView Policy="@ManagePolicy" Context="permitted">
+        <h2>Employment</h2>
+
+        <div class="actions">
+            @if (Row.Status == EmploymentStatus.Invited)
+            {
+                <form method="post" @formname="start" @onsubmit="Start">
+                    <AntiforgeryToken />
+                    <button type="submit">Record that they have started</button>
+                </form>
+            }
+
+            @if (Row.Status == EmploymentStatus.Active)
+            {
+                <EditForm Model="Suspension" method="post" FormName="suspend"
+                          OnValidSubmit="Suspend" class="inline">
+                    <DataAnnotationsValidator />
+                    <InputText @bind-Value="Suspension.Reason" placeholder="Why" />
+                    <button type="submit">Suspend</button>
+                    <ValidationMessage For="() => Suspension.Reason" />
+                </EditForm>
+            }
+
+            @if (Row.Status is EmploymentStatus.Suspended or EmploymentStatus.Left)
+            {
+                <form method="post" @formname="reinstate" @onsubmit="Reinstate">
+                    <AntiforgeryToken />
+                    <button type="submit">Reinstate</button>
+                </form>
+            }
+        </div>
+
+        @if (Row.Status != EmploymentStatus.Left)
+        {
+            @*
+                Leaving asks for a date and a reason rather than being one
+                button: it is the hardest change to undo, and those two facts
+                are exactly what somebody is asked for months later.
+            *@
+            <h2>Record that they have left</h2>
+
+            <EditForm Model="Leaving" method="post" FormName="leave"
+                      OnValidSubmit="Leave" class="inline">
+                <DataAnnotationsValidator />
+                <InputDate @bind-Value="Leaving.On" />
+                <InputText @bind-Value="Leaving.Reason" placeholder="Reason" />
+                <button type="submit" class="danger">Record it</button>
+                <ValidationMessage For="() => Leaving.Reason" />
+            </EditForm>
+        }
+
+        <h2>Reporting line</h2>
+
+        <EditForm Model="Line" method="post" FormName="line" OnValidSubmit="SetLine" class="inline">
+            <InputSelect @bind-Value="Line.ManagerId">
+                <option value="">Nobody — top of the firm</option>
+                @foreach (var candidate in Candidates)
+                {
+                    <option value="@candidate.Id">@candidate.FullName</option>
+                }
+            </InputSelect>
+            <button type="submit">Set</button>
+        </EditForm>
+
+        <h2>Department</h2>
+
+        <EditForm Model="Placement" method="post" FormName="department"
+                  OnValidSubmit="Move" class="inline">
+            <InputSelect @bind-Value="Placement.DepartmentId">
+                <option value="">None</option>
+                @foreach (var (id, name) in Departments.OrderBy(entry => entry.Value))
+                {
+                    <option value="@id">@name</option>
+                }
+            </InputSelect>
+            <button type="submit">Move</button>
+        </EditForm>
+    </AuthorizeView>
+
+    <p><a href="/people">Back to people</a></p>
+}
+
+@code {
+    private const string ManagePolicy =
+        PermissionClaim.PolicyPrefix + Permissions.EmployeesManage;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    /*
+     * Each of these is backed by a field whose setter refuses null.
+     *
+     * The binder assigns every form model on every post, including the three
+     * that were not the one submitted, and for those it assigns null. A plain
+     * auto-property with an initializer is therefore null exactly when another
+     * form on the page was used, and the page throws while rendering.
+     */
+    private SuspensionInput _suspension = new();
+    private LeavingInput _leaving = new();
+    private LineInput _line = new();
+    private PlacementInput _placement = new();
+
+    [SupplyParameterFromForm(FormName = "suspend")]
+    private SuspensionInput Suspension
+    {
+        get => _suspension;
+        set => _suspension = value ?? new SuspensionInput();
+    }
+
+    [SupplyParameterFromForm(FormName = "leave")]
+    private LeavingInput Leaving
+    {
+        get => _leaving;
+        set => _leaving = value ?? new LeavingInput();
+    }
+
+    [SupplyParameterFromForm(FormName = "line")]
+    private LineInput Line
+    {
+        get => _line;
+        set => _line = value ?? new LineInput();
+    }
+
+    [SupplyParameterFromForm(FormName = "department")]
+    private PlacementInput Placement
+    {
+        get => _placement;
+        set => _placement = value ?? new PlacementInput();
+    }
+
+    private PersonRow? Row { get; set; }
+
+    private List<PersonRow> Reports { get; set; } = [];
+
+    private List<PersonRow> Candidates { get; set; } = [];
+
+    private Dictionary<Guid, string> Departments { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var roster = await People.RosterAsync();
+
+        Row = roster.FirstOrDefault(person => person.Id == Id);
+        Reports = roster.Where(person => person.ReportsToId == Id).ToList();
+        Departments = await People.DepartmentNamesAsync();
+
+        // Somebody who has left cannot be given reports or a post, so they are
+        // not offered. A refusal after the click is a worse way to say so.
+        Candidates = roster
+            .Where(person => person.Id != Id && person.Status != EmploymentStatus.Left)
+            .ToList();
+
+        // Only on the first pass: after a post, these hold what was submitted,
+        // and overwriting them would discard the change being made.
+        if (!_loaded && Row is not null)
+        {
+            Line.ManagerId = Row.ReportsToId;
+            Placement.DepartmentId = Row.DepartmentId;
+            _loaded = true;
+        }
+    }
+
+    private Task Start() => Run(() => Service.StartAsync(Id), "Recorded as started.");
+
+    private Task Suspend() =>
+        Run(() => Service.SuspendAsync(Id, Suspension.Reason), "Suspended.");
+
+    private Task Reinstate() => Run(() => Service.ReinstateAsync(Id), "Back at work.");
+
+    private Task Leave() => Run(
+        async () =>
+        {
+            var moved = await Service.RecordLeavingAsync(Id, Leaving.On, Leaving.Reason);
+
+            Done = moved == 0
+                ? "Recorded as having left."
+                : $"Recorded as having left. {moved} now report to their manager.";
+        },
+        done: null);
+
+    private Task SetLine() =>
+        Run(() => Service.SetReportingLineAsync(Id, Line.ManagerId), "Reporting line changed.");
+
+    private Task Move() =>
+        Run(() => Service.MoveAsync(Id, Placement.DepartmentId), "Moved.");
+
+    private async Task Run(Func<Task> work, string? done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done ??= done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private sealed class SuspensionInput
+    {
+        [Required(ErrorMessage = "Say why. Somebody will ask later.")]
+        [StringLength(500)]
+        public string Reason { get; set; } = string.Empty;
+    }
+
+    private sealed class LeavingInput
+    {
+        public DateOnly On { get; set; } = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        [Required(ErrorMessage = "Say why. Somebody will ask later.")]
+        [StringLength(500)]
+        public string Reason { get; set; } = string.Empty;
+    }
+
+    private sealed class LineInput
+    {
+        public Guid? ManagerId { get; set; }
+    }
+
+    private sealed class PlacementInput
+    {
+        public Guid? DepartmentId { get; set; }
+    }
+}
