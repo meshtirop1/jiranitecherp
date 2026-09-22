@@ -1,0 +1,176 @@
+@page "/work"
+@using JiranisokoTech.Application.Authorization
+@using System.Security.Claims
+@using JiranisokoTech.Domain.Work
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Infrastructure.Work
+@using JiranisokoTech.Web.Authorization
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.TasksViewOwn)]
+@inject WorkQueries Work
+@inject PeopleQueries People
+
+@*
+    The filters are a GET form, so every view of the board has an address. "Show
+    me what Duncan has open" is then a link somebody can send, which is the
+    thing people actually want from a board and never get from one whose state
+    lives in a socket.
+*@
+
+<PageTitle>Work — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Work</h1>
+
+    <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.TasksCreate)">
+        <a class="button" href="/work/new">Raise something</a>
+    </AuthorizeView>
+</div>
+
+<form method="get" class="filters">
+    <label>
+        <span>Project</span>
+        <select name="project">
+            <option value="">All work</option>
+            @foreach (var project in Projects)
+            {
+                <option value="@project.Id" selected="@(ProjectId == project.Id)">@project.Name</option>
+            }
+        </select>
+    </label>
+
+    @if (SeesEverything)
+    {
+    <label>
+        <span>Assigned to</span>
+        <select name="assignee">
+            <option value="">Anybody</option>
+            @foreach (var person in Staff)
+            {
+                <option value="@person.Id" selected="@(AssigneeId == person.Id)">@person.FullName</option>
+            }
+        </select>
+    </label>
+    }
+    else
+    {
+        @* Somebody who may only see their own work is not offered a filter for
+           whose work to see. The narrowing is done below, not here, because a
+           control the page will ignore is worse than no control. *@
+        <p class="subtle">Your work.</p>
+    }
+
+    <button type="submit">Show</button>
+    <a class="filters__clear" href="/work">Clear</a>
+</form>
+
+@if (Columns.Values.All(column => column.Count == 0))
+{
+    <p class="empty">Nothing on the board for that.</p>
+}
+else
+{
+    <div class="board">
+        @foreach (var (status, items) in Columns)
+        {
+            <section class="board__column">
+                <h2 class="board__heading">
+                    @Name(status) <span class="board__count">@items.Count</span>
+                </h2>
+
+                @foreach (var item in items)
+                {
+                    <article class="card card--@item.Priority.ToString().ToLowerInvariant()">
+                        <a class="card__title" href="/work/@item.Id">@item.Title</a>
+
+                        <div class="card__meta">
+                            @if (item.ProjectName is { } project)
+                            {
+                                <span>@project</span>
+                            }
+
+                            <span>@(item.AssigneeName ?? "Nobody")</span>
+
+                            @if (item.Estimate is { } estimate)
+                            {
+                                <span>@estimate</span>
+                            }
+                        </div>
+
+                        @if (item.DueOn is { } due)
+                        {
+                            @* Overdue is said plainly rather than shown only in
+                               a colour, which a colour-blind reader misses and
+                               a printout loses entirely. *@
+                            <span class="card__due @(due < Today ? "card__due--late" : "")">
+                                @(due < Today ? "Overdue — " : "Due ")@due.ToString("d MMM")
+                            </span>
+                        }
+
+                        @if (item.BlockedReason is { } reason)
+                        {
+                            <span class="card__blocked">Blocked: @reason</span>
+                        }
+                    </article>
+                }
+            </section>
+        }
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "project")]
+    private Guid? ProjectId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "assignee")]
+    private Guid? AssigneeId { get; set; }
+
+    private Dictionary<WorkItemStatus, List<WorkItemRow>> Columns { get; set; } = [];
+
+    private List<ProjectRow> Projects { get; set; } = [];
+
+    private List<PersonRow> Staff { get; set; } = [];
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private bool SeesEverything { get; set; }
+
+    private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        SeesEverything = user.HasPermission(Permissions.TasksViewAll);
+
+        /*
+         * Somebody holding only tasks.view_own sees their own work, whatever the
+         * address says. Narrowing here rather than in the query means a filter
+         * in the URL cannot widen it — the address bar is an input like any
+         * other, and this is the one place the difference matters.
+         */
+        if (!SeesEverything)
+        {
+            AssigneeId = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+                ? await People.EmployeeForAccountAsync(account)
+                : Guid.Empty;
+
+            // No staff record means no work of their own, and an empty board
+            // rather than everybody else's.
+            AssigneeId ??= Guid.Empty;
+        }
+
+        Columns = await Work.BoardAsync(ProjectId, AssigneeId);
+        Projects = await Work.ProjectsAsync(runningOnly: true);
+        Staff = await People.RosterAsync(status: Domain.People.EmploymentStatus.Active);
+    }
+
+    private static string Name(WorkItemStatus status) => status switch
+    {
+        WorkItemStatus.Todo => "To do",
+        WorkItemStatus.InProgress => "In progress",
+        WorkItemStatus.InReview => "In review",
+        _ => status.ToString(),
+    };
+}

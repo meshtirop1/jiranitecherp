@@ -88,6 +88,22 @@ public sealed class PeopleQueries(AppDbContext database)
         return roster.FirstOrDefault(person => person.Id == id);
     }
 
+    /// <summary>
+    /// The staff record behind a sign-in, if there is one.
+    /// </summary>
+    /// <remarks>
+    /// An account and an employee are separate on purpose, so this can be null:
+    /// a service account, or somebody whose record has not been linked yet. The
+    /// callers that need a person say so plainly rather than inventing one.
+    /// </remarks>
+    public Task<Guid?> EmployeeForAccountAsync(
+        Guid accountId, CancellationToken cancellationToken = default) =>
+        database.Employees
+            .AsNoTracking()
+            .Where(employee => employee.AccountId == accountId)
+            .Select(employee => (Guid?)employee.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
     public Task<Dictionary<Guid, string>> NamesAsync(CancellationToken cancellationToken = default) =>
         database.Employees
             .AsNoTracking()

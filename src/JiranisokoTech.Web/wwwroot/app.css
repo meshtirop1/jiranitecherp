@@ -447,3 +447,79 @@ button.danger:hover { background: #8a1b1b; }
     clip: rect(0 0 0 0);
     white-space: nowrap;
 }
+
+/* --- The board ----------------------------------------------------------- */
+
+.board {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 1rem;
+    align-items: start;
+}
+
+.board__column {
+    background: #f5f6f8;
+    border-radius: 6px;
+    padding: 0.75rem;
+    min-width: 0;
+}
+
+.board__heading {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #4b5563;
+    margin: 0 0 0.6rem;
+}
+
+.board__count {
+    color: #6b7280;
+    font-weight: 400;
+}
+
+.card {
+    display: block;
+    background: #fff;
+    border: 1px solid #e3e5e9;
+    border-left: 3px solid #c8ccd4;
+    border-radius: 4px;
+    padding: 0.55rem 0.7rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Priority along the edge of a card: readable at a glance down a column, and
+   it costs none of the width the title needs. */
+.card--high { border-left-color: #d97706; }
+.card--dropping { border-left-color: #b32121; }
+.card--low { border-left-color: #e3e5e9; }
+
+.card__title {
+    font-weight: 600;
+    font-size: 0.92rem;
+    display: block;
+    /* Long titles wrap rather than being cut. A truncated card is one somebody
+       has to open before they can understand it. */
+    overflow-wrap: anywhere;
+}
+
+.card__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    color: #6b7280;
+    margin-top: 0.3rem;
+}
+
+.card__due,
+.card__blocked {
+    display: block;
+    font-size: 0.78rem;
+    margin-top: 0.3rem;
+}
+
+/* Said in words as well as colour, so it survives a colour-blind reader and a
+   printout. */
+.card__due--late { color: #b32121; font-weight: 600; }
+
+.card__blocked { color: #8a5300; }

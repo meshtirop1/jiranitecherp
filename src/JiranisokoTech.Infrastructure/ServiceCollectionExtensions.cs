@@ -1,9 +1,12 @@
 using System.Reflection;
 using JiranisokoTech.Application.Abstractions;
+using JiranisokoTech.Domain.People;
 using JiranisokoTech.Domain.Common;
 using JiranisokoTech.Application.People;
+using JiranisokoTech.Application.Work;
 using JiranisokoTech.Infrastructure.Messaging;
 using JiranisokoTech.Infrastructure.People;
+using JiranisokoTech.Infrastructure.Work;
 using JiranisokoTech.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -80,6 +83,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPeopleRepository, PeopleRepository>();
         services.AddScoped<PeopleService>();
         services.AddScoped<PeopleQueries>();
+
+        services.AddScoped<IWorkRepository, WorkRepository>();
+        services.AddScoped<WorkService>();
+        services.AddScoped<WorkQueries>();
+
+        // Reactions between modules. People knows nothing about work items and
+        // must not; the event is what carries a departure across to the board.
+        services.AddScoped<IDomainEventHandler<EmployeeLeft>, ReleaseWorkWhenSomebodyLeaves>();
 
         return services;
     }

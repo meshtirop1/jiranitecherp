@@ -30,7 +30,10 @@ nothing claims to work that does not.
 | ✅ | Migrations, applied on start, with a test that catches a model change without one |
 | ✅ | People — departments, employees, reporting lines that cannot form a loop |
 | ✅ | People screens — roster, person, departments, organisation chart |
-| ✅ | 193 tests |
+| ✅ | Work — projects, work items, a state machine that will not be talked round |
+| ✅ | Work screens — board, card, projects; an engineer sees their own work |
+| ✅ | Modules joined by events: a departure releases the leaver open work |
+| ✅ | 254 tests |
 | ☐ | Two-factor, and the screens for administering accounts |
 | ☐ | Every business module. See the checklist |
 
@@ -45,7 +48,7 @@ but unverified. First person with a Docker host should expect to fix something.
 Needs the .NET 10 SDK. Nothing else — the test suite does not require Docker.
 
 ```bash
-dotnet test                              # 193 tests
+dotnet test                              # 254 tests
 dotnet run --project src/JiranisokoTech.Web
 ```
 

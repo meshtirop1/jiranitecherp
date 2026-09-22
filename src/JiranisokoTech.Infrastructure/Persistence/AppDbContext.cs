@@ -4,6 +4,7 @@ using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Domain.Audit;
 using JiranisokoTech.Domain.Common;
 using JiranisokoTech.Domain.People;
+using JiranisokoTech.Domain.Work;
 using JiranisokoTech.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -31,6 +32,10 @@ public class AppDbContext(
     public DbSet<Department> Departments => Set<Department>();
 
     public DbSet<Employee> Employees => Set<Employee>();
+
+    public DbSet<Project> Projects => Set<Project>();
+
+    public DbSet<WorkItem> WorkItems => Set<WorkItem>();
 
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 

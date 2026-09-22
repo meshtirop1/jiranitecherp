@@ -1,0 +1,156 @@
+@page "/projects"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Work
+@using JiranisokoTech.Domain.Work
+@using JiranisokoTech.Infrastructure.Work
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ProjectsViewAll)]
+@inject WorkQueries Queries
+@inject WorkService Service
+
+<PageTitle>Projects — Jiranisoko Delivery</PageTitle>
+
+<h1>Projects</h1>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">No projects yet.</p>
+}
+else
+{
+    <table class="grid">
+        <thead>
+            <tr>
+                <th scope="col">Project</th>
+                <th scope="col">Code</th>
+                <th scope="col">Lead</th>
+                <th scope="col">Work</th>
+                <th scope="col">Due</th>
+                <th scope="col">State</th>
+                <AuthorizeView Policy="@ManagePolicy" Context="manage">
+                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                </AuthorizeView>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var project in Rows)
+            {
+                <tr class="@(Finished(project.Status) ? "row--closed" : "")">
+                    <td><a href="/work?project=@project.Id">@project.Name</a></td>
+                    <td><code>@project.Code</code></td>
+                    <td>@(project.LeadName ?? "Nobody")</td>
+                    @* Open against total, because "8 items" says nothing about
+                       whether a project is nearly finished. *@
+                    <td>@project.OpenItems open of @project.TotalItems</td>
+                    <td>@(project.DueOn?.ToString("d MMM yyyy") ?? "—")</td>
+                    <td>@project.Status</td>
+
+                    <AuthorizeView Policy="@ManagePolicy" Context="manage">
+                        <td class="row-actions">
+                            @if (project.Status is ProjectStatus.Planned or ProjectStatus.OnHold)
+                            {
+                                <form method="post" @formname="@($"activate-{project.Id}")"
+                                      @onsubmit="() => Run(() => Service.ActivateProjectAsync(project.Id))">
+                                    <AntiforgeryToken />
+                                    <button type="submit">Start</button>
+                                </form>
+                            }
+
+                            @if (!Finished(project.Status))
+                            {
+                                <form method="post" @formname="@($"deliver-{project.Id}")"
+                                      @onsubmit="() => Run(() => Service.DeliverProjectAsync(project.Id))">
+                                    <AntiforgeryToken />
+                                    <button type="submit">Delivered</button>
+                                </form>
+                            }
+                        </td>
+                    </AuthorizeView>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<AuthorizeView Policy="@ManagePolicy" Context="permitted">
+    <h2>Begin a project</h2>
+
+    <EditForm Model="Input" method="post" OnValidSubmit="Begin" FormName="begin" class="stack">
+        <DataAnnotationsValidator />
+
+        <label>
+            <span>Name</span>
+            <InputText @bind-Value="Input.Name" />
+            <ValidationMessage For="() => Input.Name" />
+        </label>
+
+        <label>
+            <span>Due</span>
+            <InputDate @bind-Value="Input.DueOn" />
+        </label>
+
+        <button type="submit">Begin it</button>
+    </EditForm>
+</AuthorizeView>
+
+@code {
+    private const string ManagePolicy = PermissionClaim.PolicyPrefix + Permissions.ProjectsManage;
+
+    private BeginInput _input = new();
+
+    [SupplyParameterFromForm]
+    private BeginInput Input
+    {
+        get => _input;
+        set => _input = value ?? new BeginInput();
+    }
+
+    private List<ProjectRow> Rows { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync() => Rows = await Queries.ProjectsAsync();
+
+    private static bool Finished(ProjectStatus status) =>
+        status is ProjectStatus.Delivered or ProjectStatus.Cancelled;
+
+    private Task Begin() => Run(async () =>
+    {
+        await Service.BeginProjectAsync(Input.Name, dueOn: Input.DueOn);
+        Input = new BeginInput();
+    });
+
+    private async Task Run(Func<Task> work)
+    {
+        Refusal = null;
+
+        try
+        {
+            await work();
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private sealed class BeginInput
+    {
+        [Required(ErrorMessage = "A name is needed.")]
+        [StringLength(200)]
+        public string Name { get; set; } = string.Empty;
+
+        public DateOnly? DueOn { get; set; }
+    }
+}

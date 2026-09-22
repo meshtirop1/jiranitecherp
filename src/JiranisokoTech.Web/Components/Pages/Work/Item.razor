@@ -1,0 +1,241 @@
+@page "/work/{id:guid}"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Work
+@using JiranisokoTech.Domain.People
+@using JiranisokoTech.Domain.Work
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Infrastructure.Work
+@using System.Security.Claims
+@using JiranisokoTech.Web.Authorization
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.TasksViewOwn)]
+@inject WorkQueries Queries
+@inject PeopleQueries People
+@inject WorkService Service
+
+<PageTitle>@(Row?.Title ?? "Work") — Jiranisoko Delivery</PageTitle>
+
+@if (Row is not null && !MayRead)
+{
+    @* Holding tasks.view_own is permission to see your own work, not
+       everybody's. Said as a refusal rather than as "no such work", because
+       pretending a record does not exist to somebody who can see it on a
+       colleague's screen only wastes their afternoon. *@
+    <h1>Not yours to read</h1>
+    <p>This work belongs to somebody else, and your account can only see its own.</p>
+    <p><a href="/work">Back to the board</a></p>
+}
+else if (Row is null)
+{
+    <h1>No such work</h1>
+    <p><a href="/work">Back to the board</a></p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Row.Title</h1>
+        <span class="pill">@Name(Row.Status)</span>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <dl class="facts">
+        <dt>Project</dt>
+        <dd>@(Row.ProjectName ?? "None")</dd>
+
+        <dt>Assigned to</dt>
+        <dd>@(Row.AssigneeName ?? "Nobody")</dd>
+
+        <dt>Priority</dt>
+        <dd>@Row.Priority</dd>
+
+        <dt>Estimate</dt>
+        <dd>@(Row.Estimate ?? "Not estimated")</dd>
+
+        <dt>Due</dt>
+        <dd>@(Row.DueOn?.ToString("d MMMM yyyy") ?? "No date")</dd>
+
+        @if (Row.BlockedReason is { } reason)
+        {
+            <dt>Blocked by</dt>
+            <dd>@reason</dd>
+        }
+    </dl>
+
+    <AuthorizeView Policy="@MovePolicy" Context="permitted">
+        <h2>Move it</h2>
+
+        <div class="actions">
+            @*
+                Only the moves the state machine allows are offered. Showing
+                every column and refusing four of them after the click teaches
+                people to distrust the buttons.
+            *@
+            @foreach (var next in WorkItem.NextFrom(Row.Status).Where(status => status != WorkItemStatus.Blocked))
+            {
+                <form method="post" @formname="@($"move-{next}")"
+                      @onsubmit="() => Move(next, null)">
+                    <AntiforgeryToken />
+                    <button type="submit" class="@(next == WorkItemStatus.Cancelled ? "danger" : "")">
+                        @Name(next)
+                    </button>
+                </form>
+            }
+
+            @if (WorkItem.NextFrom(Row.Status).Contains(WorkItemStatus.Blocked))
+            {
+                <EditForm Model="Block" method="post" FormName="block"
+                          OnValidSubmit="() => Move(WorkItemStatus.Blocked, Block.Reason)"
+                          class="inline">
+                    <DataAnnotationsValidator />
+                    <InputText @bind-Value="Block.Reason" placeholder="What is blocking it" />
+                    <button type="submit">Blocked</button>
+                    <ValidationMessage For="() => Block.Reason" />
+                </EditForm>
+            }
+        </div>
+
+        <h2>Assign it</h2>
+
+        <EditForm Model="Assignment" method="post" FormName="assign"
+                  OnValidSubmit="Assign" class="inline">
+            <InputSelect @bind-Value="Assignment.AssigneeId">
+                <option value="">Nobody</option>
+                @foreach (var person in Staff)
+                {
+                    <option value="@person.Id">@person.FullName</option>
+                }
+            </InputSelect>
+            <button type="submit">Set</button>
+        </EditForm>
+    </AuthorizeView>
+
+    <p><a href="/work">Back to the board</a></p>
+}
+
+@code {
+    private const string MovePolicy = PermissionClaim.PolicyPrefix + Permissions.TasksAssign;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private BlockInput _block = new();
+    private AssignmentInput _assignment = new();
+
+    [SupplyParameterFromForm(FormName = "block")]
+    private BlockInput Block
+    {
+        get => _block;
+        set => _block = value ?? new BlockInput();
+    }
+
+    [SupplyParameterFromForm(FormName = "assign")]
+    private AssignmentInput Assignment
+    {
+        get => _assignment;
+        set => _assignment = value ?? new AssignmentInput();
+    }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private WorkItemRow? Row { get; set; }
+
+    private bool MayRead { get; set; }
+
+    private List<PersonRow> Staff { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Row = (await Queries.ItemsAsync()).FirstOrDefault(item => item.Id == Id);
+
+        var user = (await AuthenticationState).User;
+
+        /*
+         * Both sides have to be a real person.
+         *
+         * The first version compared Row.AssigneeId with the viewer, and both
+         * were null for unassigned work read by somebody with no staff record —
+         * so null equalled null and every engineer could read every unassigned
+         * card. A test caught it; the equality alone reads as correct.
+         */
+        var viewer = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        MayRead = user.HasPermission(Permissions.TasksViewAll)
+            || (Row?.AssigneeId is { } owner && viewer is { } me && owner == me);
+
+        // Only people who can actually take it are offered, which is the same
+        // rule the service enforces.
+        Staff = await People.RosterAsync(status: EmploymentStatus.Active);
+
+        if (!_loaded && Row is not null)
+        {
+            Assignment.AssigneeId = Row.AssigneeId;
+            _loaded = true;
+        }
+    }
+
+    private Task Move(WorkItemStatus status, string? because) =>
+        Run(() => Service.MoveAsync(Id, status, because), $"Moved to {Name(status).ToLowerInvariant()}.");
+
+    private Task Assign() =>
+        Run(() => Service.AssignAsync(Id, Assignment.AssigneeId), "Assigned.");
+
+    private async Task Run(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private static string Name(WorkItemStatus status) => status switch
+    {
+        WorkItemStatus.Todo => "To do",
+        WorkItemStatus.InProgress => "In progress",
+        WorkItemStatus.InReview => "In review",
+        _ => status.ToString(),
+    };
+
+    private sealed class BlockInput
+    {
+        [Required(ErrorMessage = "Say what is blocking it.")]
+        [StringLength(1000)]
+        public string Reason { get; set; } = string.Empty;
+    }
+
+    private sealed class AssignmentInput
+    {
+        public Guid? AssigneeId { get; set; }
+    }
+}

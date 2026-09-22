@@ -1,0 +1,170 @@
+@page "/work/new"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Work
+@using JiranisokoTech.Domain.People
+@using JiranisokoTech.Domain.Work
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Infrastructure.Work
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.TasksCreate)]
+@inject WorkQueries Queries
+@inject PeopleQueries People
+@inject WorkService Service
+@inject NavigationManager Navigation
+
+<PageTitle>Raise something — Jiranisoko Delivery</PageTitle>
+
+<h1>Raise something</h1>
+
+@if (RaisedBy is null)
+{
+    @*
+        An account and a staff record are separate things, so this is a real
+        state rather than an error: a service account, or somebody whose record
+        has not been linked yet. Said plainly, because inventing a person to put
+        in the column would make the record wrong.
+    *@
+    <p class="refusal" role="alert">
+        Your sign-in is not linked to a staff record, so work cannot be raised in
+        your name. An administrator can link them on the People page.
+    </p>
+}
+else
+{
+    <EditForm Model="Input" method="post" OnValidSubmit="Submit" FormName="raise" class="stack">
+        <DataAnnotationsValidator />
+
+        @if (Refusal is not null)
+        {
+            <p class="refusal" role="alert">@Refusal</p>
+        }
+
+        <label>
+            <span>What needs doing</span>
+            <InputText @bind-Value="Input.Title" />
+            <ValidationMessage For="() => Input.Title" />
+        </label>
+
+        <label>
+            <span>Detail</span>
+            <InputTextArea @bind-Value="Input.Detail" rows="4" />
+        </label>
+
+        <label>
+            <span>Project</span>
+            <InputSelect @bind-Value="Input.ProjectId">
+                <option value="">None</option>
+                @foreach (var project in Projects)
+                {
+                    <option value="@project.Id">@project.Name</option>
+                }
+            </InputSelect>
+        </label>
+
+        <label>
+            <span>Assign to</span>
+            <InputSelect @bind-Value="Input.AssigneeId">
+                <option value="">Nobody yet</option>
+                @foreach (var person in Staff)
+                {
+                    <option value="@person.Id">@person.FullName</option>
+                }
+            </InputSelect>
+        </label>
+
+        <label>
+            <span>Priority</span>
+            <InputSelect @bind-Value="Input.Priority">
+                @foreach (var priority in Enum.GetValues<Priority>())
+                {
+                    <option value="@priority">@priority</option>
+                }
+            </InputSelect>
+        </label>
+
+        <label>
+            <span>Due</span>
+            <InputDate @bind-Value="Input.DueOn" />
+        </label>
+
+        <button type="submit">Raise it</button>
+    </EditForm>
+}
+
+<p><a href="/work">Back to the board</a></p>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private RaiseInput _input = new();
+
+    [SupplyParameterFromForm]
+    private RaiseInput Input
+    {
+        get => _input;
+        set => _input = value ?? new RaiseInput();
+    }
+
+    private List<ProjectRow> Projects { get; set; } = [];
+
+    private List<PersonRow> Staff { get; set; } = [];
+
+    private Guid? RaisedBy { get; set; }
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Projects = await Queries.ProjectsAsync(runningOnly: true);
+        Staff = await People.RosterAsync(status: EmploymentStatus.Active);
+
+        var state = await AuthenticationState;
+
+        if (Guid.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            RaisedBy = await People.EmployeeForAccountAsync(account);
+        }
+    }
+
+    private async Task Submit()
+    {
+        Refusal = null;
+
+        try
+        {
+            var item = await Service.RaiseAsync(
+                Input.Title, RaisedBy!.Value, Input.ProjectId, Input.AssigneeId, Input.Priority);
+
+            await Service.UpdateAsync(
+                item.Id, Input.Title, Input.Detail, Input.Priority, null, Input.DueOn);
+
+            Navigation.NavigateTo($"/work/{item.Id}", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+    }
+
+    private sealed class RaiseInput
+    {
+        [Required(ErrorMessage = "Say what needs doing.")]
+        [StringLength(300)]
+        public string Title { get; set; } = string.Empty;
+
+        [StringLength(8000)]
+        public string? Detail { get; set; }
+
+        public Guid? ProjectId { get; set; }
+
+        public Guid? AssigneeId { get; set; }
+
+        public Priority Priority { get; set; } = Priority.Normal;
+
+        public DateOnly? DueOn { get; set; }
+    }
+}

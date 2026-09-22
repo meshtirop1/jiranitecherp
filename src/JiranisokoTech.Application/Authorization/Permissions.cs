@@ -51,6 +51,17 @@ public static class Permissions
     public const string ProjectsViewMember = "projects.view_member";
     public const string ProjectsManage = "projects.manage";
     public const string TasksViewAll = "tasks.view_all";
+
+    /// <summary>
+    /// See the board, and on it whatever is yours.
+    /// </summary>
+    /// <remarks>
+    /// Separate from view_all so that an engineer can open the board at all.
+    /// Without it the only people who could see any work were the ones who
+    /// could see everybody's, which in a delivery system means the people doing
+    /// the work cannot look at it.
+    /// </remarks>
+    public const string TasksViewOwn = "tasks.view_own";
     public const string TasksCreate = "tasks.create";
     public const string TasksAssign = "tasks.assign";
     public const string TasksUpdateOwn = "tasks.update_own";
@@ -74,7 +85,7 @@ public static class Permissions
         ApplicationsManage, ApplicationsHire, InterviewsSchedule, ScorecardsSubmit,
 
         ProjectsViewAll, ProjectsViewMember, ProjectsManage,
-        TasksViewAll, TasksCreate, TasksAssign, TasksUpdateOwn, TasksSubmit,
+        TasksViewAll, TasksViewOwn, TasksCreate, TasksAssign, TasksUpdateOwn, TasksSubmit,
         TasksReview, TasksDeploy,
 
         ApprovalsDecide, ReportsView,
@@ -139,8 +150,8 @@ public static class Roles
                 // A head gives their own team work and releases what it
                 // finishes. Review without create means they can only ever react
                 // to work somebody else set.
-                Permissions.TasksViewAll, Permissions.TasksCreate, Permissions.TasksAssign,
-                Permissions.TasksReview, Permissions.TasksDeploy,
+                Permissions.TasksViewAll, Permissions.TasksViewOwn, Permissions.TasksCreate,
+                Permissions.TasksAssign, Permissions.TasksReview, Permissions.TasksDeploy,
 
                 Permissions.ApprovalsDecide,
                 Permissions.RequisitionsCreate, Permissions.RequisitionsView,
@@ -153,8 +164,8 @@ public static class Roles
             [
                 Permissions.DepartmentsView, Permissions.EmployeesView, Permissions.UsersView,
                 Permissions.ProjectsViewAll, Permissions.ProjectsManage,
-                Permissions.TasksViewAll, Permissions.TasksCreate, Permissions.TasksAssign,
-                Permissions.TasksReview,
+                Permissions.TasksViewAll, Permissions.TasksViewOwn, Permissions.TasksCreate,
+                Permissions.TasksAssign, Permissions.TasksReview,
                 Permissions.ApprovalsDecide,
                 Permissions.AuditView, Permissions.ReportsView,
             ],
@@ -162,6 +173,11 @@ public static class Roles
             [Developer] =
             [
                 Permissions.ProjectsViewMember,
+
+                // An engineer can open the board and see what is theirs. This
+                // is a delivery system; the people doing the delivering are its
+                // main users, and a board they cannot look at is not one.
+                Permissions.TasksViewOwn,
                 Permissions.TasksUpdateOwn, Permissions.TasksSubmit,
             ],
 
