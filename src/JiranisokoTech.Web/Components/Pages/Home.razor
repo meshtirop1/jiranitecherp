@@ -1,19 +1,132 @@
 @page "/"
-@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Domain.Work
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Infrastructure.Work
+@using JiranisokoTech.Web.Authorization
+@inject PeopleQueries People
+@inject WorkQueries Work
+
+@*
+    What is in front of this person, and nothing else.
+
+    Not a wall of tiles. A dashboard of counts nobody acts on is read twice and
+    then skipped, and the figures on it are the first thing to go stale. Every
+    line here is something with a next action attached to it.
+*@
 
 <PageTitle>Jiranisoko Delivery</PageTitle>
 
-<AuthorizeView>
-    <h1>Good to see you, @(context.User.FindFirst("display_name")?.Value ?? "there")</h1>
+<h1>Good to see you, @(Name ?? "there")</h1>
 
-    @*
-        Deliberately empty of modules. The work queues, approvals and projects
-        land here as each one is built; a dashboard of tiles that lead nowhere
-        would only teach people that half this application does not work.
-    *@
-    <p>
-        This is the delivery system for Jiranisoko Tech Solutions. It is being
-        built module by module, and your sign-in, roles and audit trail are in
-        place. Work queues and approvals follow.
+@if (Employee is null)
+{
+    <p class="subtle">
+        Your sign-in is not linked to a staff record yet, so there is nothing of
+        your own to show. An administrator can link them on the People page.
     </p>
-</AuthorizeView>
+}
+else if (Mine.Count == 0)
+{
+    <p class="empty">Nothing is assigned to you.</p>
+}
+else
+{
+    <h2>Your work</h2>
+
+    @if (Overdue.Count > 0)
+    {
+        @*
+            Overdue first and named as such. Sorting it into the same list as
+            everything else is how a date slips past somebody who was looking
+            straight at it.
+        *@
+        <p class="refusal" role="alert">
+            @Overdue.Count of these @(Overdue.Count == 1 ? "is" : "are") past its due date.
+        </p>
+    }
+
+    <table class="grid">
+        <thead>
+            <tr>
+                <th scope="col">What</th>
+                <th scope="col">Project</th>
+                <th scope="col">State</th>
+                <th scope="col">Due</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in Mine)
+            {
+                <tr>
+                    <td><a href="/work/@item.Id">@item.Title</a></td>
+                    <td>@(item.ProjectName ?? "—")</td>
+                    <td>
+                        @Describe(item.Status)
+                        @if (item.BlockedReason is { } reason)
+                        {
+                            <span class="card__blocked">@reason</span>
+                        }
+                    </td>
+                    <td class="@(item.DueOn is { } due && due < Today ? "card__due--late" : "")">
+                        @(item.DueOn is { } on
+                            ? (on < Today ? $"Overdue — {on:d MMM}" : on.ToString("d MMM"))
+                            : "—")
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <p><a href="/work">The whole board</a></p>
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private string? Name { get; set; }
+
+    private Guid? Employee { get; set; }
+
+    private List<WorkItemRow> Mine { get; set; } = [];
+
+    private List<WorkItemRow> Overdue => Mine
+        .Where(item => item.DueOn is { } due && due < Today)
+        .ToList();
+
+    private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        Name = user.FindFirstValue("display_name") ?? user.Identity?.Name;
+
+        if (!Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            return;
+        }
+
+        Employee = await People.EmployeeForAccountAsync(account);
+
+        if (Employee is not { } me)
+        {
+            return;
+        }
+
+        // Only what is still live. Finished work belongs on the board, where
+        // somebody goes looking for it, not on the page they open to find out
+        // what to do next.
+        Mine = await Work.ItemsAsync(assigneeId: me, openOnly: true);
+    }
+
+    private static string Describe(WorkItemStatus status) => status switch
+    {
+        WorkItemStatus.Todo => "To do",
+        WorkItemStatus.InProgress => "In progress",
+        WorkItemStatus.InReview => "In review",
+        _ => status.ToString(),
+    };
+}
