@@ -564,3 +564,17 @@ button.danger:hover { background: #8a1b1b; }
     color: #6b7280;
     font-style: italic;
 }
+
+/* A sign-in link, shown because nothing emails it yet. Long, and meant to be
+   selected in one go, so it wraps rather than running off the page. */
+code.link {
+    display: block;
+    padding: 0.5rem;
+    margin-top: 0.4rem;
+    background: #fff;
+    border: 1px solid #c8ccd4;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    overflow-wrap: anywhere;
+    user-select: all;
+}

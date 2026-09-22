@@ -65,6 +65,16 @@ public sealed class ApplicationUser : IdentityUser<Guid>, IAuditable
     public DateTimeOffset? LastSignedInAt { get; set; }
 
     /// <summary>
+    /// When the account was opened for somebody who had not yet set a password.
+    /// </summary>
+    /// <remarks>
+    /// Kept so the account list can tell apart "invited last March and never
+    /// came in" from "signs in daily". The first is an account that should
+    /// probably be closed, and without this it looks identical to a new one.
+    /// </remarks>
+    public DateTimeOffset? InvitedAt { get; set; }
+
+    /// <summary>
     /// Columns the audit trail must never copy.
     /// </summary>
     /// <remarks>

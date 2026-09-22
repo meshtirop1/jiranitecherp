@@ -1,0 +1,278 @@
+@page "/accounts/{id:guid}"
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.People
+@using JiranisokoTech.Domain.People
+@using JiranisokoTech.Infrastructure.Identity
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Web.Authorization
+@using Microsoft.AspNetCore.Authorization
+@using Roles = JiranisokoTech.Application.Authorization.Roles
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.UsersView)]
+@inject UserDirectory Directory
+@inject UserAdministration Administration
+@inject PeopleQueries People
+@inject PeopleService Staff
+
+<PageTitle>@(Row?.DisplayName ?? "Account") — Jiranisoko Delivery</PageTitle>
+
+@if (Row is null)
+{
+    <h1>No such account</h1>
+    <p><a href="/accounts">Back to accounts</a></p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Row.DisplayName</h1>
+        <span class="pill">@Row.State</span>
+    </div>
+
+    <p class="subtle">@Row.Email</p>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    @if (Link is not null)
+    {
+        <div class="done">
+            <p>Send them this to set a password. Nothing emails it for them.</p>
+            <p><code class="link">@Link</code></p>
+        </div>
+    }
+
+    <dl class="facts">
+        <dt>Job title</dt>
+        <dd>@(Row.JobTitle ?? "—")</dd>
+
+        <dt>Staff record</dt>
+        <dd>@(Row.EmployeeName ?? "Not linked to anybody")</dd>
+
+        <dt>Password</dt>
+        <dd>@(Row.HasPassword ? "Set" : "Not set yet")</dd>
+
+        <dt>Last signed in</dt>
+        <dd>@(Row.LastSignedInAt?.ToString("d MMMM yyyy") ?? "Never")</dd>
+    </dl>
+
+    <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.UsersAssignRoles)"
+                   Context="roleGiver">
+        <h2>Roles</h2>
+
+        <div class="actions">
+            @foreach (var role in AllRoles)
+            {
+                var held = Row.Roles.Contains(role);
+
+                <form method="post" @formname="@($"role-{role}")"
+                      @onsubmit="() => Toggle(role, held)">
+                    <AntiforgeryToken />
+                    <button type="submit" class="@(held ? "danger" : "")">
+                        @(held ? $"Take {Say(role)} away" : $"Grant {Say(role)}")
+                    </button>
+                </form>
+            }
+        </div>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@ManagePolicy" Context="manager">
+        <h2>Access</h2>
+
+        <div class="actions">
+            <form method="post" @formname="link" @onsubmit="NewLink">
+                <AntiforgeryToken />
+                <button type="submit">
+                    @(Row.HasPassword ? "New password link" : "Sign-in link")
+                </button>
+            </form>
+
+            @if (Row.IsLockedOut)
+            {
+                <form method="post" @formname="unlock" @onsubmit="Unlock">
+                    <AntiforgeryToken />
+                    <button type="submit">Let them back in</button>
+                </form>
+            }
+
+            @if (Row.IsActive)
+            {
+                @*
+                    Withdrawing takes effect within five minutes, not at their
+                    next attempt: the security stamp is rolled, so the session
+                    they are in now fails its next check.
+                *@
+                <form method="post" @formname="withdraw" @onsubmit="Withdraw">
+                    <AntiforgeryToken />
+                    <button type="submit" class="danger">Withdraw access</button>
+                </form>
+            }
+            else
+            {
+                <form method="post" @formname="restore" @onsubmit="Restore">
+                    <AntiforgeryToken />
+                    <button type="submit">Restore access</button>
+                </form>
+            }
+        </div>
+
+        @if (Row.EmployeeName is null)
+        {
+            @*
+                The link that makes the rest of the system work for them: their
+                own work on the home page, approvals waiting on them, their name
+                on the organisation chart. Without it the account can sign in
+                and do almost nothing.
+            *@
+            <h2>Link to a staff record</h2>
+
+            <EditForm Model="Linking" method="post" FormName="link-staff"
+                      OnValidSubmit="LinkStaff" class="inline">
+                <InputSelect @bind-Value="Linking.EmployeeId">
+                    <option value="">Choose somebody</option>
+                    @foreach (var person in Unlinked)
+                    {
+                        <option value="@person.Id">@person.FullName</option>
+                    }
+                </InputSelect>
+                <button type="submit">Link them</button>
+            </EditForm>
+        }
+    </AuthorizeView>
+
+    <p><a href="/accounts">Back to accounts</a></p>
+}
+
+@code {
+    private const string ManagePolicy = PermissionClaim.PolicyPrefix + Permissions.UsersManage;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private LinkInput _linking = new();
+
+    [SupplyParameterFromForm(FormName = "link-staff")]
+    private LinkInput Linking
+    {
+        get => _linking;
+        set => _linking = value ?? new LinkInput();
+    }
+
+    private AccountRow? Row { get; set; }
+
+    private List<PersonRow> Unlinked { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private string? Link { get; set; }
+
+    private static IReadOnlyList<string> AllRoles => Roles.All;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Row = await Directory.FindAsync(Id);
+
+        // Only people who have no account yet: linking one account to somebody
+        // who already has another would make "who did this?" unanswerable.
+        Unlinked = (await People.RosterAsync())
+            .Where(person => !person.HasAccount && person.Status != EmploymentStatus.Left)
+            .ToList();
+    }
+
+    private Task Toggle(string role, bool held) => Run(
+        () => held
+            ? Administration.RevokeAsync(Id, role)
+            : Administration.GrantAsync(Id, role),
+        held ? $"{Say(role)} taken away." : $"{Say(role)} granted.");
+
+    private Task Unlock() => Run(() => Administration.UnlockAsync(Id), "They can sign in again.");
+
+    private Task Restore() => Run(() => Administration.ReactivateAsync(Id), "Access restored.");
+
+    private async Task Withdraw()
+    {
+        var user = (await AuthenticationState).User;
+
+        var acting = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var id)
+            ? id
+            : Guid.Empty;
+
+        await Run(() => Administration.DeactivateAsync(Id, acting), "Access withdrawn.");
+    }
+
+    private async Task NewLink()
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            var address = Request is null
+                ? string.Empty
+                : $"{Request.Request.Scheme}://{Request.Request.Host}";
+
+            Link = await Administration.SignInLinkAsync(Id, address);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private Task LinkStaff() => Run(
+        async () =>
+        {
+            if (Linking.EmployeeId is not { } employee)
+            {
+                throw new InvalidOperationException("Choose somebody to link the account to.");
+            }
+
+            await Staff.LinkAccountAsync(employee, Id);
+        },
+        "Linked.");
+
+    private async Task Run(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+        Link = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private static string Say(string role) => role.Replace('_', ' ');
+
+    private sealed class LinkInput
+    {
+        public Guid? EmployeeId { get; set; }
+    }
+}

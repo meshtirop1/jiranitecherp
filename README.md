@@ -35,8 +35,10 @@ nothing claims to work that does not.
 | ✅ | Modules joined by events: a departure releases the leaver open work |
 | ✅ | A home page that is what is in front of you, not a wall of tiles |
 | ✅ | Approvals — chains that cannot reach the stuck state the old one did |
-| ✅ | 294 tests |
-| ☐ | Two-factor, and the screens for administering accounts |
+| ✅ | Accounts — invitations, roles, withdrawal, linking to a staff record |
+| ✅ | 312 tests |
+| ☐ | Two-factor |
+| ☐ | Sending mail. The outbox dispatches; nothing puts a message on a server |
 | ☐ | Every business module. See the checklist |
 
 **Docker has not been run against this.** It is not installed on the machine
@@ -50,7 +52,7 @@ but unverified. First person with a Docker host should expect to fix something.
 Needs the .NET 10 SDK. Nothing else — the test suite does not require Docker.
 
 ```bash
-dotnet test                              # 294 tests
+dotnet test                              # 312 tests
 dotnet run --project src/JiranisokoTech.Web
 ```
 
