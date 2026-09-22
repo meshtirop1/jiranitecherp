@@ -1,4 +1,5 @@
 using System.Net;
+using JiranisokoTech.Tests.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace JiranisokoTech.Tests.Infrastructure;
@@ -10,9 +11,17 @@ namespace JiranisokoTech.Tests.Infrastructure;
 /// Driven through the real application rather than a stand-in, because the
 /// thing worth knowing is that the actual pipeline answers — a mock would keep
 /// passing after somebody moved the route.
+///
+/// ApplicationFactory rather than a plain WebApplicationFactory, and that is
+/// not incidental. The plain one takes the connection string from
+/// appsettings.json, which points at a SQLite file on the developer's disk —
+/// so these tests ran against a database somebody had been using by hand, and
+/// whose schema is only ever created when it does not already exist. They
+/// passed for weeks and then failed the day a new table was added, reporting a
+/// missing table rather than anything to do with health endpoints.
 /// </summary>
-public class HealthEndpointTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+public class HealthEndpointTests(ApplicationFactory factory)
+    : IClassFixture<ApplicationFactory>
 {
     private readonly HttpClient _client = factory.CreateClient();
 

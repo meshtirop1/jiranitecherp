@@ -45,9 +45,9 @@ public sealed class BusinessRepository(AppDbContext database) : IBusinessReposit
         database.Invoices.AnyAsync(invoice => invoice.Number == number, cancellationToken);
 
     public async Task<int> LastInvoiceSequenceAsync(
-        int year, CancellationToken cancellationToken = default)
+        string firmPrefix, int year, CancellationToken cancellationToken = default)
     {
-        var prefix = $"JTS-{year}-";
+        var prefix = $"{firmPrefix}-{year}-";
 
         var numbers = await database.Invoices
             .AsNoTracking()

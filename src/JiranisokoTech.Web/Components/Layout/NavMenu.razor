@@ -142,6 +142,13 @@
                     </div>
                 </AuthorizeView>
 
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.SettingsManage)"
+                               Context="settings">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="settings">Settings</NavLink>
+                    </div>
+                </AuthorizeView>
+
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="account">
                         <span class="bi bi-person-badge-nav-menu" aria-hidden="true"></span> Your account

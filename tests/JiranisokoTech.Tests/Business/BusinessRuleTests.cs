@@ -1,5 +1,6 @@
 using JiranisokoTech.Application.Business;
 using JiranisokoTech.Application.People;
+using JiranisokoTech.Application.Settings;
 using JiranisokoTech.Application.Recruitment;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Domain.Clients;
@@ -8,6 +9,7 @@ using JiranisokoTech.Domain.Recruitment;
 using JiranisokoTech.Domain.Time;
 using JiranisokoTech.Infrastructure.Business;
 using JiranisokoTech.Infrastructure.People;
+using JiranisokoTech.Infrastructure.Settings;
 using JiranisokoTech.Infrastructure.Recruitment;
 using JiranisokoTech.Infrastructure.Work;
 using JiranisokoTech.Tests.Infrastructure;
@@ -50,7 +52,9 @@ public class BusinessRuleTests
 
         public ExpenseService Expenses => new(Repository, db.Clock);
 
-        public InvoiceService Invoices => new(Repository, db.Clock);
+        public SettingsService Settings => new(new SettingsRepository(_context));
+
+        public InvoiceService Invoices => new(Repository, Settings, db.Clock);
 
         public InterviewService Interviews =>
             new(Repository, new PeopleRepository(_context), db.Clock);

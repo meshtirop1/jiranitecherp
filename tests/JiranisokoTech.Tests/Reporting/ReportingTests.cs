@@ -1,10 +1,12 @@
 using JiranisokoTech.Application.Business;
 using JiranisokoTech.Application.People;
+using JiranisokoTech.Application.Settings;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Time;
 using JiranisokoTech.Infrastructure.Business;
 using JiranisokoTech.Infrastructure.People;
+using JiranisokoTech.Infrastructure.Settings;
 using JiranisokoTech.Infrastructure.Reporting;
 using JiranisokoTech.Infrastructure.Work;
 using JiranisokoTech.Tests.Infrastructure;
@@ -47,7 +49,9 @@ public class ReportingTests
 
         public ExpenseService Expenses => new(Repository, db.Clock);
 
-        public InvoiceService Invoices => new(Repository, db.Clock);
+        public SettingsService Settings => new(new SettingsRepository(_context));
+
+        public InvoiceService Invoices => new(Repository, Settings, db.Clock);
 
         public ReportingQueries Reporting => new(_context);
 

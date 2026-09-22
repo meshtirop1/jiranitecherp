@@ -30,7 +30,17 @@ public interface IBusinessRepository
     Task<bool> InvoiceNumberTakenAsync(string number, CancellationToken cancellationToken = default);
 
     /// <summary>The highest number issued this year, for the next one.</summary>
-    Task<int> LastInvoiceSequenceAsync(int year, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// The highest sequence number issued this year under this prefix.
+    /// </summary>
+    /// <remarks>
+    /// The prefix is a parameter rather than a constant here because it is a
+    /// setting the firm can change. Numbers issued under the old one keep it,
+    /// so the sequence is per-prefix and a change starts a fresh run rather
+    /// than continuing somebody else's.
+    /// </remarks>
+    Task<int> LastInvoiceSequenceAsync(
+        string prefix, int year, CancellationToken cancellationToken = default);
 
     Task<ExpenseClaim?> FindClaimAsync(Guid id, CancellationToken cancellationToken = default);
 
@@ -383,7 +393,8 @@ public sealed class ExpenseService(IBusinessRepository business, IClock clock)
 }
 
 /// <summary>Invoices, and the hours that become one.</summary>
-public sealed class InvoiceService(IBusinessRepository business, IClock clock)
+public sealed class InvoiceService(
+    IBusinessRepository business, Settings.SettingsService settings, IClock clock)
 {
     public async Task<Invoice> DraftAsync(
         Guid clientId, CancellationToken cancellationToken = default)
@@ -398,10 +409,12 @@ public sealed class InvoiceService(IBusinessRepository business, IClock clock)
                 + "everybody.");
         }
 
+        var firm = await settings.CurrentAsync(cancellationToken);
+
         var invoice = Invoice.Draft(
             clientId,
-            await NextNumberAsync(cancellationToken),
-            "KES",
+            await NextNumberAsync(firm.InvoicePrefix, cancellationToken),
+            firm.Currency,
             clock.Today,
             client.PaymentTermDays);
 
@@ -505,14 +518,14 @@ public sealed class InvoiceService(IBusinessRepository business, IClock clock)
     /// is a question somebody has to answer, so a voided invoice keeps its
     /// number rather than freeing it.
     /// </remarks>
-    private async Task<string> NextNumberAsync(CancellationToken cancellationToken)
+    private async Task<string> NextNumberAsync(string prefix, CancellationToken cancellationToken)
     {
         var year = clock.Today.Year;
-        var next = await business.LastInvoiceSequenceAsync(year, cancellationToken) + 1;
+        var next = await business.LastInvoiceSequenceAsync(prefix, year, cancellationToken) + 1;
 
         for (var attempt = 0; attempt < 50; attempt++)
         {
-            var number = $"JTS-{year}-{next + attempt:0000}";
+            var number = $"{prefix}-{year}-{next + attempt:0000}";
 
             if (!await business.InvoiceNumberTakenAsync(number, cancellationToken))
             {

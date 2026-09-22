@@ -1,0 +1,368 @@
+@page "/settings"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Settings
+@using JiranisokoTech.Domain.Settings
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.SettingsManage)]
+@inject SettingsService Service
+@inject NavigationManager Navigation
+
+@*
+    Three forms rather than one, because they are three different decisions with
+    three different consequences. Changing the telephone number is nothing;
+    changing the invoice prefix changes every number issued from now on; changing
+    the currency is refused outright once the firm has invoiced in one. A single
+    Save button over all of that would make them look equivalent.
+*@
+
+<PageTitle>Settings — Jiranisoko Delivery</PageTitle>
+
+<h1>Settings</h1>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Firm is not null && !Firm.IsReadyToInvoice)
+{
+    @*
+        Said rather than enforced. A firm may genuinely want to draft invoices
+        before its paperwork is in order, and a system that blocks that is
+        telling its owner how to run their business. But an invoice without
+        these is one the client's accounts department sends back, so it is worth
+        saying out loud before that happens.
+    *@
+    <p class="refusal" role="alert">
+        An invoice needs the firm's KRA PIN, its address, and somewhere to send
+        the money. @Missing() Invoices can still be drafted; they are just not
+        ones a client's accounts department will accept.
+    </p>
+}
+
+@if (Firm is null)
+{
+    <p class="empty">Loading.</p>
+}
+else
+{
+    <EditForm Model="Who" method="post" OnValidSubmit="SaveWho" FormName="who" class="panel stack">
+        <DataAnnotationsValidator />
+
+        <h2>Who the firm is</h2>
+
+        <div class="fields">
+            <label>
+                <span>Trading name</span>
+                <InputText @bind-Value="Who.TradingName" />
+                <ValidationMessage For="() => Who.TradingName" />
+            </label>
+
+            <label>
+                <span>Name on the certificate</span>
+                <InputText @bind-Value="Who.LegalName" />
+                <ValidationMessage For="() => Who.LegalName" />
+            </label>
+        </div>
+
+        <label>
+            <span>KRA PIN</span>
+            <InputText @bind-Value="Who.TaxPin" placeholder="P051234567X" />
+            <ValidationMessage For="() => Who.TaxPin" />
+        </label>
+
+        <div class="fields">
+            <label>
+                <span>Telephone</span>
+                <InputText @bind-Value="Who.Telephone" />
+            </label>
+
+            <label>
+                <span>Email</span>
+                <InputText @bind-Value="Who.Email" type="email" />
+                <ValidationMessage For="() => Who.Email" />
+            </label>
+
+            <label>
+                <span>Website</span>
+                <InputText @bind-Value="Who.Website" />
+            </label>
+        </div>
+
+        <button type="submit">Save</button>
+    </EditForm>
+
+    <EditForm Model="Where" method="post" OnValidSubmit="SaveWhere" FormName="where"
+              class="panel stack">
+        <DataAnnotationsValidator />
+
+        <h2>Where it is</h2>
+
+        <label>
+            <span>Address</span>
+            <InputText @bind-Value="Where.AddressLine" />
+        </label>
+
+        <div class="fields">
+            <label>
+                <span>Town</span>
+                <InputText @bind-Value="Where.Town" />
+            </label>
+
+            <label>
+                <span>Postal code</span>
+                <InputText @bind-Value="Where.PostalCode" />
+            </label>
+
+            <label>
+                <span>Country</span>
+                <InputText @bind-Value="Where.Country" />
+            </label>
+        </div>
+
+        <label>
+            <span>How a client pays</span>
+            <InputTextArea @bind-Value="Where.PaymentInstructions" rows="4"
+                           placeholder="Bank, account, branch. Or a paybill number. Whatever a client needs to actually send the money." />
+        </label>
+
+        <button type="submit">Save</button>
+    </EditForm>
+
+    <EditForm Model="Billing" method="post" OnValidSubmit="SaveBilling" FormName="billing"
+              class="panel stack">
+        <DataAnnotationsValidator />
+
+        <h2>Billing</h2>
+
+        <div class="fields">
+            <label>
+                <span>Invoice prefix</span>
+                <InputText @bind-Value="Billing.InvoicePrefix" />
+                <ValidationMessage For="() => Billing.InvoicePrefix" />
+            </label>
+
+            <label>
+                <span>Currency</span>
+                <InputText @bind-Value="Billing.Currency" />
+                <ValidationMessage For="() => Billing.Currency" />
+            </label>
+
+            <label>
+                <span>Payment terms (days)</span>
+                <InputNumber @bind-Value="Billing.PaymentTermDays" min="0" max="365" />
+                <ValidationMessage For="() => Billing.PaymentTermDays" />
+            </label>
+        </div>
+
+        <p class="subtle">
+            The next invoice will be numbered
+            <strong>@Billing.InvoicePrefix-@DateTime.UtcNow.Year-0001</strong> or the next free
+            number after it. Numbers already issued keep the prefix they were
+            issued under.
+        </p>
+
+        @if (AnyInvoices)
+        {
+            <p class="subtle">
+                This firm has already invoiced in @Firm.Currency, so the currency
+                cannot be changed. Every invoice stores its own, and two
+                currencies with nothing to say why would mean no total across
+                them adds up.
+            </p>
+        }
+
+        <button type="submit">Save</button>
+    </EditForm>
+}
+
+@code {
+    private WhoInput _who = new();
+    private WhereInput _where = new();
+    private BillingInput _billing = new();
+
+    [SupplyParameterFromForm(FormName = "who")]
+    private WhoInput Who
+    {
+        get => _who;
+        set => _who = value ?? new WhoInput();
+    }
+
+    [SupplyParameterFromForm(FormName = "where")]
+    private WhereInput Where
+    {
+        get => _where;
+        set => _where = value ?? new WhereInput();
+    }
+
+    [SupplyParameterFromForm(FormName = "billing")]
+    private BillingInput Billing
+    {
+        get => _billing;
+        set => _billing = value ?? new BillingInput();
+    }
+
+    private FirmSettings? Firm { get; set; }
+
+    private bool AnyInvoices { get; set; }
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Firm = await Service.CurrentAsync();
+
+        // Only when the form has not come back from a post. Filling these in
+        // unconditionally would throw away whatever somebody had just typed the
+        // moment their entry was refused.
+        if (Who.TradingName.Length == 0)
+        {
+            Who.TradingName = Firm.TradingName;
+            Who.LegalName = Firm.LegalName;
+            Who.TaxPin = Firm.TaxPin;
+            Who.Telephone = Firm.Telephone;
+            Who.Email = Firm.Email;
+            Who.Website = Firm.Website;
+        }
+
+        if (Where.Country is null)
+        {
+            Where.AddressLine = Firm.AddressLine;
+            Where.Town = Firm.Town;
+            Where.PostalCode = Firm.PostalCode;
+            Where.Country = Firm.Country;
+            Where.PaymentInstructions = Firm.PaymentInstructions;
+        }
+
+        if (Billing.InvoicePrefix.Length == 0)
+        {
+            Billing.InvoicePrefix = Firm.InvoicePrefix;
+            Billing.Currency = Firm.Currency;
+            Billing.PaymentTermDays = Firm.PaymentTermDays;
+        }
+
+        AnyInvoices = await Service.HasInvoicedAsync();
+    }
+
+    private Task SaveWho() => TryAsync(() => Service.IdentifyAsync(
+        Who.TradingName, Who.LegalName, Who.TaxPin, Who.Telephone, Who.Email, Who.Website));
+
+    private Task SaveWhere() => TryAsync(async () =>
+    {
+        await Service.MoveToAsync(Where.AddressLine, Where.Town, Where.PostalCode, Where.Country);
+        await Service.ExplainPaymentAsync(Where.PaymentInstructions);
+    });
+
+    private Task SaveBilling() => TryAsync(() => Service.BillAsAsync(
+        Billing.InvoicePrefix, Billing.Currency, Billing.PaymentTermDays));
+
+    private async Task TryAsync(Func<Task> act)
+    {
+        Refusal = null;
+
+        try
+        {
+            await act();
+            Navigation.NavigateTo("/settings", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException
+                or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private string Missing()
+    {
+        var absent = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(Firm!.TaxPin))
+        {
+            absent.Add("the PIN");
+        }
+
+        if (string.IsNullOrWhiteSpace(Firm.AddressLine))
+        {
+            absent.Add("the address");
+        }
+
+        if (string.IsNullOrWhiteSpace(Firm.PaymentInstructions))
+        {
+            absent.Add("the payment details");
+        }
+
+        return absent.Count switch
+        {
+            1 => $"Still missing: {absent[0]}.",
+            2 => $"Still missing: {absent[0]} and {absent[1]}.",
+            _ => $"Still missing: {string.Join(", ", absent[..^1])} and {absent[^1]}.",
+        };
+    }
+
+    private sealed class WhoInput
+    {
+        [Required(ErrorMessage = "The name the firm trades under.")]
+        [StringLength(200)]
+        public string TradingName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "The name on the certificate of incorporation.")]
+        [StringLength(200)]
+        public string LegalName { get; set; } = string.Empty;
+
+        [StringLength(30)]
+        [RegularExpression(
+            @"^[A-Za-z]\d{9}[A-Za-z]$",
+            ErrorMessage = "A KRA PIN is a letter, nine digits and a letter, as in P051234567X.")]
+        public string? TaxPin { get; set; }
+
+        [StringLength(40)]
+        public string? Telephone { get; set; }
+
+        [EmailAddress(ErrorMessage = "That does not look like an email address.")]
+        [StringLength(320)]
+        public string? Email { get; set; }
+
+        [StringLength(300)]
+        public string? Website { get; set; }
+    }
+
+    private sealed class WhereInput
+    {
+        [StringLength(300)]
+        public string? AddressLine { get; set; }
+
+        [StringLength(100)]
+        public string? Town { get; set; }
+
+        [StringLength(20)]
+        public string? PostalCode { get; set; }
+
+        [StringLength(100)]
+        public string? Country { get; set; }
+
+        [StringLength(2000)]
+        public string? PaymentInstructions { get; set; }
+    }
+
+    private sealed class BillingInput
+    {
+        [Required(ErrorMessage = "Invoices need something to start with.")]
+        [StringLength(8)]
+        [RegularExpression(
+            "^[A-Za-z0-9]+$",
+            ErrorMessage = "Letters and digits only — it gets read aloud and typed elsewhere.")]
+        public string InvoicePrefix { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "A three-letter currency code, such as KES.")]
+        [RegularExpression("^[A-Za-z]{3}$", ErrorMessage = "Three letters, as in KES.")]
+        public string Currency { get; set; } = string.Empty;
+
+        [Range(0, 365, ErrorMessage = "From zero days to a year.")]
+        public int PaymentTermDays { get; set; } = 30;
+    }
+}

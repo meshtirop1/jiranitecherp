@@ -3,6 +3,7 @@
 @using JiranisokoTech.Application.Abstractions
 @using JiranisokoTech.Application.Authorization
 @using JiranisokoTech.Application.Business
+@using JiranisokoTech.Application.Settings
 @using JiranisokoTech.Domain.Money
 @using JiranisokoTech.Infrastructure.Business
 @using JiranisokoTech.Infrastructure.Work
@@ -12,6 +13,7 @@
 @inject BusinessQueries Queries
 @inject WorkQueries Work
 @inject InvoiceService Service
+@inject SettingsService Firm
 @inject IClock Clock
 @inject NavigationManager Navigation
 
@@ -49,6 +51,27 @@ else
     {
         <p class="refusal" role="alert">@Refusal</p>
     }
+
+    @*
+        The firm's own details, because this is a tax invoice. A Kenyan one
+        carries the issuer's name, address and PIN, and one without them is
+        returned by the client's accounts department rather than paid.
+    *@
+    <section class="issuer">
+        <strong>@Us.LegalName</strong>
+        @if (Us.TaxPin is { } pin)
+        {
+            <span>PIN @pin</span>
+        }
+        @if (Us.AddressLine is { } address)
+        {
+            <span>@address@(Us.Town is { } town ? $", {town}" : null)</span>
+        }
+        @if (Us.Telephone is { } phone)
+        {
+            <span>@phone</span>
+        }
+    </section>
 
     <dl class="facts">
         <dt>Client</dt>
@@ -227,6 +250,14 @@ else
         </section>
     }
 
+    @if (Us.PaymentInstructions is { } how)
+    {
+        <section class="standing">
+            <h2>How to pay</h2>
+            <p class="instructions">@how</p>
+        </section>
+    }
+
     <section class="actions actions--page">
         @if (Invoice.Status == InvoiceStatus.Draft)
         {
@@ -354,6 +385,8 @@ else
 
     private string ClientName { get; set; } = string.Empty;
 
+    private JiranisokoTech.Domain.Settings.FirmSettings Us { get; set; } = null!;
+
     private List<ProjectRow> Projects { get; set; } = [];
 
     private string? Refusal { get; set; }
@@ -372,6 +405,7 @@ else
 
     private async Task LoadAsync()
     {
+        Us = await Firm.CurrentAsync();
         Invoice = await Queries.InvoiceAsync(Id);
 
         if (Invoice is null)

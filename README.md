@@ -49,9 +49,10 @@ nothing claims to work that does not.
 | ✅ | Screens for all six — logging a day, asking for leave, claiming, approving, billing |
 | ✅ | Every class a page uses is a class some stylesheet defines, and a test says so |
 | ✅ | Where things stand — the figures the firm is run on, each with somewhere to go |
-| ✅ | 441 tests |
+| ✅ | Settings — the firm's own details, on its invoices, where a tax invoice needs them |
+| ✅ | 457 tests |
 | ☐ | Requiring two-step sign-in of anybody. It is offered, not compulsory |
-| ☐ | Documents, a public API, integrations, settings, search |
+| ☐ | Documents, a public API, integrations, search |
 
 **Docker has been run against this**, and the first person was right to expect
 to fix something. Four faults were found by running it that nothing on a
@@ -74,7 +75,7 @@ developer's machine could have shown:
   non-root user before that user takes over. Until it did, the sign-in page
   returned 500 from a directory permission.
 
-What is verified: the image builds, the 441 tests run and pass inside it, all
+What is verified: the image builds, the 457 tests run and pass inside it, all
 three containers report healthy, the eight migrations apply to a real Postgres,
 the health and readiness endpoints answer, the public pages render with their
 stylesheets, and the signing keys survive a restart.
@@ -91,7 +92,7 @@ anything reads from it today.
 Needs the .NET 10 SDK. Nothing else — the test suite does not require Docker.
 
 ```bash
-dotnet test                              # 441 tests
+dotnet test                              # 457 tests
 dotnet run --project src/JiranisokoTech.Web
 ```
 

@@ -233,6 +233,39 @@ public class BusinessPageTests(ApplicationFactory factory) : IClassFixture<Appli
         Assert.DoesNotContain("Work done and not billed", html);
     }
 
+    /// <summary>
+    /// Settings is the owner's page and nobody else's.
+    /// </summary>
+    /// <remarks>
+    /// A delivery manager holds a great deal — clients, invoices, the board —
+    /// and still does not get to change the firm's PIN or what its invoices are
+    /// numbered with. Checked with the most-privileged role short of the top,
+    /// because that is the one a permission is most likely to have leaked into.
+    /// </remarks>
+    [Fact]
+    public async Task Settings_is_not_open_to_a_delivery_manager()
+    {
+        var manager = await SignedInAsync("pm3@jiranisokotech.co.ke", Roles.ProjectManager);
+
+        var refused = await manager.GetAsync("/settings");
+
+        Assert.Equal(HttpStatusCode.Found, refused.StatusCode);
+        Assert.Contains("/denied", refused.Headers.Location!.OriginalString);
+    }
+
+    [Fact]
+    public async Task An_administrator_can_open_settings()
+    {
+        var admin = await SignedInAsync("admin2@jiranisokotech.co.ke", Roles.Administrator);
+
+        var response = await admin.GetAsync("/settings");
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("Who the firm is", html);
+        Assert.Contains("Invoice prefix", html);
+    }
+
     private async Task<HttpClient> SignedInAsync(string email, string role)
     {
         using (var scope = factory.Services.CreateScope())

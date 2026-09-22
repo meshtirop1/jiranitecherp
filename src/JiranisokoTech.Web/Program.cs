@@ -1,4 +1,5 @@
 using JiranisokoTech.Application.Abstractions;
+using JiranisokoTech.Application.Settings;
 using JiranisokoTech.Infrastructure;
 using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Infrastructure.Persistence;
@@ -158,6 +159,16 @@ using (var scope = app.Services.CreateScope())
     // And the first account, if this installation has none and one is
     // configured. After that it is a no-op on every start.
     await scope.ServiceProvider.GetRequiredService<OwnerSeeder>().SeedAsync();
+
+    /*
+     * The firm's own settings row, which the service would otherwise create on
+     * first use. Doing it here removes a race that only exists once: the row
+     * has a fixed primary key, so two requests arriving together on a fresh
+     * database would both find nothing, both insert, and the second would fail
+     * on the key. Narrow, but the window is the first minute of a new
+     * installation, which is exactly when two people are likely to be looking.
+     */
+    await scope.ServiceProvider.GetRequiredService<SettingsService>().CurrentAsync();
 }
 
 // Ending a session. A POST, so it cannot be triggered by a link.

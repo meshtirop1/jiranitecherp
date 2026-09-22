@@ -883,3 +883,25 @@ code.key {
     font-variant-numeric: tabular-nums;
     margin: 0 0 0.25rem;
 }
+
+/* The issuer's block at the head of an invoice. Small and quiet: it is there
+   because the document is not valid without it, not because anybody reads it. */
+.issuer {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    margin: 1rem 0;
+    padding: 0.75rem 1rem;
+    background: #f5f6f8;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: #4b5563;
+    max-width: 30rem;
+}
+
+/* Payment details are typed in as free text and often as several lines, so the
+   line breaks somebody entered are the ones shown. */
+.instructions {
+    white-space: pre-wrap;
+    max-width: 44rem;
+}

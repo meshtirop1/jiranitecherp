@@ -8,6 +8,7 @@ using JiranisokoTech.Domain.Time;
 using JiranisokoTech.Domain.Audit;
 using JiranisokoTech.Domain.Common;
 using JiranisokoTech.Domain.People;
+using JiranisokoTech.Domain.Settings;
 using JiranisokoTech.Domain.Recruitment;
 using JiranisokoTech.Domain.Work;
 using JiranisokoTech.Infrastructure.Identity;
@@ -64,6 +65,11 @@ public class AppDbContext(
     public DbSet<Project> Projects => Set<Project>();
 
     public DbSet<WorkItem> WorkItems => Set<WorkItem>();
+
+    /// <summary>
+    /// The firm's own details. One row, and the key is a constant.
+    /// </summary>
+    public DbSet<FirmSettings> Settings => Set<FirmSettings>();
 
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
