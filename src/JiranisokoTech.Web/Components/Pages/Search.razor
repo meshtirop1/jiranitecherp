@@ -1,0 +1,114 @@
+@page "/search"
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Infrastructure.Search
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject SearchQueries Finder
+
+@*
+    A GET form, so every search has an address. "Here is what I found when I
+    looked for Acme" is then a link somebody can send, and the back button does
+    what a person expects.
+
+    No permission on the page itself beyond being signed in. What a person may
+    see is decided per group inside the query, because the alternative — one
+    permission guarding a box that reaches six tables — would mean either
+    excluding most of the staff from searching at all, or showing somebody a
+    client list they cannot open.
+*@
+
+<PageTitle>Search — Jiranisoko Delivery</PageTitle>
+
+<h1>Search</h1>
+
+<form method="get" class="inline">
+    <label>
+        <span class="visually-hidden">What to look for</span>
+        <input type="search" name="q" value="@Term" placeholder="A name, a code, an invoice number"
+               autofocus />
+    </label>
+    <button type="submit">Look</button>
+</form>
+
+@if (string.IsNullOrWhiteSpace(Term))
+{
+    <p class="subtle">
+        People, clients, projects, work and invoices — whatever you are allowed
+        to see.
+    </p>
+}
+else if (Term.Trim().Length < SearchQueries.ShortestTerm)
+{
+    <p class="empty">
+        Two letters at least. One would match most of the database, which is the
+        same as matching nothing.
+    </p>
+}
+else if (Results.Count == 0)
+{
+    <p class="empty">Nothing matches “@Term”.</p>
+}
+else
+{
+    @foreach (var group in Results.GroupBy(result => result.Kind).OrderBy(group => group.Key))
+    {
+        <section class="found">
+            <h2>@Heading(group.Key, group.Count())</h2>
+
+            <ul class="plain">
+                @foreach (var result in group)
+                {
+                    <li>
+                        <a href="@result.Href">@result.Title</a>
+                        @if (result.Detail is { } detail)
+                        {
+                            <span class="subtle">@detail</span>
+                        }
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "q")]
+    private string? Term { get; set; }
+
+    private List<SearchResult> Results { get; set; } = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Term))
+        {
+            return;
+        }
+
+        var state = await AuthenticationState;
+
+        // Read from the signed-in principal rather than looked up. These are
+        // the same claims every authorization check on every other page reads,
+        // so a search cannot show something a page would refuse.
+        var permissions = state.User
+            .FindAll(PermissionClaim.Type)
+            .Select(claim => claim.Value)
+            .ToHashSet();
+
+        Results = await Finder.FindAsync(Term, permissions);
+    }
+
+    private static string Heading(ResultKind kind, int count) => kind switch
+    {
+        ResultKind.Person => count == 1 ? "1 person" : $"{count} people",
+        ResultKind.Client => count == 1 ? "1 client" : $"{count} clients",
+        ResultKind.Project => count == 1 ? "1 project" : $"{count} projects",
+        ResultKind.WorkItem => count == 1 ? "1 piece of work" : $"{count} pieces of work",
+        ResultKind.Invoice => count == 1 ? "1 invoice" : $"{count} invoices",
+        ResultKind.Candidate => count == 1 ? "1 candidate" : $"{count} candidates",
+        _ => $"{count}",
+    };
+}

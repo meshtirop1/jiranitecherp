@@ -18,6 +18,7 @@ using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Infrastructure.People;
 using JiranisokoTech.Application.Settings;
 using JiranisokoTech.Infrastructure.Reporting;
+using JiranisokoTech.Infrastructure.Search;
 using JiranisokoTech.Infrastructure.Settings;
 using JiranisokoTech.Infrastructure.Recruitment;
 using JiranisokoTech.Infrastructure.Work;
@@ -137,6 +138,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<WorkQueries>();
         services.AddScoped<BusinessQueries>();
         services.AddScoped<ReportingQueries>();
+        services.AddScoped<SearchQueries>();
 
         services.AddScoped<ISettingsRepository, SettingsRepository>();
         services.AddScoped<SettingsService>();

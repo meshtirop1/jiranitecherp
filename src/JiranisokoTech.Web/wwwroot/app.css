@@ -905,3 +905,34 @@ code.key {
     white-space: pre-wrap;
     max-width: 44rem;
 }
+
+/* Search results, grouped by what they are. The group heading counts rather
+   than just naming, because "3 clients" answers a question that "Clients" does
+   not. */
+.found {
+    margin: 1.5rem 0;
+    max-width: 44rem;
+}
+
+.found h2 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6b7280;
+    margin-bottom: 0.4rem;
+}
+
+.found li {
+    display: flex;
+    gap: 0.75rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+
+.inline input[type="search"] {
+    padding: 0.4rem 0.5rem;
+    border: 1px solid #c8ccd4;
+    border-radius: 4px;
+    font-size: 0.95rem;
+    min-width: 18rem;
+}

@@ -60,6 +60,17 @@
                     Each sits behind the permission every working role holds, so
                     they are effectively always shown — which is the point.
                 *@
+                @*
+                    No permission on this one: what a search finds is decided
+                    per group inside the query, from the claims the person
+                    actually holds. Putting a permission here would either hide
+                    the box from most of the staff or promise them results they
+                    cannot open.
+                *@
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="search">Search</NavLink>
+                </div>
+
                 <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ReportsView)"
                                Context="reports">
                     <div class="nav-item px-3">

@@ -266,6 +266,39 @@ public class BusinessPageTests(ApplicationFactory factory) : IClassFixture<Appli
         Assert.Contains("Invoice prefix", html);
     }
 
+    /// <summary>
+    /// Anybody signed in can search; what they find is another matter.
+    /// </summary>
+    /// <remarks>
+    /// The page carries no permission beyond being signed in, which is
+    /// deliberate and is the kind of decision worth pinning down: a permission
+    /// here would either hide the box from most of the staff or promise them
+    /// results no page would open. The query decides per group, and this checks
+    /// the page itself opens for the role holding least.
+    /// </remarks>
+    [Fact]
+    public async Task A_developer_can_open_the_search_page()
+    {
+        var browser = await SignedInAsync("dev5@jiranisokotech.co.ke", Roles.Developer);
+
+        var response = await browser.GetAsync("/search?q=acme");
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("Search", html);
+    }
+
+    [Fact]
+    public async Task A_stranger_cannot_search()
+    {
+        using var browser = factory.CreateBrowser();
+
+        var response = await browser.GetAsync("/search?q=acme");
+
+        Assert.Equal(HttpStatusCode.Found, response.StatusCode);
+        Assert.Contains("/sign-in", response.Headers.Location!.OriginalString);
+    }
+
     private async Task<HttpClient> SignedInAsync(string email, string role)
     {
         using (var scope = factory.Services.CreateScope())
