@@ -17,6 +17,7 @@ namespace JiranisokoTech.Application.Recruitment;
 public sealed class RecruitmentService(
     IRecruitmentRepository recruitment,
     IPeopleRepository people,
+    ICvStore cvs,
     IClock clock)
 {
     public async Task<JobRequisition> RaiseRequisitionAsync(
@@ -201,6 +202,8 @@ public sealed class RecruitmentService(
         string email,
         string? phone = null,
         string? note = null,
+        Stream? cv = null,
+        string? cvFileName = null,
         CancellationToken cancellationToken = default)
     {
         var posting = await RequiredPosting(postingId, cancellationToken);
@@ -227,6 +230,21 @@ public sealed class RecruitmentService(
         }
 
         var application = JobApplication.Receive(postingId, candidate.Id, clock.Now, note);
+
+        /*
+         * The file is written before the row that points at it.
+         *
+         * Either order leaves a window. A file with no row is an orphan on disk
+         * that a sweep can find and remove; a row with no file is an
+         * application whose CV button is broken, in front of somebody deciding
+         * whether to interview a person. The first is the better failure.
+         */
+        if (cv is not null && cvFileName is not null)
+        {
+            var stored = await cvs.SaveAsync(cv, cvFileName, cancellationToken);
+
+            application.AttachCv(cvFileName, stored);
+        }
 
         recruitment.Add(application);
         await recruitment.SaveAsync(cancellationToken);

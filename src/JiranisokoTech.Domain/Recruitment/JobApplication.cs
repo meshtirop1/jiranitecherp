@@ -124,6 +124,37 @@ public sealed class JobApplication : Entity, IAuditable
 
     public DateTimeOffset? DecidedAt { get; private set; }
 
+    /// <summary>What the candidate called their CV.</summary>
+    /// <remarks>
+    /// Shown to whoever downloads it, and never used to find the file. It is a
+    /// string a stranger chose.
+    /// </remarks>
+    public string? CvFileName { get; private set; }
+
+    /// <summary>What it is stored as, which this system chose.</summary>
+    public string? CvStoredName { get; private set; }
+
+    public bool HasCv => CvStoredName is not null;
+
+    /// <summary>
+    /// Attach the CV that came with the application.
+    /// </summary>
+    /// <remarks>
+    /// Once only. A second upload against the same application would leave the
+    /// first file on disk with nothing pointing at it, and replacing somebody
+    /// CV after they applied is not a thing this system offers anybody.
+    /// </remarks>
+    public void AttachCv(string originalName, string storedName)
+    {
+        if (CvStoredName is not null)
+        {
+            throw new InvalidOperationException("This application already has a CV.");
+        }
+
+        CvFileName = originalName.Trim();
+        CvStoredName = storedName;
+    }
+
     /// <summary>Still in the running.</summary>
     public bool IsLive => Status
         is ApplicationStatus.Received

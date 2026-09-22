@@ -1,0 +1,213 @@
+@page "/careers/{slug}"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Recruitment
+@using JiranisokoTech.Infrastructure.Recruitment
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.RateLimiting
+@layout CareersLayout
+@attribute [AllowAnonymous]
+@attribute [EnableRateLimiting(JiranisokoTech.Web.CareersLimits.Limit)]
+@inject RecruitmentQueries Queries
+@inject RecruitmentService Service
+
+<PageTitle>@(Advert?.Title ?? "Opening") — Jiranisoko Tech Solutions</PageTitle>
+
+@if (Advert is null)
+{
+    <h1 class="careers__title">That opening has gone</h1>
+    <p>
+        It may have been filled, or the link may be out of date.
+        <a href="/careers">See what else is open</a>.
+    </p>
+}
+else if (Applied)
+{
+    @*
+        What somebody needs to know at this point: it arrived, and what happens
+        next. "Thank you for your interest" tells them nothing and reads as an
+        automated brush-off.
+    *@
+    <h1 class="careers__title">That is with us</h1>
+
+    <p>
+        Thank you, @Name. Your application for <strong>@Advert.Title</strong> has
+        arrived and somebody here will read it.
+    </p>
+
+    <p>
+        We reply to everybody who applies, including when the answer is no. If
+        you have not heard anything in three weeks, write to us and ask.
+    </p>
+
+    <p><a href="/careers">Other openings</a></p>
+}
+else
+{
+    <p><a href="/careers">All openings</a></p>
+
+    <h1 class="careers__title">@Advert.Title</h1>
+
+    @if (Advert.Location is { } where)
+    {
+        <p class="careers__where">@where</p>
+    }
+
+    <p class="careers__lead">@Advert.Summary</p>
+
+    @*
+        The description is written by a colleague in the admin screens and shown
+        as text, deliberately. Rendering it as markup would mean whoever writes
+        an advert can put script on a public page.
+    *@
+    <div class="careers__description">@Advert.Description</div>
+
+    <h2>Apply</h2>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    <EditForm Model="Input" method="post" OnValidSubmit="Apply" FormName="apply"
+              enctype="multipart/form-data" class="stack">
+        <DataAnnotationsValidator />
+
+        <label>
+            <span>Your name</span>
+            <InputText @bind-Value="Input.FullName" autocomplete="name" />
+            <ValidationMessage For="() => Input.FullName" />
+        </label>
+
+        <label>
+            <span>Email</span>
+            <InputText @bind-Value="Input.Email" type="email" autocomplete="email" />
+            <ValidationMessage For="() => Input.Email" />
+        </label>
+
+        <label>
+            <span>Phone <span class="careers__optional">optional</span></span>
+            <InputText @bind-Value="Input.Phone" type="tel" autocomplete="tel" />
+        </label>
+
+        <label>
+            <span>Your CV</span>
+            @*
+                A plain file input. Blazor InputFile needs an interactive
+                circuit, and this page deliberately has none — a form that
+                depends on a socket is one that fails on a bad connection,
+                which is exactly the person applying from a phone.
+            *@
+            <input type="file" name="cv" accept=".pdf,.doc,.docx,.odt,.rtf,.txt" />
+            <span class="careers__hint">
+                PDF, Word or plain text, up to @(Cv.MaximumBytes / 1024 / 1024)MB.
+            </span>
+        </label>
+
+        <label>
+            <span>Anything you want to tell us <span class="careers__optional">optional</span></span>
+            <InputTextArea @bind-Value="Input.Note" rows="4" />
+        </label>
+
+        <button type="submit">Send it</button>
+    </EditForm>
+}
+
+@code {
+    [Parameter]
+    public string Slug { get; set; } = string.Empty;
+
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    private ApplyInput _input = new();
+
+    [SupplyParameterFromForm]
+    private ApplyInput Input
+    {
+        get => _input;
+        set => _input = value ?? new ApplyInput();
+    }
+
+    private OpeningRow? Advert { get; set; }
+
+    private bool Applied { get; set; }
+
+    private string Name { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync() =>
+        Advert = await Queries.OpeningAsync(Slug);
+
+    private async Task Apply()
+    {
+        Refusal = null;
+
+        if (Advert is not { } advert)
+        {
+            return;
+        }
+
+        var file = Request?.Request.Form.Files["cv"];
+
+        if (file is { Length: > 0 } && !Cv.Accepts(file.FileName, file.Length, out var why))
+        {
+            Refusal = why;
+
+            return;
+        }
+
+        try
+        {
+            await using var contents = file is { Length: > 0 } ? file.OpenReadStream() : null;
+
+            await Service.ApplyAsync(
+                advert.Id,
+                Input.FullName,
+                Input.Email,
+                Input.Phone,
+                Input.Note,
+                contents,
+                file?.FileName);
+
+            Name = Input.FullName.Split(' ')[0];
+            Applied = true;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+        {
+            /*
+             * The unique index on (posting, candidate). Somebody has applied
+             * twice — usually a double-click, sometimes an impatient second
+             * attempt a week later.
+             *
+             * Told as the good news it is rather than as an error. They have
+             * applied; nothing is wrong; there is nothing for them to do.
+             */
+            Name = Input.FullName.Split(' ')[0];
+            Applied = true;
+        }
+    }
+
+    private sealed class ApplyInput
+    {
+        [Required(ErrorMessage = "We need a name to put on it.")]
+        [StringLength(200)]
+        public string FullName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "We need an address to reply to.")]
+        [EmailAddress(ErrorMessage = "That does not look like an email address.")]
+        [StringLength(255)]
+        public string Email { get; set; } = string.Empty;
+
+        [StringLength(40)]
+        public string? Phone { get; set; }
+
+        [StringLength(4000)]
+        public string? Note { get; set; }
+    }
+}

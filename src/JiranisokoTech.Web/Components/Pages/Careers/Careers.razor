@@ -1,0 +1,58 @@
+@page "/careers"
+@using JiranisokoTech.Domain.Recruitment
+@using JiranisokoTech.Infrastructure.Recruitment
+@using Microsoft.AspNetCore.Authorization
+@layout CareersLayout
+@attribute [AllowAnonymous]
+@inject RecruitmentQueries Queries
+
+@*
+    The only page in this application a stranger is meant to read, and the one
+    that has to work for somebody on a phone with a bad connection. Static, no
+    scripts of its own, nothing to wait for.
+*@
+
+<PageTitle>Work with us — Jiranisoko Tech Solutions</PageTitle>
+
+<h1 class="careers__title">Work with us</h1>
+
+@if (Openings.Count == 0)
+{
+    @*
+        Said plainly rather than left as an empty page. Somebody who followed a
+        link here needs to know the list is empty and not broken.
+    *@
+    <p>
+        There are no openings at the moment. We advertise here when there are,
+        so it is worth looking again.
+    </p>
+}
+else
+{
+    <p class="careers__lead">
+        @Openings.Count @(Openings.Count == 1 ? "opening" : "openings") at Jiranisoko
+        Tech Solutions.
+    </p>
+
+    <ul class="careers__list">
+        @foreach (var opening in Openings)
+        {
+            <li class="careers__opening">
+                <a class="careers__role" href="/careers/@opening.Slug">@opening.Title</a>
+
+                @if (opening.Location is { } where)
+                {
+                    <span class="careers__where">@where</span>
+                }
+
+                <p class="careers__summary">@opening.Summary</p>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private List<OpeningRow> Openings { get; set; } = [];
+
+    protected override async Task OnInitializedAsync() => Openings = await Queries.OpeningsAsync();
+}

@@ -83,6 +83,44 @@ public sealed class RecruitmentQueries(AppDbContext database)
         (await RequisitionsAsync(cancellationToken: cancellationToken))
         .FirstOrDefault(row => row.Id == id);
 
+    /// <summary>
+    /// The adverts a stranger may read.
+    /// </summary>
+    /// <remarks>
+    /// Published only, and it returns nothing else — no requisition, no
+    /// headcount, no justification. Those are an internal argument for spending
+    /// money, and the projection is the place to make sure none of it can reach
+    /// a public page by accident.
+    ///
+    /// An advert past its closing date drops off on its own, so nobody has to
+    /// remember to take it down.
+    /// </remarks>
+    public async Task<List<OpeningRow>> OpeningsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        return await database.Postings
+            .AsNoTracking()
+            .Where(posting => posting.Status == PostingStatus.Published)
+            .Where(posting => posting.ClosesOn == null || posting.ClosesOn >= today)
+            .OrderByDescending(posting => posting.PublishedAt)
+            .Select(posting => new OpeningRow(
+                posting.Id,
+                posting.Title,
+                posting.Slug,
+                posting.Summary,
+                posting.Description,
+                posting.Location))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>One advert, by the address it answers at.</summary>
+    public async Task<OpeningRow?> OpeningAsync(
+        string slug, CancellationToken cancellationToken = default) =>
+        (await OpeningsAsync(cancellationToken))
+        .FirstOrDefault(opening => opening.Slug == slug);
+
     public Task<List<PostingRow>> PostingsForAsync(
         Guid requisitionId, CancellationToken cancellationToken = default) =>
         database.Postings
@@ -127,6 +165,14 @@ public sealed class RecruitmentQueries(AppDbContext database)
             .ThenBy(row => row.AppliedAt)
             .ToListAsync(cancellationToken);
 }
+
+public sealed record OpeningRow(
+    Guid Id,
+    string Title,
+    string Slug,
+    string Summary,
+    string Description,
+    string? Location);
 
 public sealed record RequisitionRow(
     Guid Id,

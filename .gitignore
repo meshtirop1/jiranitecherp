@@ -24,3 +24,7 @@
 # Messages the file mailer writes in development. Correspondence, and not
 # something to commit.
 mail/
+
+# Candidate CVs written by the file store. Documents belonging to people
+# outside this firm, and not something to commit.
+cvs/

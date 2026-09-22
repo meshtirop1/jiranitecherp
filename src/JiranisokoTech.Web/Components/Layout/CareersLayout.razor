@@ -1,0 +1,20 @@
+@inherits LayoutComponentBase
+
+@*
+    The public face, and the only layout a stranger sees.
+
+    Wider than the sign-in panel because these pages carry real prose — an
+    advert read at sign-in width is a column of six words, which is how a job
+    description stops being read at all. No navigation, because everything this
+    application can do is behind an account and a visitor has none.
+*@
+
+<div class="bare">
+    <main class="bare__panel bare__panel--wide">
+        @Body
+    </main>
+
+    <footer class="bare__footer">
+        Jiranisoko Tech Solutions
+    </footer>
+</div>

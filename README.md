@@ -39,9 +39,10 @@ nothing claims to work that does not.
 | ✅ | Email — invitations and approval notices; File by default, so nothing surprises anybody |
 | ✅ | Two-step sign-in — authenticator codes, recovery codes, a way back in |
 | ✅ | Recruitment — requisitions that must be approved before anything is advertised |
-| ✅ | 369 tests |
+| ✅ | Careers pages — public adverts, applications, CV upload, rate limited |
+| ✅ | 377 tests |
 | ☐ | Requiring two-step sign-in of anybody. It is offered, not compulsory |
-| ☐ | Interviews and scorecards; the public careers page and application form |
+| ☐ | Interviews and scorecards |
 | ☐ | Clients, finance, timesheets, leave, reporting |
 
 **Docker has not been run against this.** It is not installed on the machine
@@ -55,7 +56,7 @@ but unverified. First person with a Docker host should expect to fix something.
 Needs the .NET 10 SDK. Nothing else — the test suite does not require Docker.
 
 ```bash
-dotnet test                              # 369 tests
+dotnet test                              # 377 tests
 dotnet run --project src/JiranisokoTech.Web
 ```
 

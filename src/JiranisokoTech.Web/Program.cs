@@ -2,6 +2,7 @@ using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Infrastructure;
 using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Infrastructure.Persistence;
+using JiranisokoTech.Web;
 using JiranisokoTech.Web.Authorization;
 using JiranisokoTech.Web.Components;
 using JiranisokoTech.Web.Identity;
@@ -21,7 +22,7 @@ builder.Services.AddPersistence(builder.Configuration);
 builder.Services.AddMessaging(builder.Configuration);
 
 // The business modules.
-builder.Services.AddModules();
+builder.Services.AddModules(builder.Configuration);
 
 // How mail leaves, and who gets told what.
 builder.Services.AddMail(builder.Configuration);
@@ -62,6 +63,19 @@ builder.Services.AddScoped<OwnerSeeder>();
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"]);
 
+/*
+ * A limit on the one form a stranger can post to.
+ *
+ * Kestrel is also told a maximum body size, because the careers form accepts a
+ * file and a request limit is the only thing between that and somebody sending
+ * a gigabyte. The application has no other upload, so one global figure is
+ * enough and there is nothing to keep in step.
+ */
+builder.Services.AddRateLimiter(options => options.AddCareersLimit());
+
+builder.WebHost.ConfigureKestrel(kestrel =>
+    kestrel.Limits.MaxRequestBodySize = 10 * 1024 * 1024);
+
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -83,6 +97,8 @@ if (app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
+
+app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -136,6 +152,9 @@ using (var scope = app.Services.CreateScope())
 
 // Ending a session. A POST, so it cannot be triggered by a link.
 app.MapAuthenticationEndpoints();
+
+// A CV, to somebody allowed to read it.
+app.MapCvEndpoints();
 
 /*
  * Anonymous, because a stylesheet has no account.

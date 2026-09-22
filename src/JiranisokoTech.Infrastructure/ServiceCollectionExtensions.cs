@@ -87,8 +87,11 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>The business modules, and the storage each one asks for.</summary>
-    public static IServiceCollection AddModules(this IServiceCollection services)
+    public static IServiceCollection AddModules(
+        this IServiceCollection services, IConfiguration configuration)
     {
+        services.Configure<CvStoreOptions>(configuration.GetSection(CvStoreOptions.Section));
+
         services.AddScoped<IPeopleRepository, PeopleRepository>();
         services.AddScoped<PeopleService>();
         services.AddScoped<PeopleQueries>();
@@ -103,6 +106,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRecruitmentRepository, RecruitmentRepository>();
         services.AddScoped<RecruitmentService>();
         services.AddScoped<RecruitmentQueries>();
+        services.AddScoped<ICvStore, FileCvStore>();
 
         /*
          * The two halves of the join between hiring and approvals. Recruitment

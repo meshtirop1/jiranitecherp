@@ -96,7 +96,11 @@ public sealed class JobApplicationConfiguration : IEntityTypeConfiguration<JobAp
         builder.Property(application => application.RejectionReason).HasMaxLength(2000);
         builder.Property(application => application.Status).HasConversion<int>().IsRequired();
 
+        builder.Property(application => application.CvFileName).HasMaxLength(255);
+        builder.Property(application => application.CvStoredName).HasMaxLength(100);
+
         builder.Ignore(application => application.IsLive);
+        builder.Ignore(application => application.HasCv);
 
         builder.HasOne<JobPosting>()
             .WithMany()

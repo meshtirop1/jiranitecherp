@@ -66,14 +66,23 @@ h1:focus {
     /* auto for the panel, 1fr to push the footer down without it floating in
        the middle of a short page. */
     grid-template-rows: 1fr auto;
-    justify-items: center;
     padding: 2rem 1rem;
     background-color: #f5f6f8;
 }
 
+/*
+ * Centred with auto margins rather than justify-items.
+ *
+ * With justify-items: center the grid column is sized to the panel max-width,
+ * so width: 100% resolves against 42rem rather than against the screen — and
+ * the panel runs off the side of any viewport narrower than that. It went
+ * unnoticed while the only panel here was the 24rem sign-in box; the careers
+ * advert is wide enough to show it on a phone.
+ */
 .bare__panel {
     width: 100%;
     max-width: 24rem;
+    margin-inline: auto;
     align-self: center;
     padding: 2rem;
     background: #fff;
@@ -91,6 +100,7 @@ h1:focus {
 }
 
 .bare__footer {
+    text-align: center;
     padding-top: 1.5rem;
     font-size: 0.85rem;
     color: #6b7280;
@@ -619,4 +629,67 @@ code.key {
     font-size: 0.95rem;
     letter-spacing: 0.04em;
     user-select: all;
+}
+
+/* --- The careers pages --------------------------------------------------- */
+
+/* The only pages a stranger reads, and the ones most likely to be opened on a
+   phone on a bad connection. Wider than the sign-in panel, because these
+   carry real prose. */
+.careers__title {
+    font-size: 1.6rem;
+    margin-bottom: 0.5rem;
+}
+
+.careers__lead {
+    font-size: 1.02rem;
+    color: #374151;
+}
+
+.careers__list {
+    list-style: none;
+    padding: 0;
+    margin: 1.5rem 0 0;
+}
+
+.careers__opening {
+    padding: 1rem 0;
+    border-top: 1px solid #e3e5e9;
+}
+
+.careers__role {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.careers__where {
+    display: inline-block;
+    margin-left: 0.5rem;
+    font-size: 0.85rem;
+    color: #6b7280;
+}
+
+.careers__summary {
+    margin: 0.35rem 0 0;
+    color: #4b5563;
+}
+
+/* The advert body is shown as text, so its line breaks are what the person
+   writing it typed. */
+.careers__description {
+    white-space: pre-wrap;
+    margin: 1rem 0 2rem;
+    line-height: 1.6;
+}
+
+.careers__optional,
+.careers__hint {
+    font-weight: 400;
+    font-size: 0.8rem;
+    color: #6b7280;
+}
+
+/* Roomier than the sign-in panel: this one holds an advert. */
+.bare__panel--wide {
+    max-width: 42rem;
 }
