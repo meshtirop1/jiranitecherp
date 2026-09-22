@@ -140,7 +140,7 @@ public class OutboxTests
         await using (var dispatch = db.NewContext())
         {
             var message = await dispatch.Outbox.SingleAsync();
-            message.MarkFailed("Handler threw");
+            message.MarkFailed("Handler threw", db.Clock.Now, TimeSpan.FromSeconds(30));
             message.MarkDispatched(db.Clock.Now);
             await dispatch.SaveChangesAsync();
         }
@@ -172,7 +172,7 @@ public class OutboxTests
         await using (var fail = db.NewContext())
         {
             var failing = await fail.Outbox.SingleAsync();
-            failing.MarkFailed(new string('e', 5000));
+            failing.MarkFailed(new string('e', 5000), db.Clock.Now, TimeSpan.FromSeconds(30));
             await fail.SaveChangesAsync();
         }
 

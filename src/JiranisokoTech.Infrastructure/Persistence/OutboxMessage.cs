@@ -14,14 +14,21 @@ namespace JiranisokoTech.Infrastructure.Persistence;
 /// record of the intent was in memory.
 ///
 /// Writing the event as a row in the same transaction removes the window
-/// entirely: either both land or neither does. A dispatcher then reads unsent
+/// entirely: either both land or neither does. The dispatcher then reads unsent
 /// rows and publishes them, and because it can crash and retry, handlers must be
 /// idempotent — which is a requirement worth designing for rather than
 /// discovering.
 ///
-/// The dispatcher is not built yet. Rows accumulate here and nothing reads them,
-/// which is deliberate: the table is the part that must exist first, because an
-/// event not written at the moment it happened cannot be recovered later.
+/// A row is in exactly one of four states, and the columns say which:
+///
+///   pending     — DispatchedAt and AbandonedAt both null. Waiting, or waiting
+///                 out a backoff after a failure.
+///   claimed     — ClaimedBy set. A dispatcher has taken it. A claim goes stale
+///                 on a timeout, so a process that dies holding one does not
+///                 strand the message forever.
+///   dispatched  — DispatchedAt set. Every handler ran without throwing.
+///   abandoned   — AbandonedAt set. Gave up. Nothing retries it, and it stays in
+///                 the table with its last error so somebody can see it.
 /// </remarks>
 public sealed class OutboxMessage
 {
@@ -62,24 +69,97 @@ public sealed class OutboxMessage
     /// <summary>How many times dispatch has been attempted and failed.</summary>
     public int Attempts { get; private set; }
 
+    /// <summary>When the last attempt was made. For whoever is reading the row.</summary>
+    public DateTimeOffset? LastAttemptedAt { get; private set; }
+
+    /// <summary>
+    /// The earliest this may be tried again. Null means now.
+    /// </summary>
+    /// <remarks>
+    /// Stored rather than worked out at read time, deliberately. The backoff
+    /// depends on how many attempts a row has behind it, and a rule like
+    /// "last attempt plus a delay that varies per row" cannot be put in a WHERE
+    /// clause that an index can use. Computing it once on failure turns the
+    /// dispatcher's query back into a range scan.
+    ///
+    /// Without a backoff at all, a failing message is retried on every poll —
+    /// several times a minute, forever, each one writing a line to the log,
+    /// which then becomes useless at exactly the moment somebody needs to read
+    /// it.
+    /// </remarks>
+    public DateTimeOffset? NextAttemptAt { get; private set; }
+
     /// <summary>The last failure, kept so a stuck message can be diagnosed.</summary>
     public string? Error { get; private set; }
 
-    public bool IsPending => DispatchedAt is null;
+    /// <summary>
+    /// Which dispatcher run has taken this message, if any.
+    /// </summary>
+    /// <remarks>
+    /// Two instances of the application both poll this table. Without a claim
+    /// they would both read the same pending row and both publish it — two
+    /// rejection emails to the same candidate, from a system that looks correct
+    /// in every log. The claim is taken with a conditional update, so exactly
+    /// one of them wins.
+    /// </remarks>
+    public Guid? ClaimedBy { get; private set; }
+
+    public DateTimeOffset? ClaimedAt { get; private set; }
+
+    /// <summary>When this was given up on. Nothing retries it afterwards.</summary>
+    public DateTimeOffset? AbandonedAt { get; private set; }
+
+    public bool IsPending => DispatchedAt is null && AbandonedAt is null;
 
     public void MarkDispatched(DateTimeOffset at)
     {
         DispatchedAt = at;
+        LastAttemptedAt = at;
+        NextAttemptAt = null;
         Error = null;
+        Release();
     }
 
-    public void MarkFailed(string error)
+    public void MarkFailed(string error, DateTimeOffset at, TimeSpan retryIn)
     {
         Attempts++;
+        LastAttemptedAt = at;
+        NextAttemptAt = at + retryIn;
+        Error = Shorten(error);
 
-        // Truncated: a stack trace from a handler can run to kilobytes, and a
-        // hundred of them turn the outbox into the largest table in the
-        // database. The full detail belongs in the log.
-        Error = error.Length > 2000 ? error[..2000] : error;
+        Release();
     }
+
+    /// <summary>
+    /// Stop trying.
+    /// </summary>
+    /// <remarks>
+    /// For the two cases where retrying cannot help: an event type the code no
+    /// longer has, and a handler that has thrown the same way too many times.
+    /// The row stays, with its error, because a message quietly deleted is a
+    /// thing that happened and cannot be explained afterwards.
+    /// </remarks>
+    public void Abandon(string reason, DateTimeOffset at)
+    {
+        AbandonedAt = at;
+        LastAttemptedAt = at;
+        NextAttemptAt = null;
+        Error = Shorten(reason);
+
+        Release();
+    }
+
+    private void Release()
+    {
+        ClaimedBy = null;
+        ClaimedAt = null;
+    }
+
+    /// <summary>
+    /// Truncated: a stack trace from a handler can run to kilobytes, and a
+    /// hundred of them turn the outbox into the largest table in the database.
+    /// The full detail belongs in the log.
+    /// </summary>
+    private static string Shorten(string message) =>
+        message.Length > 2000 ? message[..2000] : message;
 }

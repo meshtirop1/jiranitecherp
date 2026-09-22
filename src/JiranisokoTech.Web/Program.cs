@@ -16,6 +16,10 @@ builder.Services.AddRazorComponents()
 // The database, the clock, and the stores accounts are kept in.
 builder.Services.AddPersistence(builder.Configuration);
 
+// The outbox dispatcher. Events raised inside a transaction are published from
+// here after it commits, which is the only way the two can be made to agree.
+builder.Services.AddMessaging(builder.Configuration);
+
 // Accounts and sign-in, then authorization. Registered in that order because
 // the authorization fallback below assumes authentication exists.
 builder.Services.AddApplicationIdentity();

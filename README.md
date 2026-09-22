@@ -21,10 +21,16 @@ nothing claims to work that does not.
 | ✅ | `Money` — integer minor units, currency-safe, allocation that balances |
 | ✅ | `Entity` and domain events, collected rather than dispatched mid-transaction |
 | ✅ | `IClock`, so date rules are testable on a day that is not today |
+| ✅ | Audit trail — append-only, written in the same transaction as the change |
+| ✅ | Roles and permissions, declared once in code and synced on every start |
+| ✅ | Sign in, sign out, lockout, deactivation, and a record of every attempt |
+| ✅ | Outbox dispatcher — at-least-once, backoff, claims, dead-lettering, sweeping |
 | ✅ | `/health` and `/ready`, answering different questions |
 | ✅ | Dockerfile and Compose — Postgres, Redis, non-root, tests run in the build |
-| ✅ | 20 tests |
-| ☐ | Everything else. See the checklist |
+| ✅ | 97 tests |
+| ☐ | Migrations. The schema is still created with `EnsureCreated` |
+| ☐ | Two-factor, and the screens for administering accounts |
+| ☐ | Every business module. See the checklist |
 
 **Docker has not been run against this.** It is not installed on the machine
 this was written on, so the Dockerfile and Compose file are written and reviewed
@@ -37,8 +43,27 @@ but unverified. First person with a Docker host should expect to fix something.
 Needs the .NET 10 SDK. Nothing else — the test suite does not require Docker.
 
 ```bash
-dotnet test                              # 20 tests
+dotnet test                              # 97 tests
 dotnet run --project src/JiranisokoTech.Web
+```
+
+An empty database has no accounts, and there is no self-registration — so set
+these before the first run or the sign-in page has nothing to let you past:
+
+```bash
+export Bootstrap__OwnerEmail=you@jiranisokotech.co.ke
+export Bootstrap__OwnerPassword=at-least-twelve-characters
+```
+
+They are read once, on a database with no owner, and ignored ever after. Change
+the password from inside the application and clear them.
+
+To see it as it will actually be served, publish first: a debug run cannot serve
+the framework assets from the project folder, and the pages come out unstyled.
+
+```bash
+dotnet publish src/JiranisokoTech.Web -c Release -o /tmp/erp
+cd /tmp/erp && dotnet JiranisokoTech.Web.dll --urls http://localhost:5189
 ```
 
 With Docker, once you have one:
