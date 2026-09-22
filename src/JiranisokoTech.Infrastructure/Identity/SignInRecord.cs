@@ -118,4 +118,15 @@ public enum SignInOutcome
 
     /// <summary>Password accepted; a second factor is still owed.</summary>
     SecondFactorRequired = 5,
+
+    /// <summary>
+    /// Signed in by spending a recovery code.
+    /// </summary>
+    /// <remarks>
+    /// Its own outcome rather than a plain success, because a recovery code
+    /// used by anybody other than the account holder is the clearest single
+    /// sign there is that the account has gone — and that only shows up if
+    /// somebody reading their own history can see it happened.
+    /// </remarks>
+    RecoveryCodeUsed = 6,
 }

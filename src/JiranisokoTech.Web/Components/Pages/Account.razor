@@ -34,6 +34,12 @@ else
 
         <dt>Times shown in</dt>
         <dd>@Zone.Id</dd>
+
+        <dt>Two-step sign-in</dt>
+        <dd>
+            @(TwoStep ? "On" : "Off")
+            <a href="/account/two-factor">@(TwoStep ? "Change" : "Set it up")</a>
+        </dd>
     </dl>
 
     <h2>Recent sign-ins</h2>
@@ -93,6 +99,8 @@ else
 
     private TimeZoneInfo Zone { get; set; } = TimeZoneInfo.Utc;
 
+    private bool TwoStep { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
         var state = await AuthenticationState;
@@ -113,6 +121,7 @@ else
         Roles = await Users.GetRolesAsync(Person);
         Zone = ZoneFor(Person.TimeZone);
         History = await Authentication.HistoryFor(userId);
+        TwoStep = await Users.GetTwoFactorEnabledAsync(Person);
     }
 
     /// <summary>
@@ -142,6 +151,7 @@ else
         SignInOutcome.LockedOut => "Refused — account locked",
         SignInOutcome.Deactivated => "Refused — account withdrawn",
         SignInOutcome.SecondFactorRequired => "Password accepted, second step owed",
+        SignInOutcome.RecoveryCodeUsed => "Signed in with a recovery code",
         _ => "Refused",
     };
 }

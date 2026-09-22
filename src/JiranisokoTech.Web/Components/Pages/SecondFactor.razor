@@ -1,0 +1,163 @@
+@page "/sign-in/second-factor"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Infrastructure.Identity
+@using JiranisokoTech.Web.Identity
+@using Microsoft.AspNetCore.Authorization
+@layout BareLayout
+@attribute [AllowAnonymous]
+@inject TwoFactor TwoFactor
+@inject SignInService Authentication
+@inject NavigationManager Navigation
+
+@*
+    Anonymous, and necessarily so: whoever is here has given a correct password
+    and is not signed in yet. What holds their place is a short-lived cookie
+    that Identity writes, and it carries nothing but which account is half way
+    through.
+
+    Static, like every page that completes a sign-in, because completing one
+    writes the session cookie.
+*@
+
+<PageTitle>One more step — Jiranisoko Delivery</PageTitle>
+
+@if (Waiting is null)
+{
+    @*
+        Nobody is part way through — a bookmark, a reload long after the fact,
+        or an expired hold. Sent back to the start rather than shown a form that
+        cannot work.
+    *@
+    <h1 class="signin__title">Start again</h1>
+    <p>That took too long, or the page was opened directly.</p>
+    <p><a href="/sign-in">Sign in</a></p>
+}
+else
+{
+    <h1 class="signin__title">One more step</h1>
+    <p class="signin__sub">Open your authenticator app and enter the code it shows.</p>
+
+    <EditForm Model="Input" method="post" OnValidSubmit="Submit" FormName="second-factor"
+              class="signin__form">
+        <DataAnnotationsValidator />
+
+        @if (Refusal is not null)
+        {
+            <p class="signin__refusal" role="alert">@Refusal</p>
+        }
+
+        <div class="signin__field">
+            <label for="code">@(Recovery ? "Recovery code" : "Six-digit code")</label>
+            @*
+                No autocomplete, and one-time-code as the hint, so a phone
+                offers the code from its messages rather than a saved password.
+            *@
+            <InputText id="code" @bind-Value="Input.Code" autocomplete="one-time-code"
+                       inputmode="@(Recovery ? "text" : "numeric")" />
+            <ValidationMessage For="() => Input.Code" />
+        </div>
+
+        @if (!Recovery)
+        {
+            <label class="signin__remember">
+                <InputCheckbox @bind-Value="Input.RememberMachine" />
+                <span>Do not ask again on this device</span>
+            </label>
+        }
+
+        <button type="submit" class="signin__submit">Continue</button>
+    </EditForm>
+
+    <p class="signin__note">
+        @if (Recovery)
+        {
+            <text>
+                Each recovery code works once. <a href="/sign-in/second-factor">Use the app instead</a>.
+            </text>
+        }
+        else
+        {
+            <text>
+                Lost the phone? <a href="/sign-in/second-factor?recovery=true">Use a recovery code</a>.
+            </text>
+        }
+    </p>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "recovery")]
+    private bool Recovery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    private string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery(Name = "remember")]
+    private bool RememberMe { get; set; }
+
+    private SecondFactorInput _input = new();
+
+    [SupplyParameterFromForm]
+    private SecondFactorInput Input
+    {
+        get => _input;
+        set => _input = value ?? new SecondFactorInput();
+    }
+
+    private ApplicationUser? Waiting { get; set; }
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync() =>
+        Waiting = await TwoFactor.WaitingOnSecondFactorAsync();
+
+    private async Task Submit()
+    {
+        Refusal = null;
+
+        var result = Recovery
+            ? await TwoFactor.SignInWithRecoveryCodeAsync(Input.Code)
+            : await TwoFactor.SignInWithCodeAsync(Input.Code, RememberMe, Input.RememberMachine);
+
+        if (result.Succeeded)
+        {
+            await Authentication.RecordSecondFactorAsync(Waiting!, Recovery);
+
+            Navigation.NavigateTo(SafeReturnUrl(), forceLoad: true);
+
+            return;
+        }
+
+        /*
+         * Lockout is said plainly; everything else gets one message.
+         *
+         * A wrong code and a used recovery code told apart would tell somebody
+         * holding a stolen list which of them had already been spent.
+         */
+        Refusal = result.IsLockedOut
+            ? "Too many attempts. Try again in fifteen minutes."
+            : Recovery
+                ? "That recovery code did not work. Each one can only be used once."
+                : "That code is not right. Check the clock on the phone, then try the code "
+                  + "showing now.";
+
+        Waiting = await TwoFactor.WaitingOnSecondFactorAsync();
+    }
+
+    /// <summary>Only ever somewhere inside this application.</summary>
+    private string SafeReturnUrl() =>
+        string.IsNullOrWhiteSpace(ReturnUrl)
+        || !ReturnUrl.StartsWith('/')
+        || ReturnUrl.StartsWith("//", StringComparison.Ordinal)
+        || ReturnUrl.StartsWith("/\\", StringComparison.Ordinal)
+            ? "/"
+            : ReturnUrl;
+
+    private sealed class SecondFactorInput
+    {
+        [Required(ErrorMessage = "Enter the code.")]
+        [StringLength(32)]
+        public string Code { get; set; } = string.Empty;
+
+        public bool RememberMachine { get; set; }
+    }
+}

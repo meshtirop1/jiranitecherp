@@ -100,6 +100,25 @@
             return;
         }
 
+        if (outcome == SignInOutcome.SecondFactorRequired)
+        {
+            /*
+             * The password was right and they are half way in. Identity is
+             * holding their place in a short-lived cookie; this hands them to
+             * the page that finishes it.
+             *
+             * The return address and the remember-me choice travel in the
+             * query, because the second page is a fresh request and nothing
+             * else carries them.
+             */
+            var next = $"/sign-in/second-factor?returnUrl={Uri.EscapeDataString(SafeReturnUrl())}"
+                + (Input.Remember ? "&remember=true" : string.Empty);
+
+            Navigation.NavigateTo(next, forceLoad: true);
+
+            return;
+        }
+
         /*
          * One message for everything that is about credentials.
          *

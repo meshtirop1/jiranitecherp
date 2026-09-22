@@ -77,6 +77,38 @@ public sealed class SignInService(
         return outcome;
     }
 
+    /// <summary>
+    /// Record that a second factor finished a sign-in.
+    /// </summary>
+    /// <remarks>
+    /// Without this the history of a two-factor account reads "password
+    /// accepted, second step owed" and then nothing, for every successful
+    /// sign-in they ever make — which is the opposite of what the page is for.
+    ///
+    /// A recovery code is recorded as itself. Somebody reading their own
+    /// history needs to see that one was spent, because a recovery code used by
+    /// anybody other than them is the clearest sign there is that the account
+    /// has gone.
+    /// </remarks>
+    public async Task RecordSecondFactorAsync(
+        ApplicationUser user,
+        bool byRecoveryCode,
+        string? ipAddress = null,
+        string? userAgent = null,
+        CancellationToken cancellationToken = default)
+    {
+        user.LastSignedInAt = clock.Now;
+        await users.UpdateAsync(user);
+
+        await RecordAsync(
+            user.Id,
+            user.Email ?? string.Empty,
+            byRecoveryCode ? SignInOutcome.RecoveryCodeUsed : SignInOutcome.Succeeded,
+            ipAddress,
+            userAgent,
+            cancellationToken);
+    }
+
     /// <summary>What this account has seen, most recent first.</summary>
     public Task<List<SignInRecord>> HistoryFor(Guid userId, int take = 20, CancellationToken cancellationToken = default) =>
         database.Set<SignInRecord>()

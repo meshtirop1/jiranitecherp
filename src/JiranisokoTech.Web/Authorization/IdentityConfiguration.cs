@@ -64,6 +64,7 @@ public static class IdentityConfiguration
         // pages that sign people in, the third one forgets, and the omission is
         // invisible: sign-in still works and only the history is wrong.
         services.AddScoped<SignInService>();
+        services.AddScoped<TwoFactor>();
 
         /*
          * Permissions travel in the cookie, so a role change does not reach an

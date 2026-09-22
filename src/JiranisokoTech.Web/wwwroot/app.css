@@ -578,3 +578,45 @@ code.link {
     overflow-wrap: anywhere;
     user-select: all;
 }
+
+/* --- Two-step sign-in ---------------------------------------------------- */
+
+/* Bounded, because the generated SVG has no intrinsic size and will otherwise
+   fill whatever it is given. */
+.qr svg {
+    width: 12rem;
+    height: 12rem;
+    display: block;
+    margin: 0.75rem 0;
+    background: #fff;
+}
+
+code.key {
+    font-size: 1rem;
+    letter-spacing: 0.06em;
+    background: #f5f6f8;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+}
+
+/* Recovery codes: monospaced and roomy, because these get transcribed by hand
+   and a mistaken character is an account somebody cannot get back into. */
+.codes {
+    list-style: none;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+    gap: 0.4rem;
+    margin: 0.75rem 0 0;
+}
+
+.codes code {
+    display: block;
+    padding: 0.4rem 0.6rem;
+    background: #fff;
+    border: 1px solid #c8ccd4;
+    border-radius: 4px;
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+    user-select: all;
+}

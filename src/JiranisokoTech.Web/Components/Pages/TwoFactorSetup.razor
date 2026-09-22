@@ -1,0 +1,241 @@
+@page "/account/two-factor"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Web.Identity
+@inject TwoFactor TwoFactor
+
+@*
+    Static. Turning a second factor on changes what a sign-in requires, and
+    every page that touches a credential in this application is rendered the
+    same way.
+*@
+
+<PageTitle>Two-step sign-in — Jiranisoko Delivery</PageTitle>
+
+<h1>Two-step sign-in</h1>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Codes is not null)
+{
+    @*
+        Shown once and never again. Identity stores them hashed, so this system
+        cannot show them a second time even if somebody asks — which is the
+        point, and worth saying here rather than leaving somebody to find out.
+    *@
+    <div class="done" role="status">
+        <h2>Write these down now</h2>
+        <p>
+            Each one gets you in once if you lose the phone. They are shown this
+            once — nothing here can show them again, because only their hashes
+            are kept.
+        </p>
+        <ul class="codes">
+            @* Not named "code": @code is a Razor directive, and the loop
+               variable would be read as the start of a code block. *@
+            @foreach (var recovery in Codes)
+            {
+                <li><code>@recovery</code></li>
+            }
+        </ul>
+    </div>
+}
+
+@if (On)
+{
+    <p class="done" role="status">Two-step sign-in is on for this account.</p>
+
+    <p class="subtle">
+        @Left recovery @(Left == 1 ? "code" : "codes") left.
+        @if (Left <= 2)
+        {
+            <text>That is nearly none — issue a new set.</text>
+        }
+    </p>
+
+    <div class="actions">
+        <form method="post" @formname="new-codes" @onsubmit="NewCodes">
+            <AntiforgeryToken />
+            <button type="submit">New recovery codes</button>
+        </form>
+
+        @*
+            Turning it off is a real reduction in how well the account is
+            protected, so it reads as one rather than as a toggle.
+        *@
+        <form method="post" @formname="turn-off" @onsubmit="TurnOff">
+            <AntiforgeryToken />
+            <button type="submit" class="danger">Turn two-step sign-in off</button>
+        </form>
+    </div>
+}
+else if (Setup is not null)
+{
+    <h2>Scan this</h2>
+
+    <p class="subtle">
+        Use any authenticator app — Google Authenticator, 1Password, Aegis. It
+        will start showing a six-digit code that changes every thirty seconds.
+    </p>
+
+    <div class="qr">@((MarkupString)Setup.QrSvg)</div>
+
+    <p class="subtle">
+        If the camera will not focus, type this in instead:
+        <code class="key">@Setup.Key</code>
+    </p>
+
+    <h2>Then prove it works</h2>
+
+    <EditForm Model="Input" method="post" OnValidSubmit="Confirm" FormName="confirm"
+              class="inline">
+        <DataAnnotationsValidator />
+        <InputText @bind-Value="Input.Code" autocomplete="one-time-code" inputmode="numeric"
+                   placeholder="Six digits" />
+        <button type="submit">Turn it on</button>
+        <ValidationMessage For="() => Input.Code" />
+    </EditForm>
+
+    <p class="signin__note">
+        Nothing changes until that code is accepted. If the app is not set up
+        properly you will not be locked out — you simply will not have turned it
+        on.
+    </p>
+
+    <form method="post" @formname="start-over" @onsubmit="StartOver">
+        <AntiforgeryToken />
+        <button type="submit" class="danger">Throw this key away and start again</button>
+    </form>
+}
+else
+{
+    <p>
+        A second step makes a stolen password useless on its own. You will be
+        asked for a six-digit code from your phone whenever you sign in.
+    </p>
+
+    <p class="subtle">
+        Codes come from an app on your phone, not from a text message. A phone
+        number is handed over by whoever runs the network, and that has been
+        talked out of people often enough that it is not a second factor.
+    </p>
+
+    <form method="post" @formname="begin" @onsubmit="Begin">
+        <AntiforgeryToken />
+        <button type="submit">Set it up</button>
+    </form>
+}
+
+<p><a href="/account">Back to your account</a></p>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private ConfirmInput _input = new();
+
+    [SupplyParameterFromForm]
+    private ConfirmInput Input
+    {
+        get => _input;
+        set => _input = value ?? new ConfirmInput();
+    }
+
+    private Guid Me { get; set; }
+
+    private bool On { get; set; }
+
+    private int Left { get; set; }
+
+    private Enrolment? Setup { get; set; }
+
+    private IReadOnlyList<string>? Codes { get; set; }
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        if (Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var id))
+        {
+            Me = id;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (Me == Guid.Empty)
+        {
+            return;
+        }
+
+        On = await TwoFactor.IsOnAsync(Me);
+        Left = On ? await TwoFactor.RecoveryCodesLeftAsync(Me) : 0;
+    }
+
+    private Task Begin() => Run(async () => Setup = await TwoFactor.BeginAsync(Me));
+
+    private async Task Confirm()
+    {
+        Refusal = null;
+
+        try
+        {
+            Codes = await TwoFactor.ConfirmAsync(Me, Input.Code);
+            Setup = null;
+            Input = new ConfirmInput();
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+
+            // The same key again, so the app they have just set up still
+            // matches and they can simply retype the code. Sending them back to
+            // the start would make them scan a second time for a typo.
+            Setup = await TwoFactor.BeginAsync(Me);
+        }
+
+        await LoadAsync();
+    }
+
+    private Task StartOver() => Run(async () => Setup = await TwoFactor.ResetKeyAsync(Me));
+
+    private Task NewCodes() => Run(async () => Codes = await TwoFactor.NewRecoveryCodesAsync(Me));
+
+    private Task TurnOff() => Run(async () =>
+    {
+        await TwoFactor.TurnOffAsync(Me);
+        Codes = null;
+    });
+
+    private async Task Run(Func<Task> work)
+    {
+        Refusal = null;
+
+        try
+        {
+            await work();
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private sealed class ConfirmInput
+    {
+        [Required(ErrorMessage = "Enter the code the app is showing.")]
+        [StringLength(10)]
+        public string Code { get; set; } = string.Empty;
+    }
+}

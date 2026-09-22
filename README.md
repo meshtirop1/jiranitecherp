@@ -37,8 +37,9 @@ nothing claims to work that does not.
 | ✅ | Approvals — chains that cannot reach the stuck state the old one did |
 | ✅ | Accounts — invitations, roles, withdrawal, linking to a staff record |
 | ✅ | Email — invitations and approval notices; File by default, so nothing surprises anybody |
-| ✅ | 324 tests |
-| ☐ | Two-factor |
+| ✅ | Two-step sign-in — authenticator codes, recovery codes, a way back in |
+| ✅ | 333 tests |
+| ☐ | Requiring two-step sign-in of anybody. It is offered, not compulsory |
 | ☐ | Every business module. See the checklist |
 
 **Docker has not been run against this.** It is not installed on the machine
@@ -52,7 +53,7 @@ but unverified. First person with a Docker host should expect to fix something.
 Needs the .NET 10 SDK. Nothing else — the test suite does not require Docker.
 
 ```bash
-dotnet test                              # 324 tests
+dotnet test                              # 333 tests
 dotnet run --project src/JiranisokoTech.Web
 ```
 
