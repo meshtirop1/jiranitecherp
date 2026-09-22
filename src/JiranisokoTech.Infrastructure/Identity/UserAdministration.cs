@@ -1,7 +1,8 @@
 using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Application.Authorization;
+using JiranisokoTech.Application.Mail;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Roles = JiranisokoTech.Application.Authorization.Roles;
 
 namespace JiranisokoTech.Infrastructure.Identity;
@@ -24,8 +25,53 @@ namespace JiranisokoTech.Infrastructure.Identity;
 public sealed class UserAdministration(
     UserManager<ApplicationUser> users,
     RoleManager<ApplicationRole> roles,
-    IClock clock)
+    IMailer mailer,
+    IClock clock,
+    ILogger<UserAdministration> logger)
 {
+    /// <summary>
+    /// Open an account and try to email the link, saying whether that worked.
+    /// </summary>
+    /// <remarks>
+    /// The send is best effort and deliberately not in the outbox. An
+    /// invitation that fails to send costs one click to reissue, and the
+    /// administrator is looking at the link on screen at that moment anyway —
+    /// so queueing it would add a retry nobody is waiting on, for a message
+    /// that has already been handed over by other means.
+    ///
+    /// A mail server being down must not stop an account being opened. The
+    /// account is the thing that matters; the email is how somebody hears about
+    /// it.
+    /// </remarks>
+    public async Task<(ApplicationUser User, string Link, bool Sent)> InviteAndTellThemAsync(
+        string email,
+        string displayName,
+        string? jobTitle,
+        string baseAddress,
+        string openedBy,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await InviteAsync(email, displayName, jobTitle, cancellationToken);
+        var link = await SignInLinkAsync(user.Id, baseAddress);
+
+        try
+        {
+            await mailer.SendAsync(
+                Letters.Invitation(email, displayName, link, openedBy), cancellationToken);
+
+            return (user, link, true);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Opened an account for {Email} but could not email the link.",
+                email);
+
+            return (user, link, false);
+        }
+    }
+
     /// <summary>
     /// Open an account for somebody, with no password and no way in yet.
     /// </summary>

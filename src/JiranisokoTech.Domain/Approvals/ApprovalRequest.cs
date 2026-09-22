@@ -328,7 +328,8 @@ public sealed class ApprovalRequest : Entity, IAuditable
         SettledAt = at;
         Outcome = outcome;
 
-        Raise(new ApprovalSettled(Id, SubjectType, SubjectId, Action, status, outcome, at));
+        Raise(new ApprovalSettled(
+            Id, SubjectType, SubjectId, Action, status, outcome, at, RequestedById));
     }
 
     private static string Require(string value, string parameter) =>

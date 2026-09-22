@@ -1,12 +1,15 @@
 using System.Reflection;
 using JiranisokoTech.Application.Abstractions;
+using JiranisokoTech.Domain.Approvals;
 using JiranisokoTech.Domain.People;
 using JiranisokoTech.Domain.Common;
 using JiranisokoTech.Application.Approvals;
+using JiranisokoTech.Application.Mail;
 using JiranisokoTech.Application.People;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Infrastructure.Messaging;
 using JiranisokoTech.Infrastructure.Approvals;
+using JiranisokoTech.Infrastructure.Mail;
 using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Infrastructure.People;
 using JiranisokoTech.Infrastructure.Work;
@@ -101,6 +104,45 @@ public static class ServiceCollectionExtensions
         // Reactions between modules. People knows nothing about work items and
         // must not; the event is what carries a departure across to the board.
         services.AddScoped<IDomainEventHandler<EmployeeLeft>, ReleaseWorkWhenSomebodyLeaves>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// How mail leaves, and who gets told what.
+    /// </summary>
+    /// <remarks>
+    /// The mailer is chosen once, at startup, from configuration. Deciding per
+    /// message would mean a code path that only ever runs in production, which
+    /// is the one nobody has watched work.
+    /// </remarks>
+    public static IServiceCollection AddMail(
+        this IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<MailOptions>(configuration.GetSection(MailOptions.Section));
+
+        var transport = configuration
+            .GetSection(MailOptions.Section)
+            .GetValue(nameof(MailOptions.Transport), MailTransport.File);
+
+        switch (transport)
+        {
+            case MailTransport.Smtp:
+                services.AddScoped<IMailer, SmtpMailer>();
+                break;
+            case MailTransport.None:
+                services.AddScoped<IMailer, NullMailer>();
+                break;
+            default:
+                services.AddScoped<IMailer, FileMailer>();
+                break;
+        }
+
+        services.AddScoped<MailRecipients>();
+
+        services.AddScoped<IDomainEventHandler<ApprovalRequested>,
+            TellTheDeciderSomethingIsWaiting>();
+        services.AddScoped<IDomainEventHandler<ApprovalSettled>, TellTheAskerItWasDecided>();
 
         return services;
     }

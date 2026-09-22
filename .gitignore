@@ -20,3 +20,7 @@
 .vscode/
 .idea/
 *.swp
+
+# Messages the file mailer writes in development. Correspondence, and not
+# something to commit.
+mail/

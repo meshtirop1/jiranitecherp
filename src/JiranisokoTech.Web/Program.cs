@@ -23,6 +23,9 @@ builder.Services.AddMessaging(builder.Configuration);
 // The business modules.
 builder.Services.AddModules();
 
+// How mail leaves, and who gets told what.
+builder.Services.AddMail(builder.Configuration);
+
 // Accounts and sign-in, then authorization. Registered in that order because
 // the authorization fallback below assumes authentication exists.
 builder.Services.AddApplicationIdentity();

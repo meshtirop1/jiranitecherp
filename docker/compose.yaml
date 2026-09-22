@@ -27,6 +27,16 @@ services:
       Bootstrap__OwnerEmail: ${OWNER_EMAIL:-}
       Bootstrap__OwnerPassword: ${OWNER_PASSWORD:-}
       Bootstrap__OwnerName: ${OWNER_NAME:-}
+      # Mail. File by default, so nothing reaches a real person until somebody
+      # sets MAIL_TRANSPORT=Smtp on purpose.
+      Mail__Transport: ${MAIL_TRANSPORT:-File}
+      Mail__Host: ${MAIL_HOST:-}
+      Mail__Port: ${MAIL_PORT:-587}
+      Mail__Username: ${MAIL_USERNAME:-}
+      Mail__Password: ${MAIL_PASSWORD:-}
+      Mail__FromAddress: ${MAIL_FROM_ADDRESS:-}
+      Mail__FromName: ${MAIL_FROM_NAME:-Jiranisoko Tech Solutions}
+      Mail__BaseAddress: ${MAIL_BASE_ADDRESS:-https://${ERP_DOMAIN:-erp.jiranisokotech.co.ke}}
     ports:
       # Bound to localhost. The reverse proxy in front of this is what the
       # internet talks to; the application itself is never directly exposed.

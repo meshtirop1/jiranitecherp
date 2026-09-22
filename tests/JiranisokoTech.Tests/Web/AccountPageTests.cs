@@ -75,9 +75,10 @@ public partial class AccountPageTests(ApplicationFactory factory)
         Assert.Equal(HttpStatusCode.OK, opened.StatusCode);
         Assert.Contains("Precious", html);
 
-        // The link is on the page because nothing emails it yet, which the page
-        // says rather than hides.
-        Assert.Contains("Nothing emails it for them", html);
+        // The link is emailed, and also shown: an administrator who has just
+        // opened an account is standing next to the person half the time, and
+        // waiting for an inbox to refresh is worse than reading it out.
+        Assert.Contains("has been emailed to them", html);
 
         var link = LinkIn(html);
         Assert.NotNull(link);

@@ -19,17 +19,28 @@
 @if (Invited is not null)
 {
     @*
-        The link is shown here because nothing sends mail yet. That is a gap,
-        so it is named rather than dressed up: an administrator copies this and
-        passes it on. When mail is wired up, the same link gets sent instead and
-        this panel goes.
+        The link is shown whether or not the email went. An administrator who
+        has just opened an account is standing next to the person half the time,
+        and waiting for an inbox to refresh is a worse experience than reading
+        it out.
     *@
     <div class="done" role="status">
         <p><strong>@Invited.Value.Name</strong> now has an account, with no password yet.</p>
-        <p>
-            Send them this link so they can set one. Nothing emails it for them —
-            that is not built.
-        </p>
+
+        @if (Invited.Value.Sent)
+        {
+            <p>The link has been emailed to them. It is also here, if you would rather say it in person.</p>
+        }
+        else
+        {
+            @* Named rather than hidden. An invitation that silently failed to
+               send is somebody waiting for an email that is never coming. *@
+            <p>
+                <strong>The email did not go.</strong> Send them this link
+                yourself, and check how mail is configured.
+            </p>
+        }
+
         <p><code class="link">@Invited.Value.Link</code></p>
     </div>
 }
@@ -70,9 +81,9 @@
     <h2>Open an account</h2>
 
     <p class="subtle">
-        They set their own password from a link. Nobody here ever types it for
-        them — an administrator who knows somebody password makes every action
-        by that person deniable.
+        They set their own password from a link, which is emailed to them.
+        Nobody here ever types it for them — an administrator who knows
+        somebody else password makes every action by that person deniable.
     </p>
 
     <EditForm Model="Input" method="post" OnValidSubmit="Invite" FormName="invite" class="stack">
@@ -103,6 +114,19 @@
     [CascadingParameter]
     private HttpContext? Request { get; set; }
 
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    /// <summary>
+    /// Who opened the account, named in the message they receive.
+    /// </summary>
+    /// <remarks>
+    /// An invitation from a name somebody recognises is one they act on. An
+    /// invitation from nobody in particular is one they ignore, or worse,
+    /// report as a phishing attempt.
+    /// </remarks>
+    private string OpenedBy { get; set; } = "An administrator";
+
     private InviteInput _input = new();
 
     [SupplyParameterFromForm]
@@ -114,11 +138,20 @@
 
     private List<AccountRow> Rows { get; set; } = [];
 
-    private (string Name, string Link)? Invited { get; set; }
+    private (string Name, string Link, bool Sent)? Invited { get; set; }
 
     private string? Refusal { get; set; }
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        OpenedBy = user.FindFirst("display_name")?.Value
+            ?? user.Identity?.Name
+            ?? OpenedBy;
+
+        await LoadAsync();
+    }
 
     private async Task LoadAsync() => Rows = await Directory.AllAsync();
 
@@ -129,12 +162,10 @@
 
         try
         {
-            var user = await Administration.InviteAsync(
-                Input.Email, Input.DisplayName, Input.JobTitle);
+            var (user, link, sent) = await Administration.InviteAndTellThemAsync(
+                Input.Email, Input.DisplayName, Input.JobTitle, BaseAddress, OpenedBy);
 
-            var link = await Administration.SignInLinkAsync(user.Id, BaseAddress);
-
-            Invited = (user.DisplayName, link);
+            Invited = (user.DisplayName, link, sent);
             Input = new InviteInput();
         }
         catch (Exception exception) when (

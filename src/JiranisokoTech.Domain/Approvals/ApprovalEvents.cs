@@ -40,4 +40,8 @@ public sealed record ApprovalSettled(
     string Action,
     ApprovalStatus Status,
     string? Outcome,
-    DateTimeOffset At) : DomainEvent;
+    DateTimeOffset At,
+    // Carried on the event rather than looked up. A subscriber running from the
+    // outbox may be handling this minutes later, and the request it would have
+    // read could by then have been swept or changed.
+    Guid RequestedById) : DomainEvent;
