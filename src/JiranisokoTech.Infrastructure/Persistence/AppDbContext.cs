@@ -3,6 +3,7 @@ using System.Text.Json;
 using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Domain.Audit;
 using JiranisokoTech.Domain.Common;
+using JiranisokoTech.Domain.People;
 using JiranisokoTech.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -27,6 +28,10 @@ public class AppDbContext(
     ICurrentUser currentUser)
     : IdentityDbContext<ApplicationUser, ApplicationRole, Guid>(options)
 {
+    public DbSet<Department> Departments => Set<Department>();
+
+    public DbSet<Employee> Employees => Set<Employee>();
+
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
     public DbSet<OutboxMessage> Outbox => Set<OutboxMessage>();

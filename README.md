@@ -28,7 +28,9 @@ nothing claims to work that does not.
 | ✅ | `/health` and `/ready`, answering different questions |
 | ✅ | Dockerfile and Compose — Postgres, Redis, non-root, tests run in the build |
 | ✅ | Migrations, applied on start, with a test that catches a model change without one |
-| ✅ | 105 tests |
+| ✅ | People — departments, employees, reporting lines that cannot form a loop |
+| ✅ | 172 tests |
+| ☐ | The services and screens over People. The model is there; nothing drives it yet |
 | ☐ | Two-factor, and the screens for administering accounts |
 | ☐ | Every business module. See the checklist |
 
@@ -43,7 +45,7 @@ but unverified. First person with a Docker host should expect to fix something.
 Needs the .NET 10 SDK. Nothing else — the test suite does not require Docker.
 
 ```bash
-dotnet test                              # 105 tests
+dotnet test                              # 172 tests
 dotnet run --project src/JiranisokoTech.Web
 ```
 
