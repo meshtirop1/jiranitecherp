@@ -1,0 +1,235 @@
+@page "/reports"
+@using JiranisokoTech.Application.Abstractions
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Infrastructure.Reporting
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ReportsView)]
+@inject ReportingQueries Reporting
+@inject IClock Clock
+
+@*
+    The same rule the home page holds to: no wall of tiles. Every figure below
+    is a question somebody asks out loud, and every one of them ends in a link
+    to the place it is answered. A number with nowhere to go is a number that
+    gets read twice and then skipped, and it goes stale without anybody
+    noticing, because nobody was using it.
+
+    Money is behind the invoices permission rather than the reporting one. A
+    department head holds reports so they can see their team's hours and
+    absence; what clients owe is not theirs to see, and putting it on a page
+    they can open would make it theirs by accident.
+*@
+
+<PageTitle>Where things stand — Jiranisoko Delivery</PageTitle>
+
+<h1>Where things stand</h1>
+<p class="subtle">As at @Today.ToString("dddd d MMMM yyyy").</p>
+
+<AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.InvoicesView)" Context="money">
+    <section class="standing">
+        <h2>Money owed to us</h2>
+
+        @if (State.Outstanding is { } outstanding)
+        {
+            <p class="standing__figure">@outstanding</p>
+            <p>
+                on invoices that have been sent and not settled.
+                @if (State.OverdueCount > 0)
+                {
+                    <strong>
+                        @State.Overdue of it is overdue, across
+                        @State.OverdueCount @(State.OverdueCount == 1 ? "invoice" : "invoices")
+                    </strong>
+
+                    @if (State.OldestOverdue is { } oldest)
+                    {
+                        <text>, the oldest due on @oldest.ToString("d MMMM").</text>
+                    }
+                }
+                else
+                {
+                    <text>Nothing is overdue.</text>
+                }
+            </p>
+            <p><a href="/invoices">Go to invoices</a></p>
+        }
+        else
+        {
+            <p class="empty">Nothing is outstanding. Every invoice sent has been paid.</p>
+        }
+    </section>
+
+    <section class="standing">
+        <h2>Work done and not billed</h2>
+
+        @if (State.UnbilledMinutes > 0)
+        {
+            <p class="standing__figure">@Hours(State.UnbilledMinutes)</p>
+            <p>
+                approved, billable, and on no invoice. This is work the firm has
+                done and has not asked to be paid for.
+            </p>
+            <p><a href="/invoices">Draft an invoice</a></p>
+        }
+        else
+        {
+            <p class="empty">Everything approved and billable is on an invoice.</p>
+        }
+    </section>
+</AuthorizeView>
+
+<section class="standing">
+    <h2>Waiting on somebody</h2>
+
+    @if (State.NothingIsWaiting)
+    {
+        <p class="empty">Nothing is waiting for a decision.</p>
+    }
+    else
+    {
+        <ul class="plain">
+            @if (State.UnapprovedEntries > 0)
+            {
+                <li>
+                    <strong>@Hours(State.UnapprovedMinutes)</strong> of logged time
+                    across @State.UnapprovedEntries
+                    @(State.UnapprovedEntries == 1 ? "entry" : "entries")
+                    has not been approved.
+                    @*
+                        Said here because it is the step that blocks billing:
+                        unapproved hours cannot go on an invoice at all, so this
+                        queue is upstream of the money above.
+                    *@
+                    Unapproved hours cannot be billed.
+                    <a href="/time/approvals">Approve timesheets</a>
+                </li>
+            }
+
+            @if (State.LeaveWaiting > 0)
+            {
+                <li>
+                    <strong>@State.LeaveWaiting</strong>
+                    @(State.LeaveWaiting == 1 ? "leave request is" : "leave requests are")
+                    waiting for a decision.
+                    <a href="/leave/decisions">Decide leave</a>
+                </li>
+            }
+
+            @if (State.ClaimsWaiting > 0)
+            {
+                <li>
+                    <strong>@State.ClaimsWaiting</strong>
+                    expense @(State.ClaimsWaiting == 1 ? "claim is" : "claims are")
+                    waiting for a decision.
+                    <a href="/expenses/claims">Decide claims</a>
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+<AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ExpensesViewAll)" Context="owed">
+    <section class="standing">
+        <h2>Money we owe our own people</h2>
+
+        @if (State.OwedToStaff is { } owing)
+        {
+            <p class="standing__figure">@owing</p>
+            <p>
+                approved and not yet paid, across @State.OwedToStaffCount
+                @(State.OwedToStaffCount == 1 ? "claim" : "claims"). Somebody is
+                out of pocket for this.
+            </p>
+            <p><a href="/expenses/claims">Go to claims</a></p>
+        }
+        else
+        {
+            <p class="empty">Nothing approved is waiting to be paid.</p>
+        }
+    </section>
+</AuthorizeView>
+
+<section class="standing">
+    <h2>Who is away, next fortnight</h2>
+
+    @if (State.AwaySoon.Count == 0)
+    {
+        <p class="empty">Nobody is booked off in the next two weeks.</p>
+    }
+    else
+    {
+        <ul class="plain">
+            @foreach (var away in State.AwaySoon)
+            {
+                <li>
+                    <strong>@away.Name</strong> — @Words.For(away.Kind),
+                    @Span(away.From, away.To)
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+<section class="standing">
+    <h2>Delivery</h2>
+
+    <ul class="plain">
+        <li>
+            <strong>@State.ProjectsRunning</strong>
+            @(State.ProjectsRunning == 1 ? "project is" : "projects are") running.
+            <a href="/projects">Go to projects</a>
+        </li>
+
+        @if (State.WorkBlocked > 0)
+        {
+            <li>
+                <strong>@State.WorkBlocked</strong>
+                @(State.WorkBlocked == 1 ? "item is" : "items are") blocked.
+                Blocked work is waiting on somebody by definition.
+                <a href="/work">Go to the board</a>
+            </li>
+        }
+
+        @if (State.WorkOverdue > 0)
+        {
+            <li>
+                <strong>@State.WorkOverdue</strong>
+                @(State.WorkOverdue == 1 ? "item is" : "items are") past the date
+                they were due.
+                <a href="/work">Go to the board</a>
+            </li>
+        }
+    </ul>
+</section>
+
+@code {
+    private DateOnly Today { get; set; }
+
+    private FirmState State { get; set; } = Empty;
+
+    /// <summary>
+    /// What the page holds before the read returns.
+    /// </summary>
+    /// <remarks>
+    /// A real value rather than a null, so the markup above never has to ask
+    /// whether the figures have arrived. Static rendering means they always
+    /// have by the time anything is drawn; this exists so that the day somebody
+    /// makes this page interactive, it renders empty rather than throwing.
+    /// </remarks>
+    private static readonly FirmState Empty = new(
+        null, null, 0, null, 0, 0, 0, null, 0, 0, 0, [], 0, 0, 0);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Today = Clock.Today;
+        State = await Reporting.StateAsync(Today);
+    }
+
+    private static string Hours(int minutes) => minutes % 60 == 0
+        ? $"{minutes / 60}h"
+        : $"{minutes / 60}h {minutes % 60}m";
+
+    private static string Span(DateOnly from, DateOnly to) => from == to
+        ? from.ToString("ddd d MMM")
+        : $"{from:ddd d MMM} to {to:ddd d MMM}";
+}

@@ -184,6 +184,55 @@ public class BusinessPageTests(ApplicationFactory factory) : IClassFixture<Appli
         }
     }
 
+    /// <summary>
+    /// A developer cannot open the reporting page, and a manager can.
+    /// </summary>
+    /// <remarks>
+    /// Worth its own test because the page shows money, and money is behind a
+    /// second permission inside a page the reporting permission opens. Both
+    /// halves are checked below.
+    /// </remarks>
+    [Fact]
+    public async Task Reporting_is_not_for_everybody()
+    {
+        var developer = await SignedInAsync("dev4@jiranisokotech.co.ke", Roles.Developer);
+
+        var refused = await developer.GetAsync("/reports");
+
+        Assert.Equal(HttpStatusCode.Found, refused.StatusCode);
+        Assert.Contains("/denied", refused.Headers.Location!.OriginalString);
+
+        var manager = await SignedInAsync("pm2@jiranisokotech.co.ke", Roles.ProjectManager);
+
+        var allowed = await manager.GetAsync("/reports");
+        var html = await allowed.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, allowed.StatusCode);
+        Assert.Contains("Where things stand", html);
+    }
+
+    /// <summary>
+    /// A head opens the reporting page and is not shown what clients owe.
+    /// </summary>
+    /// <remarks>
+    /// They hold reports, so they see their team's hours and absence. They do
+    /// not hold invoices, and the firm's debtors are not theirs to read — a
+    /// section rendered for them anyway would be a leak nobody had decided on.
+    /// </remarks>
+    [Fact]
+    public async Task A_head_sees_the_reporting_page_without_the_money_on_it()
+    {
+        var browser = await SignedInAsync("head3@jiranisokotech.co.ke", Roles.DepartmentHead);
+
+        var response = await browser.GetAsync("/reports");
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("Where things stand", html);
+        Assert.DoesNotContain("Money owed to us", html);
+        Assert.DoesNotContain("Work done and not billed", html);
+    }
+
     private async Task<HttpClient> SignedInAsync(string email, string role)
     {
         using (var scope = factory.Services.CreateScope())
