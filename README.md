@@ -26,7 +26,7 @@ nothing claims to work that does not.
 | ✅ | Sign in, sign out, lockout, deactivation, and a record of every attempt |
 | ✅ | Outbox dispatcher — at-least-once, backoff, claims, dead-lettering, sweeping |
 | ✅ | `/health` and `/ready`, answering different questions |
-| ✅ | Dockerfile and Compose — Postgres, Redis, non-root, tests run in the build |
+| ✅ | Dockerfile and Compose — built, run, and four faults fixed that only running found |
 | ✅ | Migrations, applied on start, with a test that catches a model change without one |
 | ✅ | People — departments, employees, reporting lines that cannot form a loop |
 | ✅ | People screens — roster, person, departments, organisation chart |
@@ -48,13 +48,40 @@ nothing claims to work that does not.
 | ✅ | Invoices — numbered in sequence, totals summed not stored, approved hours billed once |
 | ✅ | Screens for all six — logging a day, asking for leave, claiming, approving, billing |
 | ✅ | Every class a page uses is a class some stylesheet defines, and a test says so |
-| ✅ | 427 tests |
+| ✅ | 432 tests |
 | ☐ | Requiring two-step sign-in of anybody. It is offered, not compulsory |
 | ☐ | Reporting, documents, a public API, integrations, settings, search |
 
-**Docker has not been run against this.** It is not installed on the machine
-this was written on, so the Dockerfile and Compose file are written and reviewed
-but unverified. First person with a Docker host should expect to fix something.
+**Docker has been run against this**, and the first person was right to expect
+to fix something. Four faults were found by running it that nothing on a
+developer's machine could have shown:
+
+- The Postgres 18 images refuse to start when the volume is mounted at
+  `/var/lib/postgresql/data`; 18 and later want `/var/lib/postgresql`.
+- Restoring with only the `.csproj` files present — the usual layer-caching
+  trick — happens before any `.razor` file exists, so the SDK never adds the
+  implicit package carrying `blazor.web.js`, and `--no-restore` locks that in
+  for the rest of the build. Every page then asked for a script that answered
+  with a redirect to the sign-in page. Nothing is interactive yet, so nothing
+  visibly broke; the first component to ask for `@rendermode` would simply not
+  have worked, in the container only.
+- The keys that sign the authentication cookie were written inside the
+  container, so every deploy would have signed the whole firm out and
+  invalidated any password-reset link already sent.
+- And the fix for that one was itself wrong until it was run: a named volume
+  takes its ownership from the image, so `/keys` has to exist and belong to the
+  non-root user before that user takes over. Until it did, the sign-in page
+  returned 500 from a directory permission.
+
+What is verified: the image builds, the 432 tests run and pass inside it, all
+three containers report healthy, the eight migrations apply to a real Postgres,
+the health and readiness endpoints answer, the public pages render with their
+stylesheets, and the signing keys survive a restart.
+
+Not yet done: nothing is deployed to a host, so `erp.jiranisokotech.co.ke` does
+not answer. The `cache` container runs Redis and the application does not use
+it — it is provisioned ahead of the background-job work rather than because
+anything reads from it today.
 
 ---
 
@@ -63,7 +90,7 @@ but unverified. First person with a Docker host should expect to fix something.
 Needs the .NET 10 SDK. Nothing else — the test suite does not require Docker.
 
 ```bash
-dotnet test                              # 427 tests
+dotnet test                              # 432 tests
 dotnet run --project src/JiranisokoTech.Web
 ```
 

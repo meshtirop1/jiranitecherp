@@ -32,6 +32,10 @@ builder.Services.AddMail(builder.Configuration);
 builder.Services.AddApplicationIdentity();
 builder.Services.AddPermissionAuthorization();
 
+// The key ring that signs the authentication cookie. Must outlive the
+// container, or a deploy signs everybody out.
+builder.AddSigningKeyRing();
+
 // Makes who is signed in available to components as a cascading value. Without
 // it AuthorizeView renders nothing at all — silently, which is the failure mode
 // that gets shipped.
@@ -79,6 +83,12 @@ builder.WebHost.ConfigureKestrel(kestrel =>
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+// First in the pipeline, before anything reads the client's address or the
+// request's scheme — which the rate limiter and the sign-in trail both do.
+app.UseReverseProxyHeaders();
+
+app.ReportSigningKeyRing();
 
 if (!app.Environment.IsDevelopment())
 {

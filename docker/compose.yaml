@@ -37,10 +37,20 @@ services:
       Mail__FromAddress: ${MAIL_FROM_ADDRESS:-}
       Mail__FromName: ${MAIL_FROM_NAME:-Jiranisoko Tech Solutions}
       Mail__BaseAddress: ${MAIL_BASE_ADDRESS:-https://${ERP_DOMAIN:-erp.jiranisokotech.co.ke}}
+      # The key ring that signs cookies, on a volume rather than in the
+      # container. Without it every deploy signs the whole firm out.
+      DataProtection__KeyRingPath: /keys
+      # The networks a proxy may send X-Forwarded-For from, if there is one.
+      # Left unset the application reads the address it can see, which behind a
+      # proxy is the proxy — see ReverseProxy.cs for why that is not simply
+      # trusted by default.
+      Proxy__TrustedNetworks__0: ${PROXY_NETWORK:-}
+    volumes:
+      - keys:/keys
     ports:
       # Bound to localhost. The reverse proxy in front of this is what the
       # internet talks to; the application itself is never directly exposed.
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${WEB_PORT:-8080}:8080"
     depends_on:
       db:
         # Not merely "started". Postgres accepts connections a moment after the
@@ -65,7 +75,11 @@ services:
       # ordering changes under you on a different machine.
       POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=en-001"
     volumes:
-      - db-data:/var/lib/postgresql/data
+      # /var/lib/postgresql, not /var/lib/postgresql/data. The 18 images store
+      # the cluster in a version-named subdirectory so that pg_upgrade --link
+      # can work across a single mount, and they refuse to start — not warn,
+      # refuse — if they find a volume mounted at the old path instead.
+      - db-data:/var/lib/postgresql
     # No ports. Nothing outside this network needs to reach the database, and
     # publishing 5432 to the host is how a database ends up on the internet.
     healthcheck:
@@ -92,3 +106,4 @@ services:
 volumes:
   db-data:
   cache-data:
+  keys:

@@ -27,6 +27,24 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 
 COPY . .
 
+# Restored a second time, now that the whole source tree is here, and this is
+# not redundant. The restore above ran when only .csproj files existed, and at
+# that moment the web project appears to contain no Razor components — so the
+# SDK does not add the implicit Microsoft.AspNetCore.App.Internal.Assets
+# reference that carries blazor.web.js. Everything downstream passes
+# --no-restore, which would then lock that incomplete assets file in: the image
+# builds, the application starts, every page renders, and the framework script
+# 404s into the deny-by-default policy and comes back as a redirect to the sign
+# in page. Nothing is interactive yet so nothing visibly breaks, which is what
+# makes it worth a paragraph — the first component to ask for @rendermode would
+# simply not work, in the container only, having worked on the machine it was
+# written on.
+#
+# It costs a few seconds: the packages were downloaded above and are still in
+# the cache mount, so this resolves rather than downloads.
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet restore JiranisokoTech.slnx
+
 # Tests run inside the image build. A container that compiles but fails its own
 # suite should never reach a registry, and finding that out here costs a minute
 # rather than a deployment.
@@ -53,6 +71,19 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install --no-install-recommends --yes curl \
     && rm -rf /var/lib/apt/lists/*
+
+# The directory the signing key ring is written to, created and handed to the
+# application's user before that user takes over.
+#
+# The order matters and is not obvious. A named volume mounted here takes its
+# ownership from whatever the image has at this path, so if the directory does
+# not exist — or exists owned by root — the volume is root-owned and the
+# non-root process cannot write to it. The application then starts, reports
+# healthy, serves the sign-in page's markup, and throws on the antiforgery
+# token, because the first thing that needs a key is the first form anybody
+# opens. Which is to say: a 500 on the page everyone lands on, from a directory
+# permission.
+RUN mkdir -p /keys && chown app:app /keys
 
 # Non-root. The base image ships an `app` user for exactly this; a web process
 # running as root inside a container is one container escape away from being
