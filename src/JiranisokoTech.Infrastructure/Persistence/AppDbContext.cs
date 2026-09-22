@@ -5,6 +5,7 @@ using JiranisokoTech.Domain.Approvals;
 using JiranisokoTech.Domain.Audit;
 using JiranisokoTech.Domain.Common;
 using JiranisokoTech.Domain.People;
+using JiranisokoTech.Domain.Recruitment;
 using JiranisokoTech.Domain.Work;
 using JiranisokoTech.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -35,6 +36,14 @@ public class AppDbContext(
     public DbSet<Employee> Employees => Set<Employee>();
 
     public DbSet<ApprovalRequest> Approvals => Set<ApprovalRequest>();
+
+    public DbSet<JobRequisition> Requisitions => Set<JobRequisition>();
+
+    public DbSet<JobPosting> Postings => Set<JobPosting>();
+
+    public DbSet<Candidate> Candidates => Set<Candidate>();
+
+    public DbSet<JobApplication> Applications => Set<JobApplication>();
 
     public DbSet<Project> Projects => Set<Project>();
 

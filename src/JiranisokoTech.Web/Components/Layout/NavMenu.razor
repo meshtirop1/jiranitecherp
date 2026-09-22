@@ -26,6 +26,13 @@
                     </div>
                 </AuthorizeView>
 
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.RequisitionsView)"
+                               Context="hiring">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="hiring">Hiring</NavLink>
+                    </div>
+                </AuthorizeView>
+
                 <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ApprovalsDecide)"
                                Context="approvals">
                     <div class="nav-item px-3">

@@ -1,0 +1,243 @@
+@page "/hiring"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Recruitment
+@using JiranisokoTech.Domain.Recruitment
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Infrastructure.Recruitment
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.RequisitionsView)]
+@inject RecruitmentQueries Queries
+@inject RecruitmentService Service
+@inject PeopleQueries People
+
+<PageTitle>Hiring — Jiranisoko Delivery</PageTitle>
+
+<h1>Hiring</h1>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Done is not null)
+{
+    <p class="done" role="status">@Done</p>
+}
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">No requisitions yet.</p>
+}
+else
+{
+    <table class="grid">
+        <thead>
+            <tr>
+                <th scope="col">Role</th>
+                <th scope="col">Department</th>
+                <th scope="col">Filled</th>
+                <th scope="col">Adverts</th>
+                <th scope="col">Raised by</th>
+                <th scope="col">State</th>
+                <AuthorizeView Policy="@CreatePolicy" Context="manage">
+                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                </AuthorizeView>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Rows)
+            {
+                <tr class="@(Finished(row.Status) ? "row--closed" : "")">
+                    <td><a href="/hiring/@row.Id">@row.JobTitle</a></td>
+                    <td>@(row.DepartmentName ?? "—")</td>
+                    <td>@row.Filled</td>
+                    <td>@row.OpenAdverts open of @row.TotalAdverts</td>
+                    <td>@row.RaisedByName</td>
+                    <td>
+                        @Say(row.Status)
+                        @if (row.Outcome is { } why)
+                        {
+                            <span class="card__blocked">@why</span>
+                        }
+                    </td>
+
+                    <AuthorizeView Policy="@CreatePolicy" Context="manage">
+                        <td class="row-actions">
+                            @if (row.Status == RequisitionStatus.Draft)
+                            {
+                                @*
+                                    Submitting opens the approval chain by
+                                    itself, up the reporting line. Nothing here
+                                    chooses the approvers.
+                                *@
+                                <form method="post" @formname="@($"submit-{row.Id}")"
+                                      @onsubmit="() => Submit(row.Id)">
+                                    <AntiforgeryToken />
+                                    <button type="submit">Send for approval</button>
+                                </form>
+                            }
+                        </td>
+                    </AuthorizeView>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<AuthorizeView Policy="@CreatePolicy" Context="permitted">
+    <h2>Ask to hire somebody</h2>
+
+    <p class="subtle">
+        This goes to the two people above you once you send it. Nothing is
+        advertised until they agree.
+    </p>
+
+    <EditForm Model="Input" method="post" OnValidSubmit="Raise" FormName="raise" class="stack">
+        <DataAnnotationsValidator />
+
+        <label>
+            <span>Role</span>
+            <InputText @bind-Value="Input.JobTitle" />
+            <ValidationMessage For="() => Input.JobTitle" />
+        </label>
+
+        <label>
+            <span>Department</span>
+            <InputSelect @bind-Value="Input.DepartmentId">
+                <option value="">None</option>
+                @foreach (var (id, name) in Departments.OrderBy(entry => entry.Value))
+                {
+                    <option value="@id">@name</option>
+                }
+            </InputSelect>
+        </label>
+
+        <label>
+            <span>How many</span>
+            <InputNumber @bind-Value="Input.Headcount" />
+            <ValidationMessage For="() => Input.Headcount" />
+        </label>
+
+        <label>
+            <span>Why the firm needs this</span>
+            @* The approvers read exactly this and nothing else, which is worth
+               saying next to the box. *@
+            <InputTextArea @bind-Value="Input.Justification" rows="3" />
+            <ValidationMessage For="() => Input.Justification" />
+        </label>
+
+        <button type="submit">Raise it</button>
+    </EditForm>
+</AuthorizeView>
+
+@code {
+    private const string CreatePolicy =
+        PermissionClaim.PolicyPrefix + Permissions.RequisitionsCreate;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private RaiseInput _input = new();
+
+    [SupplyParameterFromForm]
+    private RaiseInput Input
+    {
+        get => _input;
+        set => _input = value ?? new RaiseInput();
+    }
+
+    private List<RequisitionRow> Rows { get; set; } = [];
+
+    private Dictionary<Guid, string> Departments { get; set; } = [];
+
+    private Guid? Me { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        if (Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            Me = await People.EmployeeForAccountAsync(account);
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Rows = await Queries.RequisitionsAsync();
+        Departments = await People.DepartmentNamesAsync();
+    }
+
+    private static bool Finished(RequisitionStatus status) =>
+        status is RequisitionStatus.Closed or RequisitionStatus.Refused;
+
+    private static string Say(RequisitionStatus status) => status switch
+    {
+        RequisitionStatus.AwaitingApproval => "With the approvers",
+        RequisitionStatus.Draft => "Draft",
+        _ => status.ToString(),
+    };
+
+    private Task Raise() => Run(async () =>
+    {
+        if (Me is not { } me)
+        {
+            throw new InvalidOperationException(
+                "Your sign-in is not linked to a staff record, so a requisition cannot be "
+                + "raised in your name. An administrator can link them on the People page.");
+        }
+
+        await Service.RaiseRequisitionAsync(
+            Input.JobTitle, Input.DepartmentId, Input.Headcount, Input.Justification, me);
+
+        Input = new RaiseInput();
+    }, "Raised. Send it for approval when it is ready.");
+
+    private Task Submit(Guid id) =>
+        Run(() => Service.SubmitAsync(id), "Sent. The approvers will be told.");
+
+    private async Task Run(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException
+            or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private sealed class RaiseInput
+    {
+        [Required(ErrorMessage = "Name the role.")]
+        [StringLength(200)]
+        public string JobTitle { get; set; } = string.Empty;
+
+        public Guid? DepartmentId { get; set; }
+
+        [Range(1, 50, ErrorMessage = "Between one and fifty.")]
+        public int Headcount { get; set; } = 1;
+
+        [Required(ErrorMessage = "The approvers read this. Say why the firm needs it.")]
+        [StringLength(4000, MinimumLength = 10,
+            ErrorMessage = "A sentence at least — somebody has to decide on it.")]
+        public string Justification { get; set; } = string.Empty;
+    }
+}

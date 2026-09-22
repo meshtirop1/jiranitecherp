@@ -38,9 +38,11 @@ nothing claims to work that does not.
 | ✅ | Accounts — invitations, roles, withdrawal, linking to a staff record |
 | ✅ | Email — invitations and approval notices; File by default, so nothing surprises anybody |
 | ✅ | Two-step sign-in — authenticator codes, recovery codes, a way back in |
-| ✅ | 333 tests |
+| ✅ | Recruitment — requisitions that must be approved before anything is advertised |
+| ✅ | 369 tests |
 | ☐ | Requiring two-step sign-in of anybody. It is offered, not compulsory |
-| ☐ | Every business module. See the checklist |
+| ☐ | Interviews and scorecards; the public careers page and application form |
+| ☐ | Clients, finance, timesheets, leave, reporting |
 
 **Docker has not been run against this.** It is not installed on the machine
 this was written on, so the Dockerfile and Compose file are written and reviewed
@@ -53,7 +55,7 @@ but unverified. First person with a Docker host should expect to fix something.
 Needs the .NET 10 SDK. Nothing else — the test suite does not require Docker.
 
 ```bash
-dotnet test                              # 333 tests
+dotnet test                              # 369 tests
 dotnet run --project src/JiranisokoTech.Web
 ```
 

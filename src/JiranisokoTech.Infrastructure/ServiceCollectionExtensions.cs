@@ -1,10 +1,12 @@
 using System.Reflection;
 using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Domain.Approvals;
+using JiranisokoTech.Domain.Recruitment;
 using JiranisokoTech.Domain.People;
 using JiranisokoTech.Domain.Common;
 using JiranisokoTech.Application.Approvals;
 using JiranisokoTech.Application.Mail;
+using JiranisokoTech.Application.Recruitment;
 using JiranisokoTech.Application.People;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Infrastructure.Messaging;
@@ -12,6 +14,7 @@ using JiranisokoTech.Infrastructure.Approvals;
 using JiranisokoTech.Infrastructure.Mail;
 using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Infrastructure.People;
+using JiranisokoTech.Infrastructure.Recruitment;
 using JiranisokoTech.Infrastructure.Work;
 using JiranisokoTech.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -96,6 +99,21 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IApprovalRepository, ApprovalRepository>();
         services.AddScoped<ApprovalService>();
         services.AddScoped<ApprovalQueries>();
+
+        services.AddScoped<IRecruitmentRepository, RecruitmentRepository>();
+        services.AddScoped<RecruitmentService>();
+        services.AddScoped<RecruitmentQueries>();
+
+        /*
+         * The two halves of the join between hiring and approvals. Recruitment
+         * says a requisition has been submitted; something else decides who
+         * approves it, and tells recruitment what they said. Neither module
+         * holds a reference to the other.
+         */
+        services.AddScoped<IDomainEventHandler<RequisitionSubmitted>,
+            OpenTheChainWhenARequisitionIsSubmitted>();
+        services.AddScoped<IDomainEventHandler<ApprovalSettled>,
+            TellTheRequisitionWhatWasDecided>();
 
         services.AddScoped<IWorkRepository, WorkRepository>();
         services.AddScoped<WorkService>();
