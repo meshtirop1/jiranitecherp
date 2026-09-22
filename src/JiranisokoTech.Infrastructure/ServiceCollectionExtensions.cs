@@ -5,12 +5,14 @@ using JiranisokoTech.Domain.Recruitment;
 using JiranisokoTech.Domain.People;
 using JiranisokoTech.Domain.Common;
 using JiranisokoTech.Application.Approvals;
+using JiranisokoTech.Application.Business;
 using JiranisokoTech.Application.Mail;
 using JiranisokoTech.Application.Recruitment;
 using JiranisokoTech.Application.People;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Infrastructure.Messaging;
 using JiranisokoTech.Infrastructure.Approvals;
+using JiranisokoTech.Infrastructure.Business;
 using JiranisokoTech.Infrastructure.Mail;
 using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Infrastructure.People;
@@ -102,6 +104,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IApprovalRepository, ApprovalRepository>();
         services.AddScoped<ApprovalService>();
         services.AddScoped<ApprovalQueries>();
+
+        services.AddScoped<IBusinessRepository, BusinessRepository>();
+        services.AddScoped<ClientService>();
+        services.AddScoped<TimesheetService>();
+        services.AddScoped<LeaveService>();
+        services.AddScoped<ExpenseService>();
+        services.AddScoped<InvoiceService>();
+        services.AddScoped<InterviewService>();
 
         services.AddScoped<IRecruitmentRepository, RecruitmentRepository>();
         services.AddScoped<RecruitmentService>();

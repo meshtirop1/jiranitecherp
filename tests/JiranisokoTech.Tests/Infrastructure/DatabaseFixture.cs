@@ -71,6 +71,16 @@ public sealed class TestClock : IClock
 {
     public DateTimeOffset Now { get; set; } = new(2026, 9, 21, 9, 0, 0, TimeSpan.Zero);
 
+    /// <summary>
+    /// The same day the interface computes, stated here so tests can reach it.
+    /// </summary>
+    /// <remarks>
+    /// IClock.Today is a default interface member, which means it exists on the
+    /// interface and not on this type. A test holding a TestClock could not see
+    /// it without a cast, which is noise in every date-sensitive assertion.
+    /// </remarks>
+    public DateOnly Today => DateOnly.FromDateTime(Now.UtcDateTime);
+
     public void Advance(TimeSpan by) => Now = Now.Add(by);
 }
 

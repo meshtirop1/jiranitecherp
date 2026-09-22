@@ -2,6 +2,9 @@ using System.Globalization;
 using System.Text.Json;
 using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Domain.Approvals;
+using JiranisokoTech.Domain.Clients;
+using JiranisokoTech.Domain.Money;
+using JiranisokoTech.Domain.Time;
 using JiranisokoTech.Domain.Audit;
 using JiranisokoTech.Domain.Common;
 using JiranisokoTech.Domain.People;
@@ -11,6 +14,7 @@ using JiranisokoTech.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace JiranisokoTech.Infrastructure.Persistence;
@@ -36,6 +40,18 @@ public class AppDbContext(
     public DbSet<Employee> Employees => Set<Employee>();
 
     public DbSet<ApprovalRequest> Approvals => Set<ApprovalRequest>();
+
+    public DbSet<Client> Clients => Set<Client>();
+
+    public DbSet<Invoice> Invoices => Set<Invoice>();
+
+    public DbSet<ExpenseClaim> Expenses => Set<ExpenseClaim>();
+
+    public DbSet<TimeEntry> TimeEntries => Set<TimeEntry>();
+
+    public DbSet<LeaveRequest> Leave => Set<LeaveRequest>();
+
+    public DbSet<Interview> Interviews => Set<Interview>();
 
     public DbSet<JobRequisition> Requisitions => Set<JobRequisition>();
 
@@ -277,9 +293,44 @@ public class AppDbContext(
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
 
+        OwnedKeysComeFromTheDomain(modelBuilder);
+
         if (Database.IsSqlite())
         {
             StoreTimestampsAsSortableText(modelBuilder);
+        }
+    }
+
+    /// <summary>
+    /// Tell EF that an owned row's key is never the store's to generate.
+    /// </summary>
+    /// <remarks>
+    /// Worth the words, because getting this wrong is silent. EF's convention
+    /// for a Guid primary key is "the store generates it", and it decides
+    /// whether a newly discovered dependent is an insert or an update by asking
+    /// whether that key still holds its default value. Every id here is a
+    /// GUIDv7 the entity gave itself in its constructor, so the key is always
+    /// set — and an invoice line added to an invoice that was loaded from the
+    /// database was therefore taken for a row that already existed. EF issued
+    /// an UPDATE, it matched nothing, and the line was simply never saved.
+    ///
+    /// Applied to owned types rather than to the whole model on purpose. An
+    /// aggregate is added to its DbSet explicitly, which settles the question;
+    /// and ASP.NET Identity's own tables do leave their Guid keys at the default
+    /// and expect the store to fill them, so a blanket rule here would give
+    /// every user the empty GUID.
+    /// </remarks>
+    private static void OwnedKeysComeFromTheDomain(ModelBuilder modelBuilder)
+    {
+        var ownedKeys = modelBuilder.Model.GetEntityTypes()
+            .Where(entityType => entityType.IsOwned())
+            .SelectMany(entityType => entityType.GetKeys())
+            .SelectMany(key => key.Properties)
+            .Where(property => property.ClrType == typeof(Guid));
+
+        foreach (var property in ownedKeys)
+        {
+            property.ValueGenerated = ValueGenerated.Never;
         }
     }
 
