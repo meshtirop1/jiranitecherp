@@ -17,7 +17,9 @@ using JiranisokoTech.Infrastructure.Mail;
 using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Infrastructure.People;
 using JiranisokoTech.Application.Settings;
+using JiranisokoTech.Application.Api;
 using JiranisokoTech.Application.Documents;
+using JiranisokoTech.Infrastructure.Api;
 using JiranisokoTech.Infrastructure.Documents;
 using JiranisokoTech.Infrastructure.Reporting;
 using JiranisokoTech.Infrastructure.Search;
@@ -147,6 +149,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAttachmentRepository, AttachmentRepository>();
         services.AddSingleton<IDocumentStore, FileDocumentStore>();
         services.AddScoped<DocumentService>();
+
+        services.AddScoped<IApiKeyRepository, ApiKeyRepository>();
+        services.AddScoped<ApiKeyService>();
 
         services.AddScoped<ISettingsRepository, SettingsRepository>();
         services.AddScoped<SettingsService>();

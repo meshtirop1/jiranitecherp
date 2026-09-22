@@ -4,9 +4,11 @@ using JiranisokoTech.Infrastructure;
 using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Infrastructure.Persistence;
 using JiranisokoTech.Web;
+using JiranisokoTech.Web.Api;
 using JiranisokoTech.Web.Authorization;
 using JiranisokoTech.Web.Components;
 using JiranisokoTech.Web.Identity;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
@@ -32,6 +34,16 @@ builder.Services.AddMail(builder.Configuration);
 // the authorization fallback below assumes authentication exists.
 builder.Services.AddApplicationIdentity();
 builder.Services.AddPermissionAuthorization();
+
+/*
+ * A second way in, for machines. Added alongside the cookie rather than
+ * instead of it: the API endpoints name this scheme and every page keeps the
+ * cookie, which is what stops an API key opening a screen and a stolen cookie
+ * reaching the API.
+ */
+builder.Services.AddAuthentication()
+    .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+        ApiKeyAuthenticationHandler.Scheme, _ => { });
 
 // The key ring that signs the authentication cookie. Must outlive the
 // container, or a deploy signs everybody out.
@@ -76,7 +88,11 @@ builder.Services.AddHealthChecks()
  * a gigabyte. The application has no other upload, so one global figure is
  * enough and there is nothing to keep in step.
  */
-builder.Services.AddRateLimiter(options => options.AddCareersLimit());
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddCareersLimit();
+    options.AddApiLimits();
+});
 
 builder.WebHost.ConfigureKestrel(kestrel =>
     kestrel.Limits.MaxRequestBodySize = 10 * 1024 * 1024);
@@ -179,6 +195,9 @@ app.MapCvEndpoints();
 
 // And any other attachment, to somebody allowed to read what it is attached to.
 app.MapDocumentEndpoints();
+
+// What another system may read from this one.
+app.MapPublicApi();
 
 /*
  * Anonymous, because a stylesheet has no account.

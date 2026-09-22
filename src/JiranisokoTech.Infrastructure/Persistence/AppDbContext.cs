@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using JiranisokoTech.Application.Abstractions;
+using JiranisokoTech.Domain.Api;
 using JiranisokoTech.Domain.Approvals;
 using JiranisokoTech.Domain.Clients;
 using JiranisokoTech.Domain.Documents;
@@ -73,6 +74,8 @@ public class AppDbContext(
     public DbSet<FirmSettings> Settings => Set<FirmSettings>();
 
     public DbSet<Attachment> Attachments => Set<Attachment>();
+
+    public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
 
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 

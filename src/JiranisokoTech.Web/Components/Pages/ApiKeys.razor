@@ -1,0 +1,250 @@
+@page "/settings/keys"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Api
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Domain.Api
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.SettingsManage)]
+@inject ApiKeyService Keys
+@inject PeopleQueries People
+@inject NavigationManager Navigation
+
+<PageTitle>API keys — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/settings">Settings</a></nav>
+
+<div class="page-head">
+    <h1>API keys</h1>
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Issued is not null)
+{
+    @*
+        The one moment the secret exists anywhere it can be read. Said plainly,
+        because somebody will close this page and then ask where to find it
+        again, and the honest answer is nowhere.
+    *@
+    <section class="panel stack">
+        <h2>Here is the key. It will not be shown again.</h2>
+
+        <p><code class="secret">@Issued</code></p>
+
+        <p class="subtle">
+            Copy it into whatever is going to use it, now. This system keeps
+            only a hash, so it cannot show you this value a second time — which
+            is the point of keeping a hash. If it is lost, revoke this key and
+            issue another.
+        </p>
+    </section>
+}
+
+<EditForm Model="Input" method="post" OnValidSubmit="Issue" FormName="issue" class="panel stack">
+    <DataAnnotationsValidator />
+
+    <h2>Issue a key</h2>
+
+    <label>
+        <span>What it is for</span>
+        <InputText @bind-Value="Input.Name" placeholder="The public website's job feed" />
+        <ValidationMessage For="() => Input.Name" />
+    </label>
+
+    <fieldset class="scopes">
+        <legend>What it may read</legend>
+
+        @*
+            Permissions, not a role. A role describes a job a person does, and
+            no machine does a job — giving a key one would hand it every
+            permission that role ever acquires afterwards.
+        *@
+        @foreach (var permission in Offered)
+        {
+            <label class="check">
+                <input type="checkbox" name="Input.Scopes" value="@permission"
+                       checked="@Input.Scopes.Contains(permission)" />
+                <span>@permission</span>
+            </label>
+        }
+
+        <ValidationMessage For="() => Input.Scopes" />
+    </fieldset>
+
+    <button type="submit">Issue it</button>
+</EditForm>
+
+@if (All.Count == 0)
+{
+    <p class="empty">No keys have been issued.</p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">API keys</caption>
+        <thead>
+            <tr>
+                <th scope="col">What it is for</th>
+                <th scope="col">Ends in</th>
+                <th scope="col">May read</th>
+                <th scope="col">Issued</th>
+                <th scope="col">Last used</th>
+                <th scope="col">State</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var key in All)
+            {
+                <tr>
+                    <td>@key.Name</td>
+                    <td><code>…@key.Hint</code></td>
+                    <td>@string.Join(", ", key.Scopes)</td>
+                    <td>@key.CreatedAt.ToString("d MMM yyyy")</td>
+                    <td>@(key.LastUsedOn?.ToString("d MMM yyyy") ?? "Never")</td>
+                    <td>
+                        @if (key.IsLive)
+                        {
+                            <span class="pill pill--done">Live</span>
+
+                            <EditForm Model="Revoking" method="post"
+                                      FormName="@($"revoke-{key.Id}")"
+                                      OnValidSubmit="() => Revoke(key.Id)" class="inline">
+                                <DataAnnotationsValidator />
+                                <InputText @bind-Value="Revoking.Reason" placeholder="Why" />
+                                <button type="submit" class="danger">Revoke</button>
+                                <ValidationMessage For="() => Revoking.Reason" />
+                            </EditForm>
+                        }
+                        else
+                        {
+                            <span class="pill pill--quiet">Revoked</span>
+                            <span class="subtle">@key.RevokedReason</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    private IssueInput _input = new();
+
+    [SupplyParameterFromForm(FormName = "issue")]
+    private IssueInput Input
+    {
+        get => _input;
+        set => _input = value ?? new IssueInput();
+    }
+
+    private RevokeInput _revoking = new();
+
+    [SupplyParameterFromForm(FormName = "revoke")]
+    private RevokeInput Revoking
+    {
+        get => _revoking;
+        set => _revoking = value ?? new RevokeInput();
+    }
+
+    private List<ApiKey> All { get; set; } = [];
+
+    private string? Issued { get; set; }
+
+    private string? Refusal { get; set; }
+
+    /// <summary>
+    /// The read permissions, and only those.
+    /// </summary>
+    /// <remarks>
+    /// The API is read-only, so offering manage or approve permissions here
+    /// would be offering something no endpoint honours — a key that looks more
+    /// capable than it is, which is the worst kind to hand somebody.
+    /// </remarks>
+    private static readonly string[] Offered =
+    [
+        Permissions.ClientsView,
+        Permissions.ProjectsViewAll,
+        Permissions.InvoicesView,
+        Permissions.PostingsManage,
+    ];
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync() => All = await Keys.AllAsync();
+
+    private async Task Issue()
+    {
+        Refusal = null;
+
+        try
+        {
+            // Read from the posted form rather than bound: a set of checkboxes
+            // under one name is a list, and the model binder hands back only
+            // what was ticked.
+            var scopes = Request?.Request.Form["Input.Scopes"].ToArray() ?? [];
+
+            var state = await AuthenticationState;
+            Guid? by = Guid.TryParse(
+                state.User.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+                ? await People.EmployeeForAccountAsync(account)
+                : null;
+
+            var issued = await Keys.IssueAsync(Input.Name, [.. scopes!], by);
+
+            Issued = issued.Secret;
+            Input = new IssueInput();
+
+            await LoadAsync();
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private async Task Revoke(Guid id)
+    {
+        Refusal = null;
+
+        try
+        {
+            await Keys.RevokeAsync(id, Revoking.Reason);
+            Navigation.NavigateTo("/settings/keys", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private sealed class IssueInput
+    {
+        [Required(ErrorMessage = "Say what this key is for. In a year it is the only clue.")]
+        [StringLength(120)]
+        public string Name { get; set; } = string.Empty;
+
+        public List<string> Scopes { get; set; } = [];
+    }
+
+    private sealed class RevokeInput
+    {
+        [Required(ErrorMessage = "Say why, so the trail explains itself.")]
+        [StringLength(500)]
+        public string Reason { get; set; } = string.Empty;
+    }
+}

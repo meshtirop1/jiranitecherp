@@ -936,3 +936,37 @@ code.key {
     font-size: 0.95rem;
     min-width: 18rem;
 }
+
+/* A secret shown once. Large, monospaced and breakable, because somebody is
+   about to select it by eye on a phone. */
+.secret {
+    display: inline-block;
+    padding: 0.5rem 0.75rem;
+    background: #f5f6f8;
+    border: 1px solid #e3e5e9;
+    border-radius: 4px;
+    font-size: 0.95rem;
+    word-break: break-all;
+}
+
+.scopes {
+    border: 1px solid #e3e5e9;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.scopes legend {
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0 0.35rem;
+}
+
+.scopes label {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 400;
+}
