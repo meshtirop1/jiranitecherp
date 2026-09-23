@@ -1,3 +1,5 @@
+using JiranisokoTech.Application.Accounting;
+using JiranisokoTech.Infrastructure.Accounting;
 using System.Reflection;
 using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Domain.Approvals;
@@ -128,6 +130,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ApprovalService>();
         services.AddScoped<ApprovalQueries>();
 
+        services.AddScoped<IAccountingRepository, AccountingRepository>();
+        services.AddScoped<AccountingService>();
+        services.AddScoped<AccountingQueries>();
+
         services.AddScoped<IBusinessRepository, BusinessRepository>();
         services.AddScoped<ClientService>();
         services.AddScoped<OpportunityService>();
@@ -186,6 +192,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRecurringJob, WarnAboutLapsingQualifications>();
         services.AddScoped<IRecurringJob, WarnAboutExpiringContracts>();
         services.AddScoped<IRecurringJob, PruneJobHistory>();
+        services.AddScoped<IRecurringJob, RaiseRecurringExpenses>();
         services.AddHostedService<Scheduler>();
         services.AddScoped<JobQueries>();
 

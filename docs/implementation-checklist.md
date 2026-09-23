@@ -15,7 +15,7 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 24 September 2026 · 1037 tests · verified against PostgreSQL in
+Last updated: 24 September 2026 · 1048 tests · verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
 container, a lost opportunity surviving its client record being deleted, the
 builds and deployments tables applying to a real Postgres, and
@@ -43,7 +43,7 @@ reports on it again — and the build and deployment half does not. What is buil
 is an ERP that a software company could run its business on, plus the beginning
 of the part that makes it developer-native.
 
-By section: **36 done, 4 partial, 58 not started, 1 excluded by agreement.**
+By section: **37 done, 3 partial, 58 not started, 1 excluded by agreement.**
 
 That count was recomputed from the tables below rather than adjusted, because the
 figure previously here did not add up to anything the tables said and had been
@@ -151,7 +151,7 @@ This block is the brief's stated centre of gravity and none of it exists.
 | ✅ | 18 | Invoices and payments | Numbered, frozen on send, overpayment refused, voidable before payment |
 | ✅ | 20 | Expenses | Claim, approve, pay — approval and payment deliberately separate |
 | ✅ | 57 | Multi-currency | Money refuses cross-currency arithmetic; dated rates recorded by hand, conversion available and never stored |
-| ☐ | 18 | Chart of accounts, recurring expenses, financial reports | |
+| ✅ | 18 | Chart of accounts, recurring expenses, financial reports | Income and expense accounts; standing costs that raise their own charges through the scheduler, catching up rather than skipping when it has been off; and one income-and-expenditure report. **No general ledger, and that is the decision rather than an omission:** a stored balance is a number that can disagree with the documents it was added up from, so every figure is summed from the invoices, claims and charges themselves. Accrual on both sides and the page says so. The difference is called a difference — there is no payroll yet (§22), so calling it profit would be wrong by the firm's largest cost |
 | ☐ | 19 | Project profitability | |
 | ☐ | 61 | Procurement — purchase requests, orders, receiving | |
 | ☐ | 62 | Vendor management | |

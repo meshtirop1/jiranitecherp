@@ -98,6 +98,9 @@ public sealed class ExpenseClaim : Entity, IAuditable
     /// Set by whoever claims it, not by whoever approves it, because the person who was
     /// there is the one who knows.
     /// </remarks>
+
+    /// <summary>Which expense account this cost is classified as.</summary>
+    public Guid? AccountId { get; private set; }
     public Guid? ProjectId { get; private set; }
 
     /// <summary>
@@ -108,6 +111,19 @@ public sealed class ExpenseClaim : Entity, IAuditable
     /// approved, moving the cost to another project would alter a decided figure on
     /// somebody else's project without their approver having seen it.
     /// </remarks>
+
+    /// <summary>
+    /// Say which expense account this cost is classified as.
+    /// </summary>
+    /// <remarks>
+    /// Allowed at any status, unlike <c>ChargeTo</c> immediately below, and the difference is
+    /// what each one changes. A project is a decided figure on somebody else's project that an
+    /// approver signed off, so moving it after approval moves money between two people's
+    /// budgets without either being asked. An account is which row of this firm's own cost
+    /// report the money lands in — nobody's budget moves, and the person who spots the error
+    /// is usually reading the report long after the claim was paid.
+    /// </remarks>
+    public void CodeTo(Guid? accountId) => AccountId = accountId;
     public void ChargeTo(Guid? projectId)
     {
         if (Status is not (ClaimStatus.Draft or ClaimStatus.AwaitingApproval))

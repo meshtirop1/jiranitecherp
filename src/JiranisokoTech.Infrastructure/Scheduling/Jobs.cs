@@ -1,6 +1,7 @@
 using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Application.Mail;
 using JiranisokoTech.Domain.Contracts;
+using JiranisokoTech.Application.Accounting;
 using JiranisokoTech.Domain.Renewals;
 using JiranisokoTech.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -346,5 +347,43 @@ public sealed class PruneJobHistory(AppDbContext database, IClock clock) : IRecu
         return removed == 0
             ? "Nothing old enough to delete."
             : $"Deleted {removed} run(s) older than ninety days.";
+    }
+}
+
+/// <summary>
+/// Raise the standing costs that have fallen due.
+/// </summary>
+/// <remarks>
+/// The job that makes section 18's recurring expenses more than a list somebody reads. Rent,
+/// a domain renewal, a subscription: money that leaves every month whether or not anybody
+/// remembers it, and which was previously an expense claim typed from memory — so the month
+/// somebody was on leave is a month the cost report is wrong, and a cost missing from a report
+/// looks exactly like a cost that was not incurred.
+///
+/// Safe to run twice, which its interface demands and which the aggregate provides: a charge
+/// already raised for a date is refused, so a scheduler restarted twice in a morning does not
+/// post three months' rent. The catch-up is the other half — a job that had been off for two
+/// months raises the two charges it missed, each carrying the date it was actually due.
+/// </remarks>
+public sealed class RaiseRecurringExpenses(AccountingService accounting) : IRecurringJob
+{
+    public string Name => "expenses.recurring";
+
+    public string Description => "Raises the standing costs that have fallen due.";
+
+    /// <remarks>
+    /// Daily, not monthly. A monthly timer would have to fire on a particular day and would
+    /// miss the month it was restarted in; a daily one asks a question whose answer is usually
+    /// "nothing" and is right on the first morning after any outage.
+    /// </remarks>
+    public TimeSpan Every => TimeSpan.FromDays(1);
+
+    public async Task<string> RunAsync(CancellationToken cancellationToken = default)
+    {
+        var raised = await accounting.RaiseWhatIsDueAsync(cancellationToken);
+
+        return raised == 0
+            ? "Nothing has fallen due."
+            : $"Raised {raised} charge(s).";
     }
 }

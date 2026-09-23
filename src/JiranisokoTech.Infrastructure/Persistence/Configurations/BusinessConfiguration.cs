@@ -292,6 +292,12 @@ public sealed class ExpenseClaimConfiguration : IEntityTypeConfiguration<Expense
         // "What do we owe our staff?" is a status scan.
         builder.HasIndex(claim => new { claim.Status, claim.SpentOn });
         builder.HasIndex(claim => new { claim.EmployeeId, claim.SpentOn });
+        // The same restriction, for the same reason, on the other side of the report.
+        builder.HasOne<Account>()
+            .WithMany()
+            .HasForeignKey(claim => claim.AccountId)
+            .OnDelete(DeleteBehavior.Restrict);
+
     }
 }
 
@@ -354,5 +360,20 @@ public sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
 
             payment.Property(one => one.Reference).HasMaxLength(100);
         });
+        /*
+         * Which income account this bill's revenue is. Restricted rather than nulled, unlike
+         * the project above: a project going away leaves an invoice that was still issued, so
+         * nulling that link loses nothing. The report is grouped by account, and nulling this
+         * one would silently move money that has already been reported into the unclassified
+         * row — a figure changing after somebody has read it.
+         */
+        builder.HasOne<Account>()
+            .WithMany()
+            .HasForeignKey(invoice => invoice.AccountId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // The income report's own reading: what was issued, over a window.
+        builder.HasIndex(invoice => new { invoice.Status, invoice.IssuedOn });
+
     }
 }

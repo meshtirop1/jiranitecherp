@@ -41,6 +41,11 @@ public class ReachabilityTests
     /// </remarks>
     private static readonly Dictionary<string, string> CalledByTheSystem = new()
     {
+        ["RaiseWhatIsDueAsync"] =
+            "RaiseRecurringExpenses, the scheduled job. Nothing on a screen raises a standing "
+            + "cost, deliberately: a button that posted this month's rent would be a button "
+            + "somebody presses twice.",
+
         ["ReleaseWorkOfAsync"] =
             "ReleaseWorkWhenSomebodyLeaves, from the EmployeeLeft event.",
         ["RequestUpTheLineAsync"] =

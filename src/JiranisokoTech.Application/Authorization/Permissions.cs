@@ -93,6 +93,19 @@ public static class Permissions
     /// which is the oldest expense fraud there is.
     /// </remarks>
     public const string ExpensesPay = "expenses.pay";
+    /// <summary>
+    /// Read the chart of accounts and the income-and-expenditure report.
+    /// </summary>
+    /// <remarks>
+    /// Its own permission rather than invoices.view, because the two answer different
+    /// questions about different people. An invoice is one client's bill; this report is what
+    /// the firm earned and spent, and a delivery manager who legitimately reads the invoices
+    /// they raise has no business reading the firm's own margin.
+    /// </remarks>
+    public const string AccountingView = "accounting.view";
+
+    /// <summary>Open and retire accounts, and set up standing costs.</summary>
+    public const string AccountingManage = "accounting.manage";
     public const string InvoicesView = "invoices.view";
     public const string InvoicesManage = "invoices.manage";
 
@@ -246,6 +259,7 @@ public static class Permissions
         LeaveAsk, LeaveViewAll, LeaveApprove,
 
         ExpensesClaim, ExpensesViewAll, ExpensesApprove, ExpensesPay,
+        AccountingView, AccountingManage,
         InvoicesView, InvoicesManage, InvoicesSend,
 
         ContractsView, ContractsManage,
@@ -334,6 +348,14 @@ public static class Roles
                 Permissions.DepartmentsView, Permissions.EmployeesView, Permissions.UsersView,
                 Permissions.ProjectsViewAll,
 
+                /*
+                 * The income-and-expenditure report, read and not written. A head signs off
+                 * the claims their team makes and releases the work the firm bills for, so
+                 * what the firm earned and spent is a figure they are answerable for — and
+                 * opening or retiring an account is not their act.
+                 */
+                Permissions.AccountingView,
+
                 // A head gives their own team work and releases what it
                 // finishes. Review without create means they can only ever react
                 // to work somebody else set.
@@ -396,6 +418,13 @@ public static class Roles
                 Permissions.ClientsView, Permissions.ClientsManage,
                 Permissions.TimeViewAll, Permissions.TimeApprove,
                 Permissions.InvoicesView, Permissions.InvoicesManage,
+
+                /*
+                 * Deliberately NOT accounting.view. A delivery manager reads the invoices they
+                 * raise, which is one client's bill at a time; the income-and-expenditure
+                 * report is what the firm earned and spent, and that is a different question
+                 * about different people.
+                 */
 
                 // They read the contract because they bill against it, and they
                 // do not write it. Agreeing what a client may be charged and

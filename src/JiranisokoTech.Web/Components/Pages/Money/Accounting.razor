@@ -1,0 +1,552 @@
+@page "/accounting"
+
+@*
+    At /accounting and not /accounts, because /accounts is the user-account list and has been
+    since section 4. Two pages on one route is a routing exception at startup, and the first
+    version of this page collided exactly there.
+*@
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Abstractions
+@using JiranisokoTech.Application.Accounting
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Domain.Money
+@using JiranisokoTech.Infrastructure.Accounting
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.AccountingView)]
+@inject AccountingQueries Queries
+@inject AccountingService Service
+@inject IClock Clock
+@inject NavigationManager Navigation
+
+@*
+    The chart of accounts, and what the firm earned and spent.
+
+    Section 18 had invoices, payments and expense claims and no way to say what any of it was
+    for: "we spent four million shillings last quarter" was answerable and "on what" was not.
+
+    There is no general ledger and no balance anywhere, which is the decision of this section
+    rather than an omission. A stored balance is a number that can disagree with the documents
+    it was added up from, and on the day it does nobody can tell which is wrong — so every
+    figure below is summed from the invoices, claims and charges themselves.
+*@
+
+<PageTitle>Accounts — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Accounts</h1>
+    <p class="subtle">@Summary</p>
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<section class="standing">
+    <h2>Income and expenditure</h2>
+
+    @*
+        Named on its face rather than left to be assumed. Income is what was invoiced and
+        expenditure is what was claimed or fell due, so this is an accrual view on both sides —
+        mixing invoiced income against paid costs gives a margin that is neither, and is wrong
+        in the direction that always flatters.
+    *@
+    <p class="subtle">
+        Invoiced income and accrued costs, @Report.From.ToString("d MMM yyyy") to
+        @Report.To.ToString("d MMM yyyy"), in @Report.Currency. Drafts are not counted.
+    </p>
+
+    <form method="get" class="filters">
+        <label>
+            <span>From</span>
+            <input type="date" name="from" value="@Report.From.ToString("yyyy-MM-dd")" />
+        </label>
+        <label>
+            <span>To</span>
+            <input type="date" name="to" value="@Report.To.ToString("yyyy-MM-dd")" />
+        </label>
+        <button type="submit" class="button button--quiet">Show</button>
+    </form>
+
+    @if (Report.IsEmpty)
+    {
+        <p class="empty">
+            Nothing was invoiced or claimed in that window.
+        </p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Income and expenditure</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Code</th>
+                    <th scope="col">Account</th>
+                    <th scope="col">In</th>
+                    <th scope="col">Out</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var line in Report.Income)
+                {
+                    <tr>
+                        <td><code>@line.Code</code></td>
+                        <td>@line.Name</td>
+                        <td class="number">@line.Total</td>
+                        <td class="number">—</td>
+                    </tr>
+                }
+                @foreach (var line in Report.Expenditure)
+                {
+                    <tr>
+                        <td><code>@line.Code</code></td>
+                        <td>@line.Name</td>
+                        <td class="number">—</td>
+                        <td class="number">@line.Total</td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td></td>
+                    <td><strong>Total</strong></td>
+                    <td class="number"><strong>@Report.TotalIncome</strong></td>
+                    <td class="number"><strong>@Report.TotalExpenditure</strong></td>
+                </tr>
+            </tfoot>
+        </table>
+
+        @*
+            Called the difference and never profit. There is no payroll here — that is section
+            22 — no depreciation and no tax, so "profit" would be a number wrong by the largest
+            cost the firm has.
+        *@
+        <p class="subtle">Difference: @Report.Difference. This is not a profit figure.</p>
+
+        @if (Report.LeftOutForCurrency > 0)
+        {
+            <p class="subtle">
+                @Report.LeftOutForCurrency document(s) in another currency were left out.
+                Adding currencies together would be a figure with no meaning.
+            </p>
+        }
+    }
+</section>
+
+<section class="standing">
+    <h2>The chart</h2>
+
+    <AuthorizeView Policy="@ManagePolicy" Context="mayOpen">
+        <EditForm Model="Opening" method="post" OnValidSubmit="Open" FormName="open"
+                  class="inline">
+            <InputText @bind-Value="Opening.Code" placeholder="4200" />
+            <InputText @bind-Value="Opening.Name" placeholder="Software subscriptions" />
+            <InputSelect @bind-Value="Opening.Kind">
+                <option value="@AccountKind.Expense">Expense</option>
+                <option value="@AccountKind.Income">Income</option>
+            </InputSelect>
+            <button type="submit" class="button button--quiet">Open it</button>
+        </EditForm>
+    </AuthorizeView>
+
+    @if (Chart.Count == 0)
+    {
+        <p class="empty">
+            No accounts yet. Until there are, everything invoiced and claimed appears on the
+            report above as not coded to an account.
+        </p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">The chart of accounts</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Code</th>
+                    <th scope="col">Account</th>
+                    <th scope="col">Side</th>
+                    <th scope="col">Coded to it</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var account in Chart)
+                {
+                    <tr>
+                        <td><code>@account.Code</code></td>
+                        <td>
+                            @account.Name
+                            @if (!account.IsOpen)
+                            {
+                                <span class="pill pill--quiet">retired</span>
+                            }
+                        </td>
+                        <td>@account.Kind</td>
+                        <td class="number">@account.CodedToIt</td>
+                        <td>
+                            <AuthorizeView Policy="@ManagePolicy" Context="mayChange">
+                                @if (account.IsOpen)
+                                {
+                                    @*
+                                        Retired, never deleted. An account with history behind
+                                        it cannot be removed without making last year's report
+                                        unreadable, and "retire" is what people mean when they
+                                        ask to delete one.
+                                    *@
+                                    <EditForm Model="Nothing" method="post"
+                                              FormName="@($"retire-{account.Id}")"
+                                              OnValidSubmit="() => Retire(account.Id)"
+                                              class="inline">
+                                        <button type="submit" class="button button--quiet">
+                                            Retire
+                                        </button>
+                                    </EditForm>
+                                }
+                                else
+                                {
+                                    <EditForm Model="Nothing" method="post"
+                                              FormName="@($"reopen-{account.Id}")"
+                                              OnValidSubmit="() => Reopen(account.Id)"
+                                              class="inline">
+                                        <button type="submit" class="button button--quiet">
+                                            Reopen
+                                        </button>
+                                    </EditForm>
+                                }
+
+                                <EditForm Model="Nothing" method="post"
+                                          FormName="@($"rename-{account.Id}")"
+                                          OnValidSubmit="() => Rename(account.Id)" class="inline">
+                                    <input type="text" name="name" placeholder="New name" />
+                                    <button type="submit" class="button button--quiet">
+                                        Rename
+                                    </button>
+                                </EditForm>
+                            </AuthorizeView>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+<section class="standing">
+    <h2>Standing costs</h2>
+
+    @*
+        Rent, a domain renewal, a subscription: money that leaves every month whether or not
+        anybody remembers it. These used to be expense claims typed from memory, which means the
+        month somebody was on leave is a month the cost report is wrong — and a cost missing from
+        a report looks exactly like a cost that was not incurred.
+
+        Nothing here pays anything. A charge is a record that the cost fell due on a date, and
+        settling one is somebody saying the money went out; this system does not touch a bank
+        and would be claiming something it cannot know if it said otherwise.
+    *@
+    <AuthorizeView Policy="@ManagePolicy" Context="maySchedule">
+        @if (Expenses.Any(one => one.Kind == AccountKind.Expense && one.IsOpen))
+        {
+            <EditForm Model="Scheduling" method="post" OnValidSubmit="Schedule"
+                      FormName="schedule" class="panel stack">
+                <DataAnnotationsValidator />
+
+                <div class="fields">
+                    <label>
+                        <span>Account</span>
+                        <InputSelect @bind-Value="Scheduling.AccountId">
+                            @foreach (var one in Expenses.Where(
+                                one => one.Kind == AccountKind.Expense && one.IsOpen))
+                            {
+                                <option value="@one.Id">@one.Code — @one.Name</option>
+                            }
+                        </InputSelect>
+                    </label>
+
+                    <label>
+                        <span>How often</span>
+                        <InputSelect @bind-Value="Scheduling.Every">
+                            <option value="@Recurrence.Monthly">Monthly</option>
+                            <option value="@Recurrence.Quarterly">Quarterly</option>
+                            <option value="@Recurrence.Annually">Annually</option>
+                        </InputSelect>
+                    </label>
+
+                    <label>
+                        <span>Starts</span>
+                        <InputDate @bind-Value="Scheduling.StartsOn" />
+                    </label>
+                </div>
+
+                <div class="fields">
+                    <label>
+                        <span>What it is</span>
+                        <InputText @bind-Value="Scheduling.Description" placeholder="Office rent" />
+                        <ValidationMessage For="() => Scheduling.Description" />
+                    </label>
+
+                    <label>
+                        <span>Paid to</span>
+                        <InputText @bind-Value="Scheduling.Payee" placeholder="Landlord" />
+                        <ValidationMessage For="() => Scheduling.Payee" />
+                    </label>
+
+                    <label>
+                        <span>How much (KES)</span>
+                        <InputNumber @bind-Value="Scheduling.Amount" />
+                        <ValidationMessage For="() => Scheduling.Amount" />
+                    </label>
+                </div>
+
+                <button type="submit">Put it on the timetable</button>
+            </EditForm>
+        }
+    </AuthorizeView>
+
+    @if (Standing.Count == 0)
+    {
+        <p class="empty">
+            No standing costs. Rent, domains and subscriptions put here are raised by the
+            scheduler on the day they fall due, and caught up if it has been off.
+        </p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Standing costs</caption>
+            <thead>
+                <tr>
+                    <th scope="col">What</th>
+                    <th scope="col">Paid to</th>
+                    <th scope="col">How much</th>
+                    <th scope="col">How often</th>
+                    <th scope="col">Next due</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var cost in Standing)
+                {
+                    <tr>
+                        <td>
+                            @cost.Description
+                            @if (!cost.IsActive)
+                            {
+                                <span class="pill pill--quiet">paused</span>
+                            }
+                        </td>
+                        <td class="subtle">@cost.Payee</td>
+                        <td class="number">@cost.Amount</td>
+                        <td>@cost.Every</td>
+                        <td>
+                            @(cost.NextDueOn?.ToString("d MMM yyyy") ?? "—")
+                            @if (cost.Unsettled > 0)
+                            {
+                                <span class="pill pill--wait">@cost.Unsettled unsettled</span>
+                            }
+                        </td>
+                        <td>
+                            <AuthorizeView Policy="@ManagePolicy" Context="mayAmend">
+                                @if (cost.IsActive)
+                                {
+                                    <EditForm Model="Nothing" method="post"
+                                              FormName="@($"pause-{cost.Id}")"
+                                              OnValidSubmit="() => Pause(cost.Id)" class="inline">
+                                        <button type="submit" class="button button--quiet">
+                                            Pause
+                                        </button>
+                                    </EditForm>
+                                }
+                                else
+                                {
+                                    <EditForm Model="Nothing" method="post"
+                                              FormName="@($"resume-{cost.Id}")"
+                                              OnValidSubmit="() => Resume(cost.Id)" class="inline">
+                                        <button type="submit" class="button button--quiet">
+                                            Resume
+                                        </button>
+                                    </EditForm>
+                                }
+
+                                @if (cost.OldestUnsettled is { } charge)
+                                {
+                                    @*
+                                        Settling the oldest rather than offering a list. Standing
+                                        costs are settled in the order they fell due, and a
+                                        picker would invite somebody to mark March paid while
+                                        February is still open.
+                                    *@
+                                    <EditForm Model="Nothing" method="post"
+                                              FormName="@($"settle-{cost.Id}")"
+                                              OnValidSubmit="() => Settle(cost.Id, charge)"
+                                              class="inline">
+                                        <button type="submit" class="button button--quiet">
+                                            Mark @cost.OldestUnsettledOn?.ToString("MMM") paid
+                                        </button>
+                                    </EditForm>
+                                }
+                            </AuthorizeView>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    private const string ManagePolicy =
+        PermissionClaim.PolicyPrefix + Permissions.AccountingManage;
+
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    [SupplyParameterFromQuery]
+    private DateOnly? From { get; set; }
+
+    [SupplyParameterFromQuery]
+    private DateOnly? To { get; set; }
+
+    private OpenInput _opening = new();
+
+    [SupplyParameterFromForm(FormName = "open")]
+    private OpenInput Opening
+    {
+        get => _opening;
+        set => _opening = value ?? new OpenInput();
+    }
+
+    private object Nothing { get; } = new();
+
+    private List<AccountRow> Chart { get; set; } = [];
+
+    private List<StandingCostRow> Standing { get; set; } = [];
+
+    /// <summary>The expense accounts a standing cost may be coded to.</summary>
+    private List<AccountRow> Expenses => Chart;
+
+    private ScheduleInput _scheduling = new();
+
+    [SupplyParameterFromForm(FormName = "schedule")]
+    private ScheduleInput Scheduling
+    {
+        get => _scheduling;
+        set => _scheduling = value ?? new ScheduleInput();
+    }
+
+    private IncomeAndExpenditure Report { get; set; } =
+        new(default, default, "KES", [], [], 0);
+
+    private string? Refusal { get; set; }
+
+    private string Summary => Chart.Count == 0
+        ? "What money is classified as, and what the firm earned and spent."
+        : $"{Chart.Count(one => one.IsOpen)} open, "
+            + $"{Chart.Count(one => !one.IsOpen)} retired.";
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        /*
+         * This quarter by default rather than this month. A month is too short to read a
+         * pattern from and long enough that a bad one has already happened; a quarter is what
+         * anybody asking this question is actually asking about.
+         */
+        var today = Clock.Today;
+
+        var from = From ?? new DateOnly(today.Year, ((today.Month - 1) / 3 * 3) + 1, 1);
+        var to = To ?? today;
+
+        Chart = await Queries.AccountsAsync();
+        Standing = await Queries.StandingCostsAsync();
+        Report = await Queries.ReportAsync(from, to, "KES");
+
+        Scheduling.AccountId ??= Chart
+            .FirstOrDefault(one => one.Kind == AccountKind.Expense && one.IsOpen)?.Id;
+
+        Scheduling.StartsOn ??= today;
+    }
+
+    private Task Open() => TryAsync(() => Service.OpenAccountAsync(
+        Opening.Code, Opening.Name, Opening.Kind));
+
+    private Task Retire(Guid id) => TryAsync(() => Service.RetireAccountAsync(id));
+
+    private Task Reopen(Guid id) => TryAsync(() => Service.ReopenAccountAsync(id));
+
+    private Task Schedule() => TryAsync(() => Service.ScheduleAsync(
+        Scheduling.AccountId!.Value,
+        Scheduling.Description,
+        Scheduling.Payee,
+        JiranisokoTech.Domain.Common.Money.Of(
+            (long)Math.Round(Scheduling.Amount * 100), "KES"),
+        Scheduling.Every,
+        Scheduling.StartsOn!.Value));
+
+    private Task Pause(Guid id) => TryAsync(() => Service.PauseAsync(id));
+
+    private Task Resume(Guid id) => TryAsync(() => Service.ResumeAsync(id));
+
+    private Task Settle(Guid scheduleId, Guid chargeId) =>
+        TryAsync(() => Service.SettleAsync(scheduleId, chargeId, Clock.Today));
+
+    private Task Rename(Guid id) => TryAsync(() => Service.RenameAccountAsync(
+        id, Request?.Request.Form["name"].ToString() ?? string.Empty));
+
+    private async Task TryAsync(Func<Task> act)
+    {
+        Refusal = null;
+
+        try
+        {
+            await act();
+            Navigation.NavigateTo("/accounting", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private sealed class ScheduleInput
+    {
+        public Guid? AccountId { get; set; }
+
+        [Required(ErrorMessage = "What the cost is.")]
+        [StringLength(300)]
+        public string Description { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Who it is paid to.")]
+        [StringLength(200)]
+        public string Payee { get; set; } = string.Empty;
+
+        /*
+         * Taken in whole units and converted to minor units on the way in, because that is
+         * what somebody types. The conversion rounds rather than truncating: 1500.005 entered
+         * by accident should be a cent out, not a cent short every month for a year.
+         */
+        [Range(0.01, 100_000_000)]
+        public decimal Amount { get; set; }
+
+        public Recurrence Every { get; set; } = Recurrence.Monthly;
+
+        [Required(ErrorMessage = "When it starts.")]
+        public DateOnly? StartsOn { get; set; }
+    }
+
+    private sealed class OpenInput
+    {
+        [Required(ErrorMessage = "The code people will type.")]
+        [StringLength(20)]
+        public string Code { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "What the account is called.")]
+        [StringLength(200)]
+        public string Name { get; set; } = string.Empty;
+
+        public AccountKind Kind { get; set; } = AccountKind.Expense;
+    }
+}

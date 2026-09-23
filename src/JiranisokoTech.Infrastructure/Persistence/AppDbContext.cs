@@ -71,6 +71,21 @@ public class AppDbContext(
     public DbSet<TechnicalAssessment> Assessments => Set<TechnicalAssessment>();
 
     /// <summary>
+    /// The chart of accounts: what money is classified as, and nothing about how much.
+    /// </summary>
+    /// <remarks>
+    /// Accounts are retired rather than deleted, and none of them holds a balance. There is no
+    /// journal either, and that is the decision of section 18 rather than an omission: a
+    /// stored balance is a number that can disagree with the documents it was added up from,
+    /// and on the day it does nobody can tell which is wrong. Every figure in the financial
+    /// report is summed from the invoices, claims and charges themselves.
+    /// </remarks>
+    public DbSet<Account> Accounts => Set<Account>();
+
+    /// <summary>Costs that fall due on a timetable, and the charges they have raised.</summary>
+    public DbSet<RecurringExpense> RecurringExpenses => Set<RecurringExpense>();
+
+    /// <summary>
     /// Notices already given about approaching deadlines.
     /// </summary>
     /// <remarks>

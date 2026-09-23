@@ -72,9 +72,32 @@ public sealed class Invoice : Entity, IAuditable
     /// invoice covering two projects can be issued as two invoices, which is what a
     /// client would rather receive anyway.
     /// </remarks>
+
+    /// <summary>
+    /// Which income account this invoice's revenue is classified as.
+    /// </summary>
+    /// <remarks>
+    /// On the invoice rather than on each line, for the reason ProjectId already gives above:
+    /// a bill covering two unrelated things is better issued as two invoices, and splitting
+    /// one across accounts needs an apportioning rule nobody has agreed.
+    ///
+    /// Nullable, because every invoice already in the database has no answer and inventing one
+    /// would be putting a figure in a report that nobody chose. The report says how much is
+    /// unclassified rather than hiding it.
+    /// </remarks>
+    public Guid? AccountId { get; private set; }
     public Guid? ProjectId { get; private set; }
 
     /// <summary>Say which project this bills for, or that it bills for none.</summary>
+
+    /// <summary>Say which income account this invoice's revenue is.</summary>
+    /// <remarks>
+    /// Allowed at any status, including after the invoice has been paid. Coding is not a
+    /// figure anybody signed off — it is which row of this firm's own report the money lands
+    /// in, and the commonest moment somebody notices it is wrong is while reading that report,
+    /// months later. A gate here would mean the answer stays wrong for ever.
+    /// </remarks>
+    public void CodeTo(Guid? accountId) => AccountId = accountId;
     public void BillsFor(Guid? projectId) => ProjectId = projectId;
 
     /// <summary>What the client quotes back at us. Unique, and never reused.</summary>
