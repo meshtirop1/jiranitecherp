@@ -130,6 +130,8 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IBusinessRepository, BusinessRepository>();
         services.AddScoped<ClientService>();
+        services.AddScoped<OpportunityService>();
+        services.AddScoped<ContactService>();
         services.AddScoped<ContractService>();
         services.AddScoped<TimesheetService>();
         services.AddScoped<LeaveService>();

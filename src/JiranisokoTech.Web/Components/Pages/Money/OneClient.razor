@@ -15,6 +15,7 @@
 @inject BusinessQueries Queries
 @inject ClientService Service
 @inject ContractService Contracting
+@inject ContactService ContactBook
 @inject DocumentService Files
 @inject PeopleQueries People
 @inject IClock Clock
@@ -216,6 +217,104 @@ else
     </section>
 
     <section class="standing">
+        <h2>Who we deal with</h2>
+
+        @*
+            A client already carried one contact name, which is enough until the first time
+            somebody has to ask who signs and who pays — and those are rarely the same person.
+            An invoice sent to whoever asked for the work sits in their inbox for six weeks.
+        *@
+        @if (Contacts.Count == 0)
+        {
+            <p class="empty">Nobody recorded here yet.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">People at this client</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">What they do</th>
+                        <th scope="col">How to reach them</th>
+                        <th scope="col"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var person in Contacts)
+                    {
+                        <tr>
+                            <td>
+                                @person.Name
+                                @if (person.IsMain)
+                                {
+                                    <span class="pill pill--done">call first</span>
+                                }
+                                @if (!person.IsHere)
+                                {
+                                    @*
+                                        Kept rather than removed. "The person we dealt with
+                                        left in March" answers "why is nobody replying" more
+                                        often than anything else does, and a screen that hid
+                                        them would send somebody to the audit trail for it.
+                                    *@
+                                    <span class="pill pill--quiet">has left</span>
+                                }
+                            </td>
+                            <td class="subtle">@(person.JobTitle ?? "—")</td>
+                            <td>
+                                @(person.Email ?? "—")
+                                @if (person.Phone is { } phone)
+                                {
+                                    <span class="subtle">@phone</span>
+                                }
+                            </td>
+                            <td>
+                                <AuthorizeView Policy="@ManagePolicy" Context="mayChangePeople">
+                                    @if (person.IsHere)
+                                    {
+                                        @if (!person.IsMain)
+                                        {
+                                            <EditForm Model="Nothing" method="post"
+                                                      FormName="@($"main-{person.Id}")"
+                                                      OnValidSubmit="() => MainIs(person.Id)"
+                                                      class="inline">
+                                                <button type="submit" class="button button--quiet">
+                                                    Call first
+                                                </button>
+                                            </EditForm>
+                                        }
+
+                                        <EditForm Model="Nothing" method="post"
+                                                  FormName="@($"gone-{person.Id}")"
+                                                  OnValidSubmit="() => Gone(person.Id)"
+                                                  class="inline">
+                                            <button type="submit" class="button button--quiet">
+                                                They have left
+                                            </button>
+                                        </EditForm>
+                                    }
+                                </AuthorizeView>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        <AuthorizeView Policy="@ManagePolicy" Context="mayAddPeople">
+            <EditForm Model="Person" method="post" OnValidSubmit="AddContact"
+                      FormName="contact" class="inline">
+                <InputText @bind-Value="Person.Name" placeholder="Their name" />
+                <InputText @bind-Value="Person.JobTitle" placeholder="What they do" />
+                <InputText @bind-Value="Person.Email" placeholder="Email" type="email" />
+                <InputText @bind-Value="Person.Phone" placeholder="Phone" />
+                <button type="submit" class="button button--quiet">Add them</button>
+            </EditForm>
+        </AuthorizeView>
+    </section>
+
+    <section class="standing">
         <h2>Attached</h2>
 
         @*
@@ -264,6 +363,18 @@ else
         set => _attaching = value ?? new AttachInput();
     }
 
+    private ContactInput _person = new();
+
+    [SupplyParameterFromForm(FormName = "contact")]
+    private ContactInput Person
+    {
+        get => _person;
+        set => _person = value ?? new ContactInput();
+    }
+
+    /// <summary>A model for the forms that carry nothing but a button.</summary>
+    private object Nothing { get; } = new();
+
     private ContractInput _drafting = new();
 
     [SupplyParameterFromForm(FormName = "contract")]
@@ -278,6 +389,8 @@ else
     private Guid? Me { get; set; }
 
     private DateOnly Today { get; set; }
+
+    private List<ContactRow> Contacts { get; set; } = [];
 
     private List<ContractRow> Contracts { get; set; } = [];
 
@@ -312,6 +425,7 @@ else
             return;
         }
 
+        Contacts = await Queries.ContactsAsync(Id);
         Contracts = await Queries.ContractsAsync(clientId: Id);
         Invoices = await Queries.InvoicesAsync(clientId: Id);
         Attached = await Files.ForAsync(AttachedTo.Client, Id);
@@ -326,6 +440,13 @@ else
     }
 
     private Task MoveTo() => TryAsync(() => Service.MoveToAsync(Id, State.Status));
+
+    private Task AddContact() => TryAsync(() => ContactBook.AddAsync(
+        Id, Person.Name, Person.JobTitle, Person.Email, Person.Phone));
+
+    private Task MainIs(Guid contactId) => TryAsync(() => ContactBook.MainIsAsync(contactId));
+
+    private Task Gone(Guid contactId) => TryAsync(() => ContactBook.GoneAsync(contactId));
 
     /// <summary>
     /// Open a contract and go straight to it.
@@ -403,6 +524,23 @@ else
     private sealed class StatusInput
     {
         public ClientStatus Status { get; set; } = ClientStatus.Prospect;
+    }
+
+    private sealed class ContactInput
+    {
+        [Required(ErrorMessage = "Their name.")]
+        [StringLength(200)]
+        public string Name { get; set; } = string.Empty;
+
+        [StringLength(150)]
+        public string? JobTitle { get; set; }
+
+        [EmailAddress(ErrorMessage = "That does not look like an email address.")]
+        [StringLength(255)]
+        public string? Email { get; set; }
+
+        [StringLength(50)]
+        public string? Phone { get; set; }
     }
 
     private sealed class ContractInput

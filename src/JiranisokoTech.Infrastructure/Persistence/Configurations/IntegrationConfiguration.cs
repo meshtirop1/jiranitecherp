@@ -134,3 +134,86 @@ public sealed class JobRunConfiguration : IEntityTypeConfiguration<Scheduling.Jo
         builder.HasIndex(run => new { run.Job, run.At });
     }
 }
+
+public sealed class ContactConfiguration : IEntityTypeConfiguration<Domain.Clients.Contact>
+{
+    public void Configure(EntityTypeBuilder<Domain.Clients.Contact> builder)
+    {
+        builder.ToTable("client_contacts");
+
+        builder.HasKey(one => one.Id);
+
+        builder.Property(one => one.Name).HasMaxLength(200).IsRequired();
+        builder.Property(one => one.JobTitle).HasMaxLength(150);
+        builder.Property(one => one.Email).HasMaxLength(255);
+        builder.Property(one => one.Phone).HasMaxLength(50);
+
+        builder.Ignore(one => one.IsHere);
+
+        // Every read is "who is at this client", and whether they are still there.
+        builder.HasIndex(one => new { one.ClientId, one.GoneAt });
+
+        /*
+         * There is deliberately no unique index on (ClientId) where IsMain, although exactly
+         * one contact per client holds it and a partial unique index is how PostgreSQL says
+         * so. Promoting somebody means clearing the flag on whoever has it and setting it on
+         * the new one in one save, and nothing makes EF order those two UPDATEs — so the
+         * constraint would fire on whichever ordering it happened to pick, intermittently,
+         * with a unique-violation nobody could reproduce. The rule lives in ContactService
+         * and is tested there.
+         */
+
+        builder.HasOne<Domain.Clients.Client>()
+            .WithMany()
+            .HasForeignKey(one => one.ClientId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class OpportunityConfiguration : IEntityTypeConfiguration<Domain.Clients.Opportunity>
+{
+    public void Configure(EntityTypeBuilder<Domain.Clients.Opportunity> builder)
+    {
+        builder.ToTable("opportunities");
+
+        builder.HasKey(one => one.Id);
+
+        builder.Property(one => one.Title).HasMaxLength(300).IsRequired();
+        builder.Property(one => one.About).HasMaxLength(300).IsRequired();
+        builder.Property(one => one.Stage).HasConversion<int>().IsRequired();
+        builder.Property(one => one.ValueCurrency).HasMaxLength(3);
+        builder.Property(one => one.Outcome).HasMaxLength(1000);
+
+        builder.Ignore(one => one.Value);
+        builder.Ignore(one => one.IsOpen);
+
+        /*
+         * The pipeline's own reading: what is open, and how long since it moved. Sorted by
+         * silence rather than by value, because a list ordered by value shows what somebody
+         * hopes for and a list ordered by silence shows what they have stopped doing.
+         */
+        builder.HasIndex(one => new { one.Stage, one.MovedAt });
+
+        /*
+         * Set to null rather than cascading. An opportunity outlives the client record being
+         * removed, because what was won or lost and why is the firm's own history — and a
+         * lost enquiry whose reason disappeared is the one piece of it worth keeping.
+         */
+        builder.HasOne<Domain.Clients.Client>()
+            .WithMany()
+            .HasForeignKey(one => one.ClientId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.OwnsMany(one => one.Activities, activity =>
+        {
+            activity.ToTable("opportunity_activities");
+            activity.WithOwner().HasForeignKey("OpportunityId");
+            activity.HasKey(one => one.Id);
+
+            activity.Property(one => one.Kind).HasConversion<int>().IsRequired();
+            activity.Property(one => one.What).HasMaxLength(2000).IsRequired();
+
+            activity.HasIndex(one => one.At);
+        });
+    }
+}

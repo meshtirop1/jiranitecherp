@@ -108,6 +108,11 @@ Each of these cost real time. They are written down so they cost it once.
 - **The container serves what was built, not what is on disk.** A `wwwroot` file edited
   and then tested against the running container is tested in its previous version, and
   the result looks like a fix that did not work. Rebuild before believing a browser.
+- **RZ10012 "markup element with unexpected name" on the first build after editing
+  a Razor file** that uses a component from the same project is an incremental-build
+  artifact, not a missing `@using`. The component's generated type is not there yet
+  on that pass. Build a second time before adding a using directive that the
+  compiler will then tell you is unnecessary.
 - **Page tests in one class share one database** through the class fixture, so
   "nothing has been recorded yet" is true only for whichever test runs first.
   Assert against a state no other test in the class produces.

@@ -1,0 +1,427 @@
+@page "/pipeline"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Domain.Clients
+@using JiranisokoTech.Infrastructure.Business
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ClientsView)]
+@inject BusinessQueries Queries
+@inject OpportunityService Service
+@inject NavigationManager Navigation
+
+@*
+    Work the firm might be paid for, quietest first.
+
+    The pipeline lived in somebody's head and in a spreadsheet, and the two disagreed. This
+    screen is deliberately one list rather than a board of columns: a board makes the eye
+    scan left to right looking for the fullest column, which is the one question about a
+    pipeline whose answer never helps. Sorted by silence, the top of the list is the work.
+
+    It reuses clients.view and clients.manage rather than declaring permissions of its own.
+    An enquiry is the client relationship before it is a client, and a second pair of
+    permissions would mean somebody granted "clients" and refused "pipeline" seeing a client
+    record whose own history was hidden from them.
+*@
+
+<PageTitle>Pipeline — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Pipeline</h1>
+    <p class="subtle">@Summary</p>
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ClientsManage)"
+               Context="mayChange">
+    <EditForm Model="Input" method="post" OnValidSubmit="Open" FormName="open" class="panel stack">
+        <DataAnnotationsValidator />
+
+        <h2>Write down an enquiry</h2>
+
+        <div class="fields">
+            <label>
+                <span>What the work is</span>
+                <InputText @bind-Value="Input.Title"
+                           placeholder="Fleet tracking for the northern depots" />
+                <ValidationMessage For="() => Input.Title" />
+            </label>
+
+            <label>
+                <span>Who it is with</span>
+                @*
+                    A name rather than a client picker. Most enquiries are from somebody the
+                    firm has never worked for, and demanding a client record first gives you
+                    either a pipeline that cannot hold them or a client list full of people
+                    who were never clients.
+                *@
+                <InputText @bind-Value="Input.About" placeholder="Acme Haulage (via Grace)" />
+                <ValidationMessage For="() => Input.About" />
+            </label>
+        </div>
+
+        <div class="fields">
+            <label>
+                <span>An existing client, if they are one</span>
+                <InputSelect @bind-Value="Input.ClientId">
+                    <option value="">Not a client</option>
+                    @foreach (var client in Clients)
+                    {
+                        <option value="@client.Id">@client.Name</option>
+                    }
+                </InputSelect>
+            </label>
+
+            <label>
+                <span>Decided by</span>
+                <InputDate @bind-Value="Input.ExpectedOn" />
+            </label>
+        </div>
+
+        <button type="submit">Write it down</button>
+    </EditForm>
+</AuthorizeView>
+
+@* The same filter strip the deliveries board uses, so the two read as one application. *@
+<nav class="filters" aria-label="Which stage">
+    <a class="pill @(Only is null && !Closed ? "pill--active" : null)" href="/pipeline">Open</a>
+
+    @foreach (var stage in Stages)
+    {
+        <a class="pill @(Only == stage ? "pill--active" : null)"
+           href="@($"/pipeline?stage={stage}")">@Words.For(stage)</a>
+    }
+
+    <a class="pill @(Closed ? "pill--active" : null)" href="/pipeline?closed=true">Decided</a>
+</nav>
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">@Nothing</p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Opportunities</caption>
+        <thead>
+            <tr>
+                <th scope="col">What</th>
+                <th scope="col">Who</th>
+                <th scope="col">Stage</th>
+                <th scope="col">Might be worth</th>
+                <th scope="col">Decided by</th>
+                <th scope="col">Quiet for</th>
+                <th scope="col"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Rows)
+            {
+                <tr>
+                    <td>
+                        @row.Title
+                        @if (row.Activities > 0)
+                        {
+                            <span class="subtle">@row.Activities noted</span>
+                        }
+                    </td>
+                    <td>
+                        @if (row.ClientId is { } clientId)
+                        {
+                            <a href="/clients/@clientId">@row.ClientName</a>
+                        }
+                        else
+                        {
+                            @row.About
+                        }
+                        @if (row.Owner is { } owner)
+                        {
+                            <span class="subtle">@owner</span>
+                        }
+                        else if (row.Stage is not (Stage.Won or Stage.Lost))
+                        {
+                            @* An enquiry nobody owns is exactly what this screen is for. *@
+                            <span class="pill pill--wait">nobody's</span>
+                        }
+                    </td>
+                    <td><span class="pill @PillFor(row.Stage)">@Words.For(row.Stage)</span></td>
+                    <td class="number">@(row.Value?.ToString() ?? "—")</td>
+                    <td>@(row.ExpectedOn?.ToString("d MMM yyyy") ?? "—")</td>
+                    <td class="number">
+                        @if (row.Stage is Stage.Won or Stage.Lost)
+                        {
+                            <text>—</text>
+                        }
+                        else
+                        {
+                            <span class="@(row.Quiet >= Stale ? "stale" : null)">
+                                @row.Quiet days
+                            </span>
+                        }
+                    </td>
+                    <td>
+                        @if (row.Outcome is { } outcome)
+                        {
+                            <span class="subtle">@outcome</span>
+                        }
+
+                        <AuthorizeView
+                            Policy="@(PermissionClaim.PolicyPrefix + Permissions.ClientsManage)"
+                            Context="mayMove">
+                            @if (row.Stage is not (Stage.Won or Stage.Lost))
+                            {
+                                <EditForm Model="Moving" method="post"
+                                          FormName="@($"move-{row.Id}")"
+                                          OnValidSubmit="() => Move(row.Id)" class="inline">
+                                    <InputSelect @bind-Value="Moving.Stage">
+                                        @foreach (var stage in AllStages)
+                                        {
+                                            <option value="@stage">@Words.For(stage)</option>
+                                        }
+                                    </InputSelect>
+                                    @*
+                                        The reason sits beside the stage rather than behind a
+                                        second step, because it is only demanded for Lost and
+                                        a second step is where a reason goes unwritten.
+                                    *@
+                                    <InputText @bind-Value="Moving.Outcome"
+                                               placeholder="If lost, why" />
+                                    <button type="submit" class="button button--quiet">
+                                        Move
+                                    </button>
+                                </EditForm>
+
+                                <EditForm Model="Noting" method="post"
+                                          FormName="@($"note-{row.Id}")"
+                                          OnValidSubmit="() => Note(row.Id)" class="inline">
+                                    <InputSelect @bind-Value="Noting.Kind">
+                                        @foreach (var kind in Kinds)
+                                        {
+                                            <option value="@kind">@Words.For(kind)</option>
+                                        }
+                                    </InputSelect>
+                                    <InputText @bind-Value="Noting.What"
+                                               placeholder="What happened" />
+                                    <button type="submit" class="button button--quiet">
+                                        Write it down
+                                    </button>
+                                </EditForm>
+                            }
+                        </AuthorizeView>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    /// <summary>
+    /// How long without movement counts as quiet.
+    /// </summary>
+    /// <remarks>
+    /// Fourteen days, and a constant rather than a setting. It is a hint in a column, not a
+    /// rule anything is enforced by, and a number somebody can tune is a number somebody
+    /// tunes until nothing is ever marked stale.
+    /// </remarks>
+    private const int Stale = 14;
+
+    private static readonly Stage[] Stages =
+        [Stage.Enquiry, Stage.Qualified, Stage.Proposed, Stage.Negotiating];
+
+    private static readonly Stage[] AllStages =
+        [Stage.Enquiry, Stage.Qualified, Stage.Proposed, Stage.Negotiating, Stage.Won, Stage.Lost];
+
+    private static readonly ActivityKind[] Kinds =
+        [ActivityKind.Note, ActivityKind.Call, ActivityKind.Meeting, ActivityKind.Email,
+         ActivityKind.Sent];
+
+    /*
+     * Named Chosen rather than Stage. A member called Stage shadows the Stage type for every
+     * member access in this file — Stage.Won stops meaning the enum and starts meaning a
+     * property of a string — which is the same trap a namespace called Money set three times
+     * in this codebase already.
+     */
+    [SupplyParameterFromQuery(Name = "stage")]
+    private string? Chosen { get; set; }
+
+    [SupplyParameterFromQuery]
+    private bool Closed { get; set; }
+
+    private OpenInput _input = new();
+
+    [SupplyParameterFromForm(FormName = "open")]
+    private OpenInput Input
+    {
+        get => _input;
+        set => _input = value ?? new OpenInput();
+    }
+
+    private MoveInput _moving = new();
+
+    [SupplyParameterFromForm(FormName = "move")]
+    private MoveInput Moving
+    {
+        get => _moving;
+        set => _moving = value ?? new MoveInput();
+    }
+
+    private NoteInput _noting = new();
+
+    [SupplyParameterFromForm(FormName = "note")]
+    private NoteInput Noting
+    {
+        get => _noting;
+        set => _noting = value ?? new NoteInput();
+    }
+
+    private List<OpportunityRow> Rows { get; set; } = [];
+
+    private List<ClientRow> Clients { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    /// <summary>The stage being looked at, if the query string named a real one.</summary>
+    private Stage? Only =>
+        Enum.TryParse<Stage>(Chosen, ignoreCase: true, out var parsed) ? parsed : null;
+
+    private string Nothing => Closed
+        ? "Nothing has been decided yet."
+        : Only is { } stage
+            ? $"Nothing is at {Words.For(stage).ToLowerInvariant()}."
+            : "Nothing in the pipeline. Write down the next enquiry that arrives.";
+
+    /// <summary>
+    /// What the list adds up to, said in words.
+    /// </summary>
+    /// <remarks>
+    /// A count and how many have gone quiet, and deliberately not a total value. A pipeline
+    /// total is a forecast, and a forecast printed in the same typeface as revenue is how a
+    /// guess becomes a number somebody spends.
+    /// </remarks>
+    private string Summary
+    {
+        get
+        {
+            if (Rows.Count == 0)
+            {
+                return "Work the firm might be paid for.";
+            }
+
+            var quiet = Rows.Count(row =>
+                row.Quiet >= Stale && row.Stage is not (Stage.Won or Stage.Lost));
+
+            return quiet == 0
+                ? $"{Rows.Count} open, all moved within the last {Stale} days."
+                : $"{Rows.Count} open, {quiet} untouched for {Stale} days or more.";
+        }
+    }
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Rows = await Queries.PipelineAsync(Only, Closed);
+        Clients = await Queries.ClientsAsync();
+    }
+
+    private async Task Open()
+    {
+        Refusal = null;
+
+        try
+        {
+            await Service.OpenAsync(
+                Input.Title,
+                Input.About,
+                Input.ClientId is { Length: > 0 } chosen ? Guid.Parse(chosen) : null,
+                expectedOn: Input.ExpectedOn);
+
+            Navigation.NavigateTo("/pipeline", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException or FormatException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private async Task Move(Guid opportunityId)
+    {
+        Refusal = null;
+
+        try
+        {
+            await Service.MoveToAsync(opportunityId, Moving.Stage, Moving.Outcome);
+            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private async Task Note(Guid opportunityId)
+    {
+        Refusal = null;
+
+        try
+        {
+            await Service.HappenedAsync(opportunityId, Noting.Kind, Noting.What);
+            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string? PillFor(Stage stage) => stage switch
+    {
+        Stage.Won => "pill--done",
+        Stage.Lost => "pill--quiet",
+        Stage.Negotiating => "pill--wait",
+        _ => null,
+    };
+
+    private sealed class OpenInput
+    {
+        [Required(ErrorMessage = "Say what the work is.")]
+        [StringLength(300)]
+        public string Title { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Say who it is with, even if they are not a client yet.")]
+        [StringLength(300)]
+        public string About { get; set; } = string.Empty;
+
+        public string? ClientId { get; set; }
+
+        public DateOnly? ExpectedOn { get; set; }
+    }
+
+    private sealed class MoveInput
+    {
+        public Stage Stage { get; set; } = JiranisokoTech.Domain.Clients.Stage.Qualified;
+
+        [StringLength(1000)]
+        public string? Outcome { get; set; }
+    }
+
+    private sealed class NoteInput
+    {
+        public ActivityKind Kind { get; set; } = ActivityKind.Note;
+
+        [Required(ErrorMessage = "Say what happened.")]
+        [StringLength(2000)]
+        public string What { get; set; } = string.Empty;
+    }
+}

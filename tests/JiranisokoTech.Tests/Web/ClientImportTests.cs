@@ -215,7 +215,7 @@ public class ClientImportTests
     }
 
     private static ClientImport Importer(TestDbContext context) =>
-        new(Service(context), new BusinessQueries(context));
+        new(Service(context), new BusinessQueries(context, new TestClock()));
 
     private static ClientService Service(TestDbContext context) =>
         new(new BusinessRepository(context));

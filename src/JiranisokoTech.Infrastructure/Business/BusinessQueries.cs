@@ -1,3 +1,4 @@
+using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Domain.Clients;
 using JiranisokoTech.Domain.Contracts;
 using JiranisokoTech.Domain.Recruitment;
@@ -21,7 +22,7 @@ namespace JiranisokoTech.Infrastructure.Business;
 /// round-trip; the join costs a reader five minutes working out what is being
 /// selected.
 /// </remarks>
-public sealed class BusinessQueries(AppDbContext database)
+public sealed class BusinessQueries(AppDbContext database, IClock clock)
 {
     // --- clients -----------------------------------------------------------
 
@@ -100,6 +101,141 @@ public sealed class BusinessQueries(AppDbContext database)
                     Money.Zero(group.First().Currency),
                     (running, invoice) => running + invoice.Outstanding));
     }
+
+    // --- the pipeline ------------------------------------------------------
+
+    /// <summary>
+    /// What is in the pipeline, quietest first.
+    /// </summary>
+    /// <remarks>
+    /// Ordered by silence and not by value. A list ordered by value shows what somebody
+    /// hopes for; a list ordered by silence shows what they have stopped doing, and only one
+    /// of those changes what anybody does on the afternoon they read it.
+    ///
+    /// Won and lost are excluded unless asked for. They are answers, and a pipeline that
+    /// carries every answer ever given is a list nobody scrolls to the bottom of.
+    /// </remarks>
+    public async Task<List<OpportunityRow>> PipelineAsync(
+        Stage? stage = null,
+        bool includeClosed = false,
+        CancellationToken cancellationToken = default)
+    {
+        var query = database.Opportunities.AsNoTracking();
+
+        if (stage is { } only)
+        {
+            query = query.Where(opportunity => opportunity.Stage == only);
+        }
+        else if (!includeClosed)
+        {
+            query = query.Where(opportunity =>
+                opportunity.Stage != Stage.Won && opportunity.Stage != Stage.Lost);
+        }
+
+        var rows = await query
+            .OrderBy(opportunity => opportunity.MovedAt)
+            .Select(opportunity => new
+            {
+                opportunity.Id,
+                opportunity.Title,
+                opportunity.About,
+                opportunity.Stage,
+                opportunity.ClientId,
+                opportunity.OwnerId,
+                opportunity.ValueMinorUnits,
+                opportunity.ValueCurrency,
+                opportunity.ExpectedOn,
+                opportunity.MovedAt,
+                opportunity.Outcome,
+                Activities = opportunity.Activities.Count,
+            })
+            .ToListAsync(cancellationToken);
+
+        var clientIds = rows.Where(row => row.ClientId != null)
+            .Select(row => row.ClientId!.Value)
+            .Distinct()
+            .ToList();
+
+        var clients = await database.Clients
+            .AsNoTracking()
+            .Where(client => clientIds.Contains(client.Id))
+            .ToDictionaryAsync(client => client.Id, client => client.Name, cancellationToken);
+
+        var ownerIds = rows.Where(row => row.OwnerId != null)
+            .Select(row => row.OwnerId!.Value)
+            .Distinct()
+            .ToList();
+
+        var owners = await database.Employees
+            .AsNoTracking()
+            .Where(employee => ownerIds.Contains(employee.Id))
+            .ToDictionaryAsync(
+                employee => employee.Id, employee => employee.FullName, cancellationToken);
+
+        var now = clock.Now;
+
+        return rows.Select(row => new OpportunityRow(
+            row.Id,
+            row.Title,
+            row.About,
+            row.Stage,
+            row.ClientId,
+            row.ClientId is { } clientId && clients.TryGetValue(clientId, out var name)
+                ? name
+                : null,
+            row.OwnerId is { } ownerId && owners.TryGetValue(ownerId, out var owner)
+                ? owner
+                : null,
+            row.ValueMinorUnits is { } minor && row.ValueCurrency is { } currency
+                ? Money.Of(minor, currency)
+                : null,
+            row.ExpectedOn,
+            (int)(now - row.MovedAt).TotalDays,
+            row.Outcome,
+            row.Activities))
+            .ToList();
+    }
+
+    /// <summary>What has happened to one opportunity, most recent first.</summary>
+    public async Task<List<Activity>> ActivitiesAsync(
+        Guid opportunityId, CancellationToken cancellationToken = default)
+    {
+        var opportunity = await database.Opportunities
+            .AsNoTracking()
+            .Include(one => one.Activities)
+            .FirstOrDefaultAsync(one => one.Id == opportunityId, cancellationToken);
+
+        return opportunity is null
+            ? []
+            : [.. opportunity.Activities.OrderByDescending(activity => activity.At)];
+    }
+
+    /// <summary>
+    /// The people at a client, the one to call first at the top.
+    /// </summary>
+    /// <remarks>
+    /// Leavers are kept at the bottom rather than hidden, because "the person we dealt with
+    /// left in March" is the answer to a question somebody is actually asking when they open
+    /// this — and a screen that hid them would send them looking through the audit trail.
+    /// </remarks>
+    public async Task<List<ContactRow>> ContactsAsync(
+        Guid clientId, CancellationToken cancellationToken = default) =>
+        await database.Contacts
+            .AsNoTracking()
+            .Where(contact => contact.ClientId == clientId)
+            .OrderBy(contact => contact.GoneAt != null)
+            .ThenByDescending(contact => contact.IsMain)
+            .ThenBy(contact => contact.Name)
+            .Select(contact => new ContactRow(
+                contact.Id,
+                contact.ClientId,
+                contact.Name,
+                contact.JobTitle,
+                contact.Email,
+                contact.Phone,
+                contact.IsMain,
+                contact.GoneAt == null))
+            .ToListAsync(cancellationToken);
 
     // --- contracts ----------------------------------------------------------
 
@@ -561,6 +697,38 @@ public sealed record ClientRow(
     int PaymentTermDays,
     int Projects,
     Money? Owed);
+
+/// <summary>
+/// One opportunity as the pipeline shows it.
+/// </summary>
+/// <remarks>
+/// Carries <c>Quiet</c> — days since it last moved — rather than the date, because the
+/// question the screen exists to answer is which of these nobody has touched, and a column
+/// of dates makes a reader do that subtraction thirty times.
+/// </remarks>
+public sealed record OpportunityRow(
+    Guid Id,
+    string Title,
+    string About,
+    Stage Stage,
+    Guid? ClientId,
+    string? ClientName,
+    string? Owner,
+    Money? Value,
+    DateOnly? ExpectedOn,
+    int Quiet,
+    string? Outcome,
+    int Activities);
+
+public sealed record ContactRow(
+    Guid Id,
+    Guid ClientId,
+    string Name,
+    string? JobTitle,
+    string? Email,
+    string? Phone,
+    bool IsMain,
+    bool IsHere);
 
 public sealed record ContractRow(
     Guid Id,

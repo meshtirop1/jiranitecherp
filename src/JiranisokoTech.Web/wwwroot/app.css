@@ -907,6 +907,14 @@ code.key {
 .pill--done { background: #e6f4ea; color: #1e6b32; }
 .pill--quiet { background: #eef1f5; color: #6b7280; }
 .pill--danger { background: #fdf2f2; color: #8a1b1b; }
+.pill--wait { background: #fff4e5; color: #8a5300; }
+
+/* --- The pipeline -------------------------------------------------------- */
+
+/* An opportunity nobody has touched for a fortnight. Said in words beside it as
+   well — "21 days" is the label, and this only makes the eye land there first —
+   because a reader who cannot see the colour still has to be able to find it. */
+.stale { color: #b32121; font-weight: 600; }
 
 /* The week at a glance above the timesheet. Seven equal columns that become a
    scrolling strip on a narrow screen rather than squeezing to illegibility —
@@ -1178,6 +1186,8 @@ code.key {
     :root:not([data-theme="light"]) .pill--done { background: #1d3a27; color: #7ddc9b; }
     :root:not([data-theme="light"]) .pill--danger { background: #3d2126; color: #ff9aa2; }
     :root:not([data-theme="light"]) .pill--quiet { background: #2c3641; color: var(--ink-quiet); }
+    :root:not([data-theme="light"]) .pill--wait { background: #3a2f1c; color: #ffc987; }
+    :root:not([data-theme="light"]) .stale { color: #ff9aa2; }
     :root:not([data-theme="light"]) .pill--active { background: #1d3a27; color: #7ddc9b; }
 
     :root:not([data-theme="light"]) .refusal {

@@ -157,6 +157,36 @@ public sealed class BusinessRepository(AppDbContext database) : IBusinessReposit
         database.Applications.FirstOrDefaultAsync(
             application => application.Id == id, cancellationToken);
 
+    /// <remarks>
+    /// With its activities, always. Every reason to load one — moving it, writing down a
+    /// call — either reads the log or appends to it, and an owned collection that was not
+    /// included is one EF will replace with an empty list on the next save.
+    /// </remarks>
+    public Task<Opportunity?> FindOpportunityAsync(
+        Guid id, CancellationToken cancellationToken = default) =>
+        database.Opportunities
+            .Include(opportunity => opportunity.Activities)
+            .FirstOrDefaultAsync(opportunity => opportunity.Id == id, cancellationToken);
+
+    public Task<Contact?> FindContactAsync(
+        Guid id, CancellationToken cancellationToken = default) =>
+        database.Contacts.FirstOrDefaultAsync(contact => contact.Id == id, cancellationToken);
+
+    /// <remarks>
+    /// Tracked, unlike most reads in this codebase, because the caller clears the main flag
+    /// on whichever of these holds it and then saves. Handing it untracked rows would make
+    /// that loop a no-op that reports success.
+    /// </remarks>
+    public Task<List<Contact>> ContactsForAsync(
+        Guid clientId, CancellationToken cancellationToken = default) =>
+        database.Contacts
+            .Where(contact => contact.ClientId == clientId)
+            .ToListAsync(cancellationToken);
+
+    public void Add(Opportunity opportunity) => database.Opportunities.Add(opportunity);
+
+    public void Add(Contact contact) => database.Contacts.Add(contact);
+
     public void Add(Client client) => database.Clients.Add(client);
 
     public void Add(Contract contract) => database.Contracts.Add(contract);

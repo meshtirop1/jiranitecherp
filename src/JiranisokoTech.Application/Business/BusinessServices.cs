@@ -120,6 +120,26 @@ public interface IBusinessRepository
 
     void Add(Holiday holiday);
 
+    Task<Opportunity?> FindOpportunityAsync(
+        Guid id, CancellationToken cancellationToken = default);
+
+    Task<Contact?> FindContactAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Everybody at a client, including those who have left.
+    /// </summary>
+    /// <remarks>
+    /// Including the leavers because the caller that needs this list is the one making
+    /// somebody the main contact, and it has to unset whoever holds it now — which on a
+    /// record nobody ever tidied is somebody who left in March.
+    /// </remarks>
+    Task<List<Contact>> ContactsForAsync(
+        Guid clientId, CancellationToken cancellationToken = default);
+
+    void Add(Opportunity opportunity);
+
+    void Add(Contact contact);
+
     /// <summary>
     /// Take a day off the calendar.
     /// </summary>
@@ -215,6 +235,256 @@ public sealed class ClientService(IBusinessRepository business)
     private async Task<Client> Required(Guid id, CancellationToken cancellationToken) =>
         await business.FindClientAsync(id, cancellationToken)
         ?? throw new InvalidOperationException("There is no client with that identifier.");
+}
+
+/// <summary>
+/// Work the firm might be paid for, from the first enquiry to won or lost.
+/// </summary>
+/// <remarks>
+/// Almost nothing here: the stage rules live on the aggregate, where they belong, because an
+/// opportunity can answer every one of them from inside itself. What this service adds is
+/// the two things it cannot — that a client named on an opportunity has to exist, and that
+/// the clock comes from <see cref="IClock"/> rather than from whichever screen called.
+///
+/// The second matters more than it reads. <c>MoveTo</c> takes the time as a parameter so the
+/// aggregate stays testable, and a screen passing the current instant straight in is how
+/// "days since it moved" quietly starts measuring the web server's clock rather than the one
+/// every other date in this system is stamped from.
+/// </remarks>
+public sealed class OpportunityService(IBusinessRepository business, IClock clock)
+{
+    public async Task<Opportunity> OpenAsync(
+        string title,
+        string about,
+        Guid? clientId = null,
+        Guid? ownerId = null,
+        Money? value = null,
+        DateOnly? expectedOn = null,
+        CancellationToken cancellationToken = default)
+    {
+        await MustExist(clientId, cancellationToken);
+
+        var opportunity = Opportunity.Open(
+            title,
+            about,
+            clientId,
+            ownerId,
+            value?.MinorUnits,
+            value?.Currency,
+            expectedOn,
+            clock.Now);
+
+        business.Add(opportunity);
+        await business.SaveAsync(cancellationToken);
+
+        return opportunity;
+    }
+
+    public async Task MoveToAsync(
+        Guid opportunityId,
+        Stage stage,
+        string? outcome = null,
+        CancellationToken cancellationToken = default)
+    {
+        var opportunity = await Required(opportunityId, cancellationToken);
+
+        opportunity.MoveTo(stage, clock.Now, outcome);
+        await business.SaveAsync(cancellationToken);
+    }
+
+    public async Task HappenedAsync(
+        Guid opportunityId,
+        ActivityKind kind,
+        string what,
+        Guid? byEmployeeId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var opportunity = await Required(opportunityId, cancellationToken);
+
+        opportunity.Happened(kind, what, byEmployeeId, clock.Now);
+        await business.SaveAsync(cancellationToken);
+    }
+
+    public async Task UpdateAsync(
+        Guid opportunityId,
+        string title,
+        string about,
+        Guid? clientId,
+        Guid? ownerId,
+        Money? value,
+        DateOnly? expectedOn,
+        CancellationToken cancellationToken = default)
+    {
+        var opportunity = await Required(opportunityId, cancellationToken);
+
+        await MustExist(clientId, cancellationToken);
+
+        opportunity.Retitle(title, about);
+        opportunity.Belongs(clientId);
+        opportunity.Owned(ownerId);
+        opportunity.Worth(value);
+        opportunity.ExpectedBy(expectedOn);
+
+        await business.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// A client named on an opportunity has to be one.
+    /// </summary>
+    /// <remarks>
+    /// Checked rather than left to the foreign key, because the key's refusal arrives as a
+    /// DbUpdateException in a screen's face and this one is a sentence somebody can act on.
+    /// </remarks>
+    private async Task MustExist(Guid? clientId, CancellationToken cancellationToken)
+    {
+        if (clientId is { } id
+            && await business.FindClientAsync(id, cancellationToken) is null)
+        {
+            throw new InvalidOperationException("There is no client with that identifier.");
+        }
+    }
+
+    private async Task<Opportunity> Required(Guid id, CancellationToken cancellationToken) =>
+        await business.FindOpportunityAsync(id, cancellationToken)
+        ?? throw new InvalidOperationException("There is no opportunity with that identifier.");
+}
+
+/// <summary>
+/// The people at a client.
+/// </summary>
+/// <remarks>
+/// This exists for one rule the entity cannot enforce: only one contact at a client is the
+/// one to call first. Setting that flag means clearing it on whoever holds it, and only
+/// something that can see all of a client's contacts knows who that is — an entity asked to
+/// do it would have to be handed its own siblings.
+/// </remarks>
+public sealed class ContactService(IBusinessRepository business, IClock clock)
+{
+    public async Task<Contact> AddAsync(
+        Guid clientId,
+        string name,
+        string? jobTitle = null,
+        string? email = null,
+        string? phone = null,
+        bool isMain = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (await business.FindClientAsync(clientId, cancellationToken) is null)
+        {
+            throw new InvalidOperationException("There is no client with that identifier.");
+        }
+
+        var existing = await business.ContactsForAsync(clientId, cancellationToken);
+
+        /*
+         * The first person recorded at a client is the one to call, whether or not anybody
+         * ticked the box. Otherwise a client has contacts and no main one, which reads on
+         * every screen as "nobody knows who to ring" — and is nearly always untrue.
+         */
+        var main = isMain || existing.Count == 0;
+
+        if (main)
+        {
+            Demote(existing);
+        }
+
+        var contact = Contact.At(clientId, name, jobTitle, email, phone, main, clock.Now);
+
+        business.Add(contact);
+        await business.SaveAsync(cancellationToken);
+
+        return contact;
+    }
+
+    public async Task UpdateAsync(
+        Guid contactId,
+        string name,
+        string? jobTitle,
+        string? email,
+        string? phone,
+        CancellationToken cancellationToken = default)
+    {
+        var contact = await Required(contactId, cancellationToken);
+
+        contact.Update(name, jobTitle, email, phone);
+        await business.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>Make this the one to call first.</summary>
+    public async Task MainIsAsync(Guid contactId, CancellationToken cancellationToken = default)
+    {
+        var contact = await Required(contactId, cancellationToken);
+
+        if (!contact.IsHere)
+        {
+            throw new InvalidOperationException(
+                $"{contact.Name} has left. Somebody who is not there cannot be the first "
+                + "person to call.");
+        }
+
+        Demote(await business.ContactsForAsync(contact.ClientId, cancellationToken));
+
+        contact.Main(true);
+        await business.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// They have left.
+    /// </summary>
+    /// <remarks>
+    /// Their record stays. The correspondence sent to them is still the correspondence, and
+    /// this date explains "nobody there is replying" more often than anything else does.
+    ///
+    /// <b>If they were the one to call, somebody else becomes it.</b> This was missing, and
+    /// the fault was found by opening a client page rather than by any test: the entity clears
+    /// the flag when somebody leaves — it has to, or an email goes to an address that bounces
+    /// for a year — so a client whose main contact left was left with contacts and nobody
+    /// flagged. That is precisely the "nobody knows who to ring" state AddAsync exists to
+    /// prevent, arrived at by the back door.
+    ///
+    /// The longest-serving of whoever is still there takes it. An arbitrary rule, and
+    /// deliberately an explainable one: it is nearly always the right person, it is one click
+    /// to change on the screen that shows it, and the alternative — leaving it empty until
+    /// somebody notices — is how an invoice goes to a leaver.
+    /// </remarks>
+    public async Task GoneAsync(Guid contactId, CancellationToken cancellationToken = default)
+    {
+        var contact = await Required(contactId, cancellationToken);
+
+        var wasTheOneToCall = contact.IsMain;
+
+        contact.Gone(clock.Now);
+
+        if (wasTheOneToCall)
+        {
+            var remaining = await business.ContactsForAsync(contact.ClientId, cancellationToken);
+
+            var next = remaining
+                .Where(one => one.IsHere && one.Id != contact.Id)
+                .OrderBy(one => one.AddedAt)
+                .FirstOrDefault();
+
+            next?.Main(true);
+        }
+
+        await business.SaveAsync(cancellationToken);
+    }
+
+    /// <remarks>
+    /// Iterated over a copy, because clearing the flag is a write to a tracked entity and
+    /// the sequence it came from is the repository's own query result.
+    /// </remarks>
+    private static void Demote(List<Contact> contacts)
+    {
+        foreach (var other in contacts.Where(one => one.IsMain).ToList())
+        {
+            other.Main(false);
+        }
+    }
+
+    private async Task<Contact> Required(Guid id, CancellationToken cancellationToken) =>
+        await business.FindContactAsync(id, cancellationToken)
+        ?? throw new InvalidOperationException("There is no contact with that identifier.");
 }
 
 /// <summary>Contracts, and what says a client may be billed at all.</summary>

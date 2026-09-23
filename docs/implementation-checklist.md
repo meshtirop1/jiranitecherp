@@ -15,9 +15,9 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 23 September 2026 · 734 tests · verified against PostgreSQL in
+Last updated: 23 September 2026 · 930 tests · verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
-container.
+container and a lost opportunity surviving its client record being deleted.
 
 ---
 
@@ -40,7 +40,15 @@ reports on it again — and the build and deployment half does not. What is buil
 is an ERP that a software company could run its business on, plus the beginning
 of the part that makes it developer-native.
 
-By section: **34 done, 22 partial, 42 not started, 1 excluded by agreement.**
+By section: **28 done, 11 partial, 59 not started, 1 excluded by agreement.**
+
+That count was recomputed from the tables below rather than adjusted, because the
+figure previously here did not add up to anything the tables said and had been
+carried forward by hand for weeks. The method is now stated so the next person
+can check it: a section is done when every row under it is done, partial when
+its rows disagree or a row names a gap, and not started otherwise. Twenty-six of
+the brief's ninety-nine sections have no row yet at all and are counted as not
+started, which is what they are.
 
 ---
 
@@ -88,7 +96,8 @@ By section: **34 done, 22 partial, 42 not started, 1 excluded by agreement.**
 | ✅ | 24 | Employee documents | Narrowed to employees.manage plus the person themselves |
 | ✅ | 24 | Document management | Attachments on seven kinds, with versions that supersede rather than replace, tags, and search narrowed to the kinds a reader may see |
 | ☐ | 22 | Payroll | |
-| ◐ | 16 | Clients | Record, state, terms, documents, invoices. No leads, contacts, opportunities, pipeline or activities |
+| ✅ | 16 | Clients | Record, state, terms, documents, invoices, and the people at each one — with a leaver kept rather than overwritten, and one of them the person to call first |
+| ✅ | 16 | Pipeline | An enquiry and an opportunity are one record at different stages, so nothing is lost to a conversion step. Backwards moves allowed, decided ones not reopened, losing one demands a reason, and winning one creates nothing. Listed by silence rather than by value |
 | ✅ | 17 | Client contracts | Draft/active/terminated, expiry by date, signed copy attached |
 | ☐ | 17 | Employee, vendor contracts, NDAs, renewal reminders | |
 | ✅ | 10 | Projects | Lead, dates, state, documents, hours |

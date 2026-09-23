@@ -157,6 +157,32 @@ public static class Words
         _ => state.ToString(),
     };
 
+    /// <remarks>
+    /// "Enquiry" and the rest read as they are, but Won and Lost are said as "Won" and
+    /// "Lost" rather than "Closed won" — which is the language of a sales tool and not of
+    /// anybody in this firm describing what happened.
+    /// </remarks>
+    public static string For(Stage stage) => stage switch
+    {
+        Stage.Enquiry => "Enquiry",
+        Stage.Qualified => "Qualified",
+        Stage.Proposed => "Proposed",
+        Stage.Negotiating => "Negotiating",
+        Stage.Won => "Won",
+        Stage.Lost => "Lost",
+        _ => stage.ToString(),
+    };
+
+    public static string For(ActivityKind kind) => kind switch
+    {
+        ActivityKind.Note => "A note",
+        ActivityKind.Call => "A call",
+        ActivityKind.Meeting => "A meeting",
+        ActivityKind.Email => "An email",
+        ActivityKind.Sent => "Sent them something",
+        _ => kind.ToString(),
+    };
+
     public static string For(ClientStatus status) => status switch
     {
         ClientStatus.Prospect => "Prospect",

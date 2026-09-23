@@ -48,7 +48,7 @@ public class BusinessRuleTests
 
         public ContractService Contracts => new(Repository, Settings, db.Clock);
 
-        public BusinessQueries Reads => new(_context);
+        public BusinessQueries Reads => new(_context, db.Clock);
 
         public TimesheetService Timesheets =>
             new(Repository, new PeopleRepository(_context), db.Clock);
@@ -914,7 +914,7 @@ public class BusinessRuleTests
 
         await using var read = db.NewContext();
 
-        var listed = Assert.Single(await new BusinessQueries(read).LeaveAsync(employeeId: engineer));
+        var listed = Assert.Single(await new BusinessQueries(read, db.Clock).LeaveAsync(employeeId: engineer));
 
         Assert.Equal(leave.Days, listed.Days);
         Assert.Equal(4, listed.Days);
@@ -935,7 +935,7 @@ public class BusinessRuleTests
         await module.Holidays.DeclareAsync(new DateOnly(2027, 1, 1), "New Year's Day");
 
         await using var read = db.NewContext();
-        var queries = new BusinessQueries(read);
+        var queries = new BusinessQueries(read, db.Clock);
 
         var christmas = await queries.HolidaysAsync(2026);
 

@@ -36,6 +36,7 @@ public class BusinessPageTests(ApplicationFactory factory) : IClassFixture<Appli
     [InlineData("/expenses")]
     [InlineData("/expenses/claims")]
     [InlineData("/clients")]
+    [InlineData("/pipeline")]
     [InlineData("/invoices")]
     public async Task A_stranger_is_sent_to_sign_in(string path)
     {
@@ -80,6 +81,7 @@ public class BusinessPageTests(ApplicationFactory factory) : IClassFixture<Appli
     [InlineData("/leave/decisions")]
     [InlineData("/expenses/claims")]
     [InlineData("/clients")]
+    [InlineData("/pipeline")]
     [InlineData("/invoices")]
     public async Task A_developer_cannot_open_the_pages_about_everybody_else(string path)
     {
@@ -110,6 +112,7 @@ public class BusinessPageTests(ApplicationFactory factory) : IClassFixture<Appli
 
     [Theory]
     [InlineData("/clients", "Clients")]
+    [InlineData("/pipeline", "Pipeline")]
     [InlineData("/invoices", "Invoices")]
     public async Task A_delivery_manager_can_open_the_money_pages(string path, string heading)
     {
@@ -761,6 +764,130 @@ public class BusinessPageTests(ApplicationFactory factory) : IClassFixture<Appli
 
         Assert.Equal(HttpStatusCode.Found, response.StatusCode);
         Assert.Contains("/denied", response.Headers.Location!.OriginalString);
+    }
+
+    /// <summary>
+    /// The pipeline names what nobody has touched, and what nobody owns.
+    /// </summary>
+    /// <remarks>
+    /// The two things this screen exists to say, and neither is a stage. A pipeline that only
+    /// listed stages is the spreadsheet it replaced; what it has to do is put the work
+    /// somebody has stopped doing at the top of the page and admit when an enquiry has been
+    /// nobody's for a month.
+    ///
+    /// The titles here are deliberately unlike anything else in this class. Page tests share
+    /// one database through the class fixture, so an assertion on "no opportunities yet" would
+    /// pass or fail depending on which test ran first.
+    /// </remarks>
+    [Fact]
+    public async Task The_pipeline_says_what_has_gone_quiet_and_what_nobody_owns()
+    {
+        var browser = await SignedInAsync("pipeline@jiranisokotech.co.ke", Roles.ProjectManager);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var pipeline = scope.ServiceProvider.GetRequiredService<OpportunityService>();
+
+            await pipeline.OpenAsync(
+                "Weighbridge integration at Mariakani",
+                "Rift Valley Aggregates (via the county tender desk)");
+        }
+
+        var response = await browser.GetAsync("/pipeline");
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("Weighbridge integration at Mariakani", html);
+
+        /*
+         * Nobody has been given it, and the screen says so rather than leaving a blank cell.
+         * Asserted unencoded: static Razor text is written to the response verbatim rather
+         * than through the HTML encoder, so the apostrophe stays an apostrophe.
+         */
+        Assert.Contains(">nobody\'s<", html);
+    }
+
+    /// <summary>
+    /// A decided opportunity is off the pipeline and still findable.
+    /// </summary>
+    /// <remarks>
+    /// Both halves matter. It leaves the open list because a pipeline carrying every answer
+    /// ever given is a list nobody scrolls to the bottom of; it stays reachable because the
+    /// reason one was lost is the only useful thing it left behind.
+    /// </remarks>
+    [Fact]
+    public async Task A_lost_opportunity_leaves_the_pipeline_and_keeps_its_reason()
+    {
+        var browser = await SignedInAsync("pipeline2@jiranisokotech.co.ke", Roles.ProjectManager);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var pipeline = scope.ServiceProvider.GetRequiredService<OpportunityService>();
+
+            var enquiry = await pipeline.OpenAsync(
+                "Cold chain telemetry for Naivasha", "Lakeview Growers");
+
+            await pipeline.MoveToAsync(
+                enquiry.Id,
+                JiranisokoTech.Domain.Clients.Stage.Lost,
+                "They took the incumbent's renewal price.");
+        }
+
+        var open = await (await browser.GetAsync("/pipeline")).Content.ReadAsStringAsync();
+
+        Assert.DoesNotContain("Cold chain telemetry for Naivasha", open);
+
+        var decided = await (await browser.GetAsync("/pipeline?closed=true"))
+            .Content.ReadAsStringAsync();
+
+        Assert.Contains("Cold chain telemetry for Naivasha", decided);
+        Assert.Contains("took the incumbent", decided);
+    }
+
+    /// <summary>
+    /// A client's page says who to call, and who has left.
+    /// </summary>
+    /// <remarks>
+    /// A client carried one contact name, which is enough until somebody has to ask who signs
+    /// and who pays. This checks the answer reaches the screen — including the leaver, who is
+    /// kept because "she left in March" explains the silence better than anything else does.
+    /// </remarks>
+    [Fact]
+    public async Task A_clients_page_says_who_to_call_and_who_has_left()
+    {
+        var browser = await SignedInAsync("contacts@jiranisokotech.co.ke", Roles.ProjectManager);
+
+        Guid clientId;
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var clients = scope.ServiceProvider.GetRequiredService<ClientService>();
+            var contacts = scope.ServiceProvider.GetRequiredService<ContactService>();
+
+            var client = await clients.TakeOnAsync("Mombasa Bulk Handling", "mbh-contacts");
+            clientId = client.Id;
+
+            var gone = await contacts.AddAsync(clientId, "Halima Wekesa", "Depot supervisor");
+            await contacts.AddAsync(clientId, "Otieno Barasa", "Finance controller");
+
+            await contacts.GoneAsync(gone.Id);
+        }
+
+        var html = await (await browser.GetAsync($"/clients/{clientId}"))
+            .Content.ReadAsStringAsync();
+
+        Assert.Contains("Halima Wekesa", html);
+        Assert.Contains("has left", html);
+        Assert.Contains("Otieno Barasa", html);
+
+        /*
+         * The assertion that found a fault. Halima was the one to call, because she was
+         * recorded first; when she left, the entity cleared the flag and nothing set it on
+         * anybody else, so this page showed two contacts and nobody to ring — the state
+         * ContactService.AddAsync exists to prevent, reached by the back door. ContactService
+         * .GoneAsync now promotes the longest-serving of whoever is still there.
+         */
+        Assert.Contains("call first", html);
     }
 
     private async Task<HttpClient> SignedInAsync(string email, string role)

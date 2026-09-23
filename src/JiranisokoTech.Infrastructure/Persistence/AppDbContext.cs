@@ -58,6 +58,18 @@ public class AppDbContext(
 
     public DbSet<Client> Clients => Set<Client>();
 
+    /// <summary>The people at a client, who are not the client.</summary>
+    public DbSet<Contact> Contacts => Set<Contact>();
+
+    /// <summary>
+    /// Work the firm might be paid for, at whatever stage it has reached.
+    /// </summary>
+    /// <remarks>
+    /// A lead and an opportunity are one thing here. Modelling them apart needs a conversion
+    /// step, and every conversion step loses the history — see Opportunity.
+    /// </remarks>
+    public DbSet<Opportunity> Opportunities => Set<Opportunity>();
+
     public DbSet<Contract> Contracts => Set<Contract>();
 
     public DbSet<Invoice> Invoices => Set<Invoice>();
