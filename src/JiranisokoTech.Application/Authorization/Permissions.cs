@@ -106,6 +106,30 @@ public static class Permissions
     /// </remarks>
     public const string InvoicesSend = "invoices.send";
 
+    // --- contracts ---------------------------------------------------------
+
+    /// <summary>
+    /// Read what a client has agreed to, and for how much.
+    /// </summary>
+    /// <remarks>
+    /// Separate from clients.view, because a client record is a name and an
+    /// address and a contract is a commercial term. Somebody who needs to write
+    /// to a client does not thereby need to know what the firm charges them.
+    /// </remarks>
+    public const string ContractsView = "contracts.view";
+
+    /// <summary>
+    /// Agree, extend or terminate one.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not held by the roles that raise invoices, and it is the
+    /// same separation as approving a claim against paying it. A contract is the
+    /// authority for a bill; one person holding both can invent the authority
+    /// for their own invoice and there is nothing in the record to show they
+    /// did. A test asserts no role below the top holds both.
+    /// </remarks>
+    public const string ContractsManage = "contracts.manage";
+
     // --- delivery ----------------------------------------------------------
     public const string ProjectsViewAll = "projects.view_all";
     public const string ProjectsViewMember = "projects.view_member";
@@ -151,6 +175,8 @@ public static class Permissions
 
         ExpensesClaim, ExpensesViewAll, ExpensesApprove, ExpensesPay,
         InvoicesView, InvoicesManage, InvoicesSend,
+
+        ContractsView, ContractsManage,
 
         ProjectsViewAll, ProjectsViewMember, ProjectsManage,
         TasksViewAll, TasksViewOwn, TasksCreate, TasksAssign, TasksUpdateOwn, TasksSubmit,
@@ -271,6 +297,13 @@ public static class Roles
                 Permissions.ClientsView, Permissions.ClientsManage,
                 Permissions.TimeViewAll, Permissions.TimeApprove,
                 Permissions.InvoicesView, Permissions.InvoicesManage,
+
+                // They read the contract because they bill against it, and they
+                // do not write it. Agreeing what a client may be charged and
+                // charging them are the same separation as approving a claim and
+                // paying it: one pair of hands holding both can invent the
+                // authority for its own invoice.
+                Permissions.ContractsView,
 
                 Permissions.AuditView, Permissions.ReportsView,
             ],

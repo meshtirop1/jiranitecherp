@@ -1,4 +1,5 @@
 using JiranisokoTech.Domain.Clients;
+using JiranisokoTech.Domain.Contracts;
 using JiranisokoTech.Domain.Recruitment;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Time;
@@ -99,6 +100,78 @@ public sealed class BusinessQueries(AppDbContext database)
                     Money.Zero(group.First().Currency),
                     (running, invoice) => running + invoice.Outstanding));
     }
+
+    // --- contracts ----------------------------------------------------------
+
+    public async Task<List<ContractRow>> ContractsAsync(
+        Guid? clientId = null,
+        ContractState? state = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = database.Contracts.AsNoTracking();
+
+        if (clientId is { } client)
+        {
+            query = query.Where(contract => contract.ClientId == client);
+        }
+
+        if (state is { } only)
+        {
+            query = query.Where(contract => contract.State == only);
+        }
+
+        /*
+         * Newest first, by identifier rather than by start date. The dates are
+         * nullable while a contract is still a draft, and the two providers
+         * disagree about where nulls go in a descending sort — PostgreSQL puts
+         * them first, SQLite last — so ordering by the date would put drafts at
+         * opposite ends of the list in the tests and in production. A GUIDv7
+         * sorts by the moment it was created, which is what "newest" means here
+         * anyway.
+         */
+        var contracts = await query
+            .OrderByDescending(contract => contract.Id)
+            .Select(contract => new
+            {
+                contract.Id,
+                contract.ClientId,
+                contract.Reference,
+                contract.Title,
+                contract.State,
+                contract.StartsOn,
+                contract.EndsOn,
+
+                // The two columns rather than Value: Money is built by the
+                // aggregate from these, and EF has no way to call that.
+                contract.MinorUnits,
+                contract.Currency,
+
+                contract.Outcome,
+            })
+            .ToListAsync(cancellationToken);
+
+        var clients = await database.Clients
+            .AsNoTracking()
+            .ToDictionaryAsync(one => one.Id, one => one.Name, cancellationToken);
+
+        return contracts.Select(contract => new ContractRow(
+            contract.Id,
+            contract.ClientId,
+            clients.GetValueOrDefault(contract.ClientId) ?? "A client since removed",
+            contract.Reference,
+            contract.Title,
+            contract.State,
+            contract.StartsOn,
+            contract.EndsOn,
+            contract.MinorUnits is { } units ? Money.Of(units, contract.Currency) : null,
+            contract.Outcome)).ToList();
+    }
+
+    /// <summary>One contract, for the contract page.</summary>
+    public Task<Contract?> ContractAsync(Guid id, CancellationToken cancellationToken = default) =>
+        database.Contracts
+            .AsNoTracking()
+            .FirstOrDefaultAsync(contract => contract.Id == id, cancellationToken);
 
     // --- time ---------------------------------------------------------------
 
@@ -488,6 +561,45 @@ public sealed record ClientRow(
     int PaymentTermDays,
     int Projects,
     Money? Owed);
+
+public sealed record ContractRow(
+    Guid Id,
+    Guid ClientId,
+    string ClientName,
+    string Reference,
+    string Title,
+    ContractState State,
+    DateOnly? StartsOn,
+    DateOnly? EndsOn,
+    Money? Value,
+    string? Outcome)
+{
+    /// <summary>
+    /// Active, and past the date it was agreed to run to.
+    /// </summary>
+    /// <remarks>
+    /// The same two lines the aggregate computes, repeated here rather than
+    /// loaded. A list of thirty contracts would otherwise have to be materialised
+    /// as thirty aggregates to display one word each.
+    /// <see cref="Contract.HasExpiredOn"/> remains the definition, and the domain
+    /// test for it is what keeps this honest — which is the same trade
+    /// <see cref="LeaveRow.Days"/> makes.
+    ///
+    /// There is no Expired state to read instead, deliberately: being expired is
+    /// what is true of a contract at the moment somebody looks, not something
+    /// that happened to it, exactly as with an overdue invoice below.
+    /// </remarks>
+    public bool HasExpiredOn(DateOnly today) =>
+        State == ContractState.Active && EndsOn is { } ends && ends < today;
+
+    /// <inheritdoc cref="Contract.CoversOn"/>
+    public bool CoversOn(DateOnly day) =>
+        State == ContractState.Active
+        && StartsOn is { } starts
+        && EndsOn is { } ends
+        && starts <= day
+        && day <= ends;
+}
 
 public sealed record TimeRow(
     Guid Id,

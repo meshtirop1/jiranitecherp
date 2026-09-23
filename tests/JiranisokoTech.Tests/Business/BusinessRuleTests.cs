@@ -4,6 +4,7 @@ using JiranisokoTech.Application.Settings;
 using JiranisokoTech.Application.Recruitment;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Domain.Clients;
+using JiranisokoTech.Domain.Contracts;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Recruitment;
 using JiranisokoTech.Domain.Time;
@@ -44,6 +45,10 @@ public class BusinessRuleTests
             db.Clock);
 
         public ClientService Clients => new(Repository);
+
+        public ContractService Contracts => new(Repository, Settings, db.Clock);
+
+        public BusinessQueries Reads => new(_context);
 
         public TimesheetService Timesheets =>
             new(Repository, new PeopleRepository(_context), db.Clock);
@@ -176,6 +181,306 @@ public class BusinessRuleTests
             () => module.Clients.MoveToAsync(client.Id, ClientStatus.Former));
 
         Assert.Contains("1 project(s) running", refused.Message);
+    }
+
+    // --- contracts ---------------------------------------------------------
+
+    /// <summary>
+    /// The reference is what both sides quote at each other, so two contracts
+    /// cannot share one.
+    /// </summary>
+    [Fact]
+    public async Task A_contract_reference_is_unique_because_both_sides_quote_it()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var client = await module.Clients.TakeOnAsync("Acme Logistics");
+        var other = await module.Clients.TakeOnAsync("Bidii Freight");
+
+        await module.Contracts.DraftAsync(client.Id, "JTS-C-2026-001", "Fleet tracking");
+
+        // Refused across clients, not merely within one: the reference goes on
+        // correspondence, and a second client quoting the same one has no way to
+        // be told apart from the first.
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => module.Contracts.DraftAsync(other.Id, "JTS-C-2026-001", "Depot survey"));
+
+        Assert.Contains("JTS-C-2026-001", refused.Message);
+    }
+
+    /// <summary>
+    /// Agreeing new terms with somebody the firm has stopped working for is
+    /// either a mistake or a decision to take them back on, and that is the
+    /// conversation this refusal starts.
+    /// </summary>
+    [Fact]
+    public async Task A_former_client_cannot_be_given_new_terms()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var client = await module.Clients.TakeOnAsync("Acme Logistics");
+        await module.Clients.MoveToAsync(client.Id, ClientStatus.Former);
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => module.Contracts.DraftAsync(client.Id, "JTS-C-2026-002", "Fleet tracking"));
+
+        Assert.Contains("former client", refused.Message);
+    }
+
+    /// <summary>
+    /// A contract cannot come into force without a figure and a span.
+    /// </summary>
+    /// <remarks>
+    /// Read back through a second context rather than asserted on the object that
+    /// was just changed, so what is checked is what reached the database.
+    /// </remarks>
+    [Fact]
+    public async Task A_contract_cannot_come_into_force_until_the_terms_are_agreed()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var client = await module.Clients.TakeOnAsync("Acme Logistics");
+        var contract = await module.Contracts.DraftAsync(
+            client.Id, "JTS-C-2026-003", "Fleet tracking");
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => module.Contracts.ActivateAsync(contract.Id));
+
+        Assert.Contains("no value", refused.Message);
+
+        await module.Contracts.AgreeAsync(
+            contract.Id,
+            "Fleet tracking, year one",
+            Money.Of(1_200_000_00, "KES"),
+            Monday,
+            Monday.AddYears(1));
+
+        await module.Contracts.ActivateAsync(contract.Id);
+
+        await using var read = db.NewContext();
+        var stored = await read.Contracts.SingleAsync(one => one.Id == contract.Id);
+
+        Assert.Equal(ContractState.Active, stored.State);
+        Assert.Equal(Money.Of(1_200_000_00, "KES"), stored.Value);
+        Assert.True(stored.CoversOn(Monday));
+    }
+
+    /// <summary>
+    /// An end date before the start is refused, and nothing is saved.
+    /// </summary>
+    [Fact]
+    public async Task Terms_that_end_before_they_start_are_refused()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var client = await module.Clients.TakeOnAsync("Acme Logistics");
+        var contract = await module.Contracts.DraftAsync(
+            client.Id, "JTS-C-2026-004", "Depot survey");
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => module.Contracts.AgreeAsync(
+                contract.Id,
+                "Depot survey",
+                Money.Of(300_000_00, "KES"),
+                Monday,
+                Monday.AddDays(-1)));
+
+        await using var read = db.NewContext();
+        var stored = await read.Contracts.SingleAsync(one => one.Id == contract.Id);
+
+        // Not even the value, which was valid: the whole call is one act.
+        Assert.Null(stored.StartsOn);
+        Assert.Equal(ContractState.Draft, stored.State);
+    }
+
+    /// <summary>
+    /// A contract past its end date still reads as active in the database and as
+    /// expired to anybody who asks.
+    /// </summary>
+    /// <remarks>
+    /// The rule this module is most likely to get wrong, so it is asserted
+    /// against stored rows rather than objects in memory. There is no Expired
+    /// state to set, deliberately — one would need a nightly job to become true
+    /// and would be wrong for everybody who looked before it ran. The second
+    /// contract runs to next year and must not be counted: a check that called
+    /// every active contract expired would pass without it.
+    /// </remarks>
+    [Fact]
+    public async Task An_expired_contract_is_still_recorded_active_and_still_reads_as_expired()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var client = await module.Clients.TakeOnAsync("Acme Logistics");
+        var today = db.Clock.Today;
+
+        var over = await module.Contracts.DraftAsync(client.Id, "JTS-C-2026-005", "Last year");
+        await module.Contracts.AgreeAsync(
+            over.Id, "Last year", Money.Of(500_000_00, "KES"),
+            today.AddMonths(-13), today.AddDays(-1));
+        await module.Contracts.ActivateAsync(over.Id);
+
+        var running = await module.Contracts.DraftAsync(client.Id, "JTS-C-2026-006", "This year");
+        await module.Contracts.AgreeAsync(
+            running.Id, "This year", Money.Of(800_000_00, "KES"), today, today.AddYears(1));
+        await module.Contracts.ActivateAsync(running.Id);
+
+        var rows = await module.Reads.ContractsAsync(clientId: client.Id);
+
+        Assert.Equal(2, rows.Count);
+
+        var expired = rows.Single(row => row.Reference == "JTS-C-2026-005");
+        var covers = rows.Single(row => row.Reference == "JTS-C-2026-006");
+
+        Assert.Equal(ContractState.Active, expired.State);
+        Assert.True(expired.HasExpiredOn(today));
+        Assert.False(expired.CoversOn(today));
+
+        // The one that must not be counted.
+        Assert.False(covers.HasExpiredOn(today));
+        Assert.True(covers.CoversOn(today));
+
+        // And the same two answers off the aggregate, which is the definition the
+        // row above is only repeating.
+        await using var read = db.NewContext();
+        var stored = await read.Contracts.SingleAsync(one => one.Id == over.Id);
+
+        Assert.Equal(ContractState.Active, stored.State);
+        Assert.True(stored.HasExpiredOn(today));
+    }
+
+    /// <summary>
+    /// Asking for one client's contracts returns that client's contracts.
+    /// </summary>
+    /// <remarks>
+    /// The contract planted on the second client is the point of the test. A
+    /// query that forgot its filter would return both and every assertion about
+    /// the first client would still pass.
+    /// </remarks>
+    [Fact]
+    public async Task Only_the_contracts_of_the_client_asked_about_are_listed()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var ours = await module.Clients.TakeOnAsync("Acme Logistics");
+        var theirs = await module.Clients.TakeOnAsync("Bidii Freight");
+
+        await module.Contracts.DraftAsync(ours.Id, "JTS-C-2026-007", "Fleet tracking");
+        await module.Contracts.DraftAsync(theirs.Id, "JTS-C-2026-008", "Somebody else's work");
+
+        var rows = await module.Reads.ContractsAsync(clientId: ours.Id);
+
+        Assert.Equal("JTS-C-2026-007", Assert.Single(rows).Reference);
+        Assert.Equal("Acme Logistics", rows[0].ClientName);
+
+        // And a draft is not reported as in force, however complete it looks.
+        Assert.Equal(ContractState.Draft, rows[0].State);
+        Assert.False(rows[0].CoversOn(db.Clock.Today));
+    }
+
+    /// <summary>
+    /// An invoice can still be raised for a client with no contract at all.
+    /// </summary>
+    /// <remarks>
+    /// Pinning a decision rather than describing a rule, so that reversing it is
+    /// a deliberate act with a failing test attached. Requiring a contract would
+    /// refuse every invoice for every client taken on before contracts existed,
+    /// including for work already delivered — and a system that will not invoice
+    /// does not make a firm careful, it stops the firm being paid. The gap is
+    /// surfaced on the client page instead.
+    /// </remarks>
+    [Fact]
+    public async Task An_invoice_can_still_be_raised_for_a_client_with_no_contract()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var client = await module.Clients.TakeOnAsync("Acme Logistics");
+
+        Assert.Empty(await module.Reads.ContractsAsync(clientId: client.Id));
+
+        var invoice = await module.Invoices.DraftAsync(client.Id);
+
+        await module.Invoices.AddLineAsync(
+            invoice.Id, "Delivery work", 1, Money.Of(10_000_00, "KES"));
+
+        await using var read = db.NewContext();
+        var stored = await read.Invoices
+            .Include(one => one.Lines)
+            .SingleAsync(one => one.Id == invoice.Id);
+
+        Assert.Equal(Money.Of(10_000_00, "KES"), stored.Total);
+    }
+
+    /// <summary>
+    /// An extension is saved against the contract that was read back from the
+    /// database rather than the one still in memory.
+    /// </summary>
+    [Fact]
+    public async Task An_extension_reaches_the_database_and_a_shortening_does_not()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var client = await module.Clients.TakeOnAsync("Acme Logistics");
+        var today = db.Clock.Today;
+
+        var contract = await module.Contracts.DraftAsync(
+            client.Id, "JTS-C-2026-009", "Fleet tracking");
+
+        await module.Contracts.AgreeAsync(
+            contract.Id, "Fleet tracking", Money.Of(1_000_000_00, "KES"),
+            today, today.AddMonths(6));
+        await module.Contracts.ActivateAsync(contract.Id);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => module.Contracts.ExtendAsync(contract.Id, today.AddMonths(3)));
+
+        await module.Contracts.ExtendAsync(contract.Id, today.AddMonths(12));
+
+        await using var read = db.NewContext();
+        var stored = await read.Contracts.SingleAsync(one => one.Id == contract.Id);
+
+        Assert.Equal(today.AddMonths(12), stored.EndsOn);
+    }
+
+    /// <summary>
+    /// Terminating records why, and the contract stops covering anything.
+    /// </summary>
+    [Fact]
+    public async Task A_terminated_contract_keeps_its_reason_and_covers_nothing()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var client = await module.Clients.TakeOnAsync("Acme Logistics");
+        var today = db.Clock.Today;
+
+        var contract = await module.Contracts.DraftAsync(
+            client.Id, "JTS-C-2026-010", "Fleet tracking");
+
+        await module.Contracts.AgreeAsync(
+            contract.Id, "Fleet tracking", Money.Of(1_000_000_00, "KES"),
+            today, today.AddYears(1));
+        await module.Contracts.ActivateAsync(contract.Id);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => module.Contracts.TerminateAsync(contract.Id, "  "));
+
+        await module.Contracts.TerminateAsync(contract.Id, "They took delivery in house.");
+
+        await using var read = db.NewContext();
+        var stored = await read.Contracts.SingleAsync(one => one.Id == contract.Id);
+
+        Assert.Equal(ContractState.Terminated, stored.State);
+        Assert.Equal("They took delivery in house.", stored.Outcome);
+        Assert.False(stored.CoversOn(today));
+        Assert.False(stored.HasExpiredOn(today.AddYears(2)));
     }
 
     // --- timesheets --------------------------------------------------------

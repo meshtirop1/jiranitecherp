@@ -538,6 +538,150 @@ public class BusinessPageTests(ApplicationFactory factory) : IClassFixture<Appli
         Assert.Contains("Attached", await detail.Content.ReadAsStringAsync());
     }
 
+    /// <summary>
+    /// A contract can be opened from the client it belongs to.
+    /// </summary>
+    /// <remarks>
+    /// The client page is the only way in, deliberately — a contract is read in
+    /// the context of whose it is. So this walks the route somebody actually
+    /// takes: open the client, find the link, open the contract. A page reachable
+    /// only by typing its address is the capability-with-no-door fault this
+    /// codebase keeps repeating.
+    /// </remarks>
+    [Fact]
+    public async Task A_contract_can_be_opened_from_the_client_page()
+    {
+        var browser = await SignedInAsync("contractpm@jiranisokotech.co.ke", Roles.ProjectManager);
+
+        Guid clientId;
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var clients = scope.ServiceProvider.GetRequiredService<ClientService>();
+            var contracts = scope.ServiceProvider.GetRequiredService<ContractService>();
+
+            var client = await clients.TakeOnAsync($"Contracted {Guid.CreateVersion7():N}");
+            clientId = client.Id;
+
+            await contracts.DraftAsync(
+                client.Id, $"JTS-C-{Guid.CreateVersion7():N}"[..20], "Fleet tracking, year one");
+        }
+
+        var page = await browser.GetAsync($"/clients/{clientId}");
+        var html = await page.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+        Assert.Contains("Contracts", html);
+
+        var link = System.Text.RegularExpressions.Regex.Match(
+            html, @"href=""/contracts/([0-9a-f-]{36})""");
+
+        Assert.True(link.Success, "The client page offered no link to open a contract.");
+
+        var contract = await browser.GetAsync($"/contracts/{link.Groups[1].Value}");
+        var detail = await contract.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, contract.StatusCode);
+        Assert.Contains("Fleet tracking, year one", detail);
+        Assert.Contains("Attached", detail);
+    }
+
+    /// <summary>
+    /// A delivery manager reads a contract and is offered nothing that changes
+    /// one.
+    /// </summary>
+    /// <remarks>
+    /// They hold contracts.view and not contracts.manage, because agreeing what a
+    /// client may be billed and billing them are separate hands. This checks the
+    /// separation reaches the screen rather than stopping at the role matrix, and
+    /// that the page says who does settle it — a control that is simply absent
+    /// reads as a system that cannot do the thing.
+    /// </remarks>
+    [Fact]
+    public async Task A_delivery_manager_is_not_offered_the_controls_that_agree_terms()
+    {
+        var browser = await SignedInAsync("contractpm2@jiranisokotech.co.ke", Roles.ProjectManager);
+
+        Guid contractId;
+        Guid clientId;
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var clients = scope.ServiceProvider.GetRequiredService<ClientService>();
+            var contracts = scope.ServiceProvider.GetRequiredService<ContractService>();
+
+            var client = await clients.TakeOnAsync($"Unagreed {Guid.CreateVersion7():N}");
+            clientId = client.Id;
+
+            var contract = await contracts.DraftAsync(
+                client.Id, $"JTS-C-{Guid.CreateVersion7():N}"[..20], "Depot survey");
+
+            contractId = contract.Id;
+        }
+
+        var page = await browser.GetAsync($"/contracts/{contractId}");
+        var html = await page.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+        Assert.DoesNotContain("What was agreed", html);
+        Assert.DoesNotContain("Bring it into force", html);
+        Assert.Contains("somebody else settles this", html);
+
+        // Nor the form that opens one, on the client page.
+        var whose = await browser.GetAsync($"/clients/{clientId}");
+
+        Assert.DoesNotContain("Open a contract", await whose.Content.ReadAsStringAsync());
+    }
+
+    /// <summary>
+    /// An administrator is offered them, so the separation is a division of
+    /// labour rather than a feature nobody can use.
+    /// </summary>
+    [Fact]
+    public async Task An_administrator_can_agree_the_terms_of_a_draft()
+    {
+        var browser = await SignedInAsync("contractadmin@jiranisokotech.co.ke", Roles.Administrator);
+
+        Guid contractId;
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var clients = scope.ServiceProvider.GetRequiredService<ClientService>();
+            var contracts = scope.ServiceProvider.GetRequiredService<ContractService>();
+
+            var client = await clients.TakeOnAsync($"Agreeable {Guid.CreateVersion7():N}");
+
+            var contract = await contracts.DraftAsync(
+                client.Id, $"JTS-C-{Guid.CreateVersion7():N}"[..20], "Fleet tracking");
+
+            contractId = contract.Id;
+        }
+
+        var page = await browser.GetAsync($"/contracts/{contractId}");
+        var html = await page.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+        Assert.Contains("What was agreed", html);
+        Assert.Contains("Bring it into force", html);
+    }
+
+    /// <summary>
+    /// A developer holds neither contract permission, and a commercial term is
+    /// not theirs to read.
+    /// </summary>
+    [Fact]
+    public async Task A_developer_cannot_open_a_contract()
+    {
+        var browser = await SignedInAsync("dev7@jiranisokotech.co.ke", Roles.Developer);
+
+        var response = await browser.GetAsync($"/contracts/{Guid.CreateVersion7()}");
+
+        // Refused before anything is looked up, so the address cannot be used to
+        // find out whether a contract with that identifier exists.
+        Assert.Equal(HttpStatusCode.Found, response.StatusCode);
+        Assert.Contains("/denied", response.Headers.Location!.OriginalString);
+    }
+
     private async Task<HttpClient> SignedInAsync(string email, string role)
     {
         using (var scope = factory.Services.CreateScope())

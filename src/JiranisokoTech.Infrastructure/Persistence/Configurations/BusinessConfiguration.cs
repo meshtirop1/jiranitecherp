@@ -1,5 +1,6 @@
 using JiranisokoTech.Domain.Clients;
 using JiranisokoTech.Domain.Common;
+using JiranisokoTech.Domain.Contracts;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.People;
 using JiranisokoTech.Domain.Recruitment;
@@ -34,6 +35,44 @@ public sealed class ClientConfiguration : IEntityTypeConfiguration<Client>
         // cannot share one.
         builder.HasIndex(client => client.Code).IsUnique();
         builder.HasIndex(client => client.Status);
+    }
+}
+
+public sealed class ContractConfiguration : IEntityTypeConfiguration<Contract>
+{
+    public void Configure(EntityTypeBuilder<Contract> builder)
+    {
+        builder.ToTable("contracts");
+
+        builder.HasKey(contract => contract.Id);
+
+        builder.Property(contract => contract.Reference).HasMaxLength(60).IsRequired();
+        builder.Property(contract => contract.Title).HasMaxLength(300).IsRequired();
+        builder.Property(contract => contract.Currency).HasMaxLength(3).IsRequired();
+        builder.Property(contract => contract.State).HasConversion<int>().IsRequired();
+        builder.Property(contract => contract.Outcome).HasMaxLength(2000);
+
+        /*
+         * The value is nullable because a draft has not agreed one yet, and it
+         * is a plain count of minor units beside its currency for the same
+         * reason a claim's is: a report can sum the column, and Money is what
+         * the code works with.
+         */
+        builder.Ignore(contract => contract.Value);
+        builder.Ignore(contract => contract.HasTerms);
+
+        // What both sides quote at each other, so two contracts cannot share
+        // one.
+        builder.HasIndex(contract => contract.Reference).IsUnique();
+
+        // The two readings: everything on one client, and what is running out.
+        builder.HasIndex(contract => new { contract.ClientId, contract.State });
+        builder.HasIndex(contract => new { contract.State, contract.EndsOn });
+
+        builder.HasOne<Client>()
+            .WithMany()
+            .HasForeignKey(contract => contract.ClientId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
 

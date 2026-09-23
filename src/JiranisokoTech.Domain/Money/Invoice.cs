@@ -221,8 +221,16 @@ public sealed class Invoice : Entity, IAuditable
                 + "credit note instead.");
         }
 
+        // Checked before the status moves. It used to be assigned after, which
+        // left a blank reason having already voided the invoice in memory: a
+        // caller that caught the refusal and went on to save — which is what the
+        // invoice page does, since it reloads rather than discarding its
+        // context — would have written a voided invoice with no reason on it,
+        // and a gap in the numbering nobody could explain.
+        var why = Require(reason, nameof(reason));
+
         Status = InvoiceStatus.Void;
-        Outcome = Require(reason, nameof(reason));
+        Outcome = why;
 
         Raise(new InvoiceVoided(Id, ClientId, Number, Outcome, at));
     }

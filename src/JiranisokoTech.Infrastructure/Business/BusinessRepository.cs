@@ -1,5 +1,6 @@
 using JiranisokoTech.Application.Business;
 using JiranisokoTech.Domain.Clients;
+using JiranisokoTech.Domain.Contracts;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Recruitment;
 using JiranisokoTech.Domain.Time;
@@ -25,6 +26,14 @@ public sealed class BusinessRepository(AppDbContext database) : IBusinessReposit
                 && project.Status != ProjectStatus.Delivered
                 && project.Status != ProjectStatus.Cancelled,
             cancellationToken);
+
+    public Task<Contract?> FindContractAsync(
+        Guid id, CancellationToken cancellationToken = default) =>
+        database.Contracts.FirstOrDefaultAsync(contract => contract.Id == id, cancellationToken);
+
+    public Task<bool> ContractReferenceTakenAsync(
+        string reference, CancellationToken cancellationToken = default) =>
+        database.Contracts.AnyAsync(contract => contract.Reference == reference, cancellationToken);
 
     /// <summary>
     /// Loaded with its lines and payments, always.
@@ -149,6 +158,8 @@ public sealed class BusinessRepository(AppDbContext database) : IBusinessReposit
             application => application.Id == id, cancellationToken);
 
     public void Add(Client client) => database.Clients.Add(client);
+
+    public void Add(Contract contract) => database.Contracts.Add(contract);
 
     public void Add(Invoice invoice) => database.Invoices.Add(invoice);
 

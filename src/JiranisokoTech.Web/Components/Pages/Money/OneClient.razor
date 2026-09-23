@@ -1,10 +1,12 @@
 @page "/clients/{Id:guid}"
 @using System.ComponentModel.DataAnnotations
 @using System.Security.Claims
+@using JiranisokoTech.Application.Abstractions
 @using JiranisokoTech.Application.Authorization
 @using JiranisokoTech.Application.Business
 @using JiranisokoTech.Application.Documents
 @using JiranisokoTech.Domain.Clients
+@using JiranisokoTech.Domain.Contracts
 @using JiranisokoTech.Domain.Documents
 @using JiranisokoTech.Infrastructure.Business
 @using JiranisokoTech.Infrastructure.People
@@ -12,8 +14,10 @@
 @attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ClientsView)]
 @inject BusinessQueries Queries
 @inject ClientService Service
+@inject ContractService Contracting
 @inject DocumentService Files
 @inject PeopleQueries People
+@inject IClock Clock
 @inject NavigationManager Navigation
 
 @*
@@ -76,6 +80,103 @@ else
             </label>
             <button type="submit" class="button button--quiet">Change it</button>
         </EditForm>
+    </AuthorizeView>
+
+    @*
+        Contracts before invoices, in the order the firm does them. A contract is
+        the authority for a bill and an invoice is the bill, and reading the page
+        the other way round is what made it possible to raise one with nothing
+        behind it.
+    *@
+    <AuthorizeView Policy="@ContractsPolicy" Context="maySeeContracts">
+        <section class="standing">
+            <h2>Contracts</h2>
+
+            @if (Contracts.Count == 0)
+            {
+                <p class="empty">
+                    Nothing has been agreed with this client in writing. An invoice
+                    raised now has no contract behind it.
+                </p>
+            }
+            else
+            {
+                @*
+                    Said out loud rather than enforced. Invoicing is deliberately
+                    not blocked on a contract — every client here predates
+                    contracts existing, and a system that refuses to invoice stops
+                    the firm being paid — so the gap is something this page
+                    reports instead.
+                *@
+                @if (!Contracts.Exists(contract => contract.CoversOn(Today)))
+                {
+                    <p class="subtle">
+                        Nothing on this list covers today, so work done now is not
+                        under any of them.
+                    </p>
+                }
+
+                <table class="grid">
+                    <caption class="visually-hidden">Contracts with this client</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Reference</th>
+                            <th scope="col">What it is for</th>
+                            <th scope="col">Worth</th>
+                            <th scope="col">Runs</th>
+                            <th scope="col">State</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var contract in Contracts)
+                        {
+                            <tr>
+                                <td>
+                                    <a href="/contracts/@contract.Id"><code>@contract.Reference</code></a>
+                                </td>
+                                <td>@contract.Title</td>
+                                <td class="number">@(contract.Value?.ToString() ?? "—")</td>
+                                <td>
+                                    @if (contract.StartsOn is { } from && contract.EndsOn is { } to)
+                                    {
+                                        @($"{from:d MMM yyyy} – {to:d MMM yyyy}")
+                                    }
+                                    else
+                                    {
+                                        @("—")
+                                    }
+                                </td>
+                                <td>
+                                    <span class="pill @PillFor(contract.State)">@Words.For(contract.State)</span>
+                                    @if (contract.HasExpiredOn(Today))
+                                    {
+                                        <span class="pill pill--quiet">Expired</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            <AuthorizeView Policy="@ContractsManagePolicy" Context="mayAgree">
+                <EditForm Model="Drafting" method="post" OnValidSubmit="DraftContract"
+                          FormName="contract" class="inline">
+                    <DataAnnotationsValidator />
+                    <label>
+                        <span>Reference</span>
+                        <InputText @bind-Value="Drafting.Reference" />
+                    </label>
+                    <label>
+                        <span>What it is for</span>
+                        <InputText @bind-Value="Drafting.Title" />
+                    </label>
+                    <button type="submit" class="button button--quiet">Open a contract</button>
+                    <ValidationMessage For="() => Drafting.Reference" />
+                    <ValidationMessage For="() => Drafting.Title" />
+                </EditForm>
+            </AuthorizeView>
+        </section>
     </AuthorizeView>
 
     <section class="standing">
@@ -153,6 +254,11 @@ else
 @code {
     private const string ManagePolicy = PermissionClaim.PolicyPrefix + Permissions.ClientsManage;
 
+    private const string ContractsPolicy = PermissionClaim.PolicyPrefix + Permissions.ContractsView;
+
+    private const string ContractsManagePolicy =
+        PermissionClaim.PolicyPrefix + Permissions.ContractsManage;
+
     [Parameter]
     public Guid Id { get; set; }
 
@@ -180,9 +286,22 @@ else
         set => _attaching = value ?? new AttachInput();
     }
 
+    private ContractInput _drafting = new();
+
+    [SupplyParameterFromForm(FormName = "contract")]
+    private ContractInput Drafting
+    {
+        get => _drafting;
+        set => _drafting = value ?? new ContractInput();
+    }
+
     private Client? Client { get; set; }
 
     private Guid? Me { get; set; }
+
+    private DateOnly Today { get; set; }
+
+    private List<ContractRow> Contracts { get; set; } = [];
 
     private List<InvoiceRow> Invoices { get; set; } = [];
 
@@ -194,6 +313,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        Today = Clock.Today;
+
         var state = await AuthenticationState;
 
         if (Guid.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
@@ -213,6 +334,7 @@ else
             return;
         }
 
+        Contracts = await Queries.ContractsAsync(clientId: Id);
         Invoices = await Queries.InvoicesAsync(clientId: Id);
         Attached = await Files.ForAsync(AttachedTo.Client, Id);
 
@@ -226,6 +348,31 @@ else
     }
 
     private Task MoveTo() => TryAsync(() => Service.MoveToAsync(Id, State.Status));
+
+    /// <summary>
+    /// Open a contract and go straight to it.
+    /// </summary>
+    /// <remarks>
+    /// Not back to this page, unlike every other form here. What was just created
+    /// is empty — no figure, no dates — and leaving somebody on the client page
+    /// to find it in a list is how a draft with nothing in it stays that way.
+    /// </remarks>
+    private async Task DraftContract()
+    {
+        Refusal = null;
+
+        try
+        {
+            var contract = await Contracting.DraftAsync(Id, Drafting.Reference, Drafting.Title);
+            Navigation.NavigateTo($"/contracts/{contract.Id}", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
 
     private Task Attach() => TryAsync(async () =>
     {
@@ -266,9 +413,27 @@ else
         _ => null,
     };
 
+    private static string? PillFor(ContractState state) => state switch
+    {
+        ContractState.Active => "pill--done",
+        ContractState.Terminated => "pill--quiet",
+        _ => null,
+    };
+
     private sealed class StatusInput
     {
         public ClientStatus Status { get; set; } = ClientStatus.Prospect;
+    }
+
+    private sealed class ContractInput
+    {
+        [Required(ErrorMessage = "A reference. It is what both sides quote at each other.")]
+        [StringLength(60)]
+        public string Reference { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Say what the agreement is for.")]
+        [StringLength(300)]
+        public string Title { get; set; } = string.Empty;
     }
 
     private sealed class AttachInput
