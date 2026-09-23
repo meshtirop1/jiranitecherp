@@ -34,6 +34,18 @@ origin  https://github.com/meshtirop1/jiranitecherp.git
 The ERP lives in its own repository, separate from the public website at
 `jiranisokotech.co.ke`.
 
+## What is being built, and how far along it is
+
+The brief is a 99-section master prompt for a developer-native ERP. It is
+tracked in `docs/implementation-checklist.md`, section by section, with an
+honest status against each. **Section 96 of the brief asks for that file to be
+kept live — update it whenever something is finished, and do not mark anything
+done because a page exists.**
+
+One agreed departure: **section 3, multi-tenancy, is out of scope.** This is
+built for Jiranisoko Tech Solutions alone. That is why `FirmSettings` is a
+single row with a fixed key rather than a table of organisations.
+
 ## Commit messages
 
 Prose paragraphs, not bullet lists. They explain the reasoning behind a change
