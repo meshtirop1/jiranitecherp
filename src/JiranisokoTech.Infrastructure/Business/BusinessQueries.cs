@@ -311,12 +311,17 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
 
     // --- time ---------------------------------------------------------------
 
+    /// <param name="take">
+    /// How many at most, or null for all of them. The approval queue passes one; a
+    /// person's own timesheet for one week does not need to.
+    /// </param>
     public async Task<List<TimeRow>> TimeAsync(
         Guid? employeeId = null,
         DateOnly? from = null,
         DateOnly? to = null,
         bool awaitingApprovalOnly = false,
         Guid? projectId = null,
+        int? take = null,
         CancellationToken cancellationToken = default)
     {
         var query = database.TimeEntries.AsNoTracking();
@@ -346,11 +351,22 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
             query = query.Where(entry => entry.ApprovedAt == null);
         }
 
-        var entries = await query
-            // Newest day first: a timesheet is read to check what was just
-            // logged, not to browse the year.
-            .OrderByDescending(entry => entry.On)
-            .ThenBy(entry => entry.Id)
+        /*
+         * Newest day first: a timesheet is read to check what was just logged, not to
+         * browse the year.
+         *
+         * Except the approval queue, which is read oldest first, and that is not a
+         * preference. A queue is worked until it is empty and the oldest entry is the one
+         * somebody is waiting on — and once this is capped, the order decides which
+         * entries the cap hides. Newest-first with a cap would have hidden the oldest
+         * two thousand: exactly the ones that needed approving.
+         */
+        var ordered = awaitingApprovalOnly
+            ? query.OrderBy(entry => entry.On).ThenBy(entry => entry.Id)
+            : query.OrderByDescending(entry => entry.On).ThenBy(entry => entry.Id);
+
+        var entries = await ordered
+            .Take(take ?? int.MaxValue)
             .Select(entry => new
             {
                 entry.Id,
@@ -550,34 +566,58 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
 
     // --- invoices -----------------------------------------------------------
 
+    /// <summary>How many invoices match, for a screen or an endpoint that pages them.</summary>
+    public Task<int> CountInvoicesAsync(
+        Guid? clientId = null,
+        InvoiceStatus? status = null,
+        CancellationToken cancellationToken = default) =>
+        NarrowInvoices(database.Invoices.AsNoTracking(), clientId, status)
+            .CountAsync(cancellationToken);
+
+    /// <param name="take">
+    /// How many at most, or null for all of them.
+    /// </param>
+    /// <remarks>
+    /// A parameter rather than a limit applied here, because two of the four callers are
+    /// asking about one client and want the twenty rows there are, while the list screen and
+    /// the public API are asking about the firm and would otherwise get forty thousand.
+    ///
+    /// This was measured rather than guessed. The scale check found this method returning
+    /// every invoice in 1.8 seconds, and the API endpoint above it applying its page
+    /// <em>after</em> the rows had already been read — so the cap the API documents as
+    /// protecting the firm was protecting the response and nothing else.
+    /// </remarks>
     public async Task<List<InvoiceRow>> InvoicesAsync(
         Guid? clientId = null,
         InvoiceStatus? status = null,
+        int skip = 0,
+        int? take = null,
         CancellationToken cancellationToken = default)
     {
-        var query = database.Invoices.AsNoTracking();
-
-        if (clientId is { } client)
-        {
-            query = query.Where(invoice => invoice.ClientId == client);
-        }
-
-        if (status is { } only)
-        {
-            query = query.Where(invoice => invoice.Status == only);
-        }
+        var query = NarrowInvoices(database.Invoices.AsNoTracking(), clientId, status);
 
         // The totals below are summed by the aggregate from these, so an invoice
         // loaded without them reports zero — not an error anywhere, just a wrong
         // number on a screen about money.
         var invoices = await query
+            .OrderByDescending(invoice => invoice.Number)
+            .Skip(skip)
+            .Take(take ?? int.MaxValue)
             .Include(invoice => invoice.Lines)
             .Include(invoice => invoice.Payments)
-            .OrderByDescending(invoice => invoice.Number)
             .ToListAsync(cancellationToken);
+
+        /*
+         * Only the clients these invoices are for. It used to be every client in the
+         * system on every call, which is the pattern the rest of this file uses and is
+         * right when the list is the whole table anyway — but a screen showing fifty
+         * invoices has no business reading two thousand clients to label them.
+         */
+        var wanted = invoices.Select(invoice => invoice.ClientId).Distinct().ToList();
 
         var clients = await database.Clients
             .AsNoTracking()
+            .Where(one => wanted.Contains(one.Id))
             .ToDictionaryAsync(one => one.Id, one => one.Name, cancellationToken);
 
         return invoices.Select(invoice => new InvoiceRow(
@@ -592,6 +632,74 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
             invoice.Paid,
             invoice.Outstanding,
             invoice.Lines.Count)).ToList();
+    }
+
+    /// <summary>
+    /// What is owed across the firm, and how much of it is late.
+    /// </summary>
+    /// <remarks>
+    /// Its own query so the invoices screen can show a page of invoices and still say a
+    /// true total. It used to add up whichever invoices the screen happened to be holding,
+    /// which was all of them — so the moment the list was paged the header would have
+    /// started quietly reporting the outstanding balance of the first fifty.
+    ///
+    /// Only the unsettled ones are read, and that is the whole of why this is affordable.
+    /// A firm's unpaid pile is small if the firm is well; if it is not small, a slow page
+    /// is not the problem being solved.
+    ///
+    /// Summed in memory for the same reason as OwedByClientAsync: a total and what is
+    /// outstanding are computed by the aggregate, not stored, and a second definition of
+    /// "what is owed" written in SQL is a number that will one day disagree with the one
+    /// on the invoice.
+    /// </remarks>
+    public async Task<(Money? Owed, int Overdue)> OutstandingAsync(
+        DateOnly today, CancellationToken cancellationToken = default)
+    {
+        var unsettled = await database.Invoices
+            .AsNoTracking()
+            .Include(invoice => invoice.Lines)
+            .Include(invoice => invoice.Payments)
+            .Where(invoice => invoice.Status == InvoiceStatus.Sent
+                || invoice.Status == InvoiceStatus.PartlyPaid)
+            .ToListAsync(cancellationToken);
+
+        if (unsettled.Count == 0)
+        {
+            return (null, 0);
+        }
+
+        var owed = unsettled.Aggregate(
+            Money.Zero(unsettled[0].Outstanding.Currency),
+            (running, invoice) => running + invoice.Outstanding);
+
+        /*
+         * The same rule the row record states, written once here against the aggregate.
+         * Being overdue is what is true of an invoice at the moment somebody looks, not
+         * something that happens to it — which is why there is no Overdue status and no
+         * nightly job that would be wrong between midnight and whenever it ran.
+         */
+        return (owed, unsettled.Count(invoice =>
+            invoice.DueOn < today
+            && invoice.Status is InvoiceStatus.Sent or InvoiceStatus.PartlyPaid));
+    }
+
+    /// <summary>
+    /// The filtering, in one place, because a count and a page have to agree.
+    /// </summary>
+    private static IQueryable<Invoice> NarrowInvoices(
+        IQueryable<Invoice> query, Guid? clientId, InvoiceStatus? status)
+    {
+        if (clientId is { } client)
+        {
+            query = query.Where(invoice => invoice.ClientId == client);
+        }
+
+        if (status is { } only)
+        {
+            query = query.Where(invoice => invoice.Status == only);
+        }
+
+        return query;
     }
 
     /// <summary>One invoice, with its lines and payments, for the invoice page.</summary>

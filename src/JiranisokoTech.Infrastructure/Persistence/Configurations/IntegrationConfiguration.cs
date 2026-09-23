@@ -26,7 +26,7 @@ public sealed class SubscriptionConfiguration : IEntityTypeConfiguration<Subscri
 
         builder.HasIndex(one => one.DisabledAt);
 
-        builder.OwnsMany(one => one.Events, subscribed =>
+        builder.OwnsMany(one => one.Wanted, subscribed =>
         {
             subscribed.ToTable("webhook_subscription_events");
             subscribed.WithOwner().HasForeignKey("SubscriptionId");

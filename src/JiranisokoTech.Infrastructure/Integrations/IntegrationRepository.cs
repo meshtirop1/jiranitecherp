@@ -22,7 +22,7 @@ public sealed class IntegrationRepository(AppDbContext context) : IIntegrationRe
         string eventName, CancellationToken cancellationToken = default) =>
         context.Subscriptions
             .Where(one => one.DisabledAt == null
-                && one.Events.Any(wanted => wanted.Name == eventName))
+                && one.Wanted.Any(wanted => wanted.Name == eventName))
             .ToListAsync(cancellationToken);
 
     /// <summary>

@@ -72,6 +72,23 @@ public sealed record Paging
     /// page" from "the server stopped early" — which is the difference between finishing an
     /// import and silently importing half of one.
     /// </remarks>
+    public static Page<T> Of<T>(IReadOnlyList<T> page, int total, Paging paging) =>
+        new(page, total, paging.Skip, paging.Take);
+
+    /// <summary>
+    /// One page, out of a list the caller already holds all of.
+    /// </summary>
+    /// <remarks>
+    /// For the endpoints whose list is small by its nature — the firm's clients, its
+    /// repositories — where a second query for a count costs more than the rows do.
+    ///
+    /// <b>Not for anything that grows without limit.</b> Every endpoint here used this, and
+    /// the scale check showed what that meant: the invoices endpoint read forty thousand
+    /// rows and their lines and payments out of PostgreSQL, spent 1.8 seconds doing it, and
+    /// then handed the caller fifty of them. The cap in this file was protecting the
+    /// response and nothing else — and the comment at the top of it, about an answer that
+    /// takes twenty seconds and several megabytes, described the code underneath it.
+    /// </remarks>
     public static Page<T> Wrap<T>(IReadOnlyList<T> all, Paging paging)
     {
         var page = all.Skip(paging.Skip).Take(paging.Take).ToList();

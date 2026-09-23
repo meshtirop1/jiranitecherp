@@ -101,7 +101,7 @@ public sealed class IntegrationQueries(AppDbContext database)
                 one.DisabledAt,
                 one.DisabledReason,
                 one.ConsecutiveFailures,
-                Events = one.Events.Select(wanted => wanted.Name).ToList(),
+                Events = one.Wanted.Select(wanted => wanted.Name).ToList(),
                 Waiting = database.OutboundDeliveries.Count(delivery =>
                     delivery.SubscriptionId == one.Id
                     && (delivery.Status == OutboundStatus.Waiting

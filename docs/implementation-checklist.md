@@ -17,7 +17,9 @@ row with a fixed key rather than a table of organisations.
 
 Last updated: 23 September 2026 · 930 tests · verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
-container and a lost opportunity surviving its client record being deleted.
+container, a lost opportunity surviving its client record being deleted, and
+every read path measured against a database holding a million rows — see
+[docs/performance.md](performance.md).
 
 ---
 
@@ -40,7 +42,7 @@ reports on it again — and the build and deployment half does not. What is buil
 is an ERP that a software company could run its business on, plus the beginning
 of the part that makes it developer-native.
 
-By section: **28 done, 11 partial, 59 not started, 1 excluded by agreement.**
+By section: **29 done, 10 partial, 59 not started, 1 excluded by agreement.**
 
 That count was recomputed from the tables below rather than adjusted, because the
 figure previously here did not add up to anything the tables said and had been
@@ -205,7 +207,7 @@ This block is the brief's stated centre of gravity and none of it exists.
 | ☐ | 53 | Data retention policies | |
 | ☐ | 55 | Data privacy — export, deletion workflow | |
 | ☐ | 56 | Internationalisation | Strings are in the markup |
-| ◐ | 77 | Performance | Indexed, paged where it matters. Untested at scale |
+| ✅ | 77 | Performance | Measured against PostgreSQL holding 600k audit rows, 250k hours, 120k work items and 40k invoices. Found five faults no test could see — an invoices screen and API reading all 40,000 to show 50, a work item page reading all 120,000 to show one, an uncapped approval queue with no index — and fixed them. The reads that stay slow are named with their reason in [docs/performance.md](performance.md), and `tools/JiranisokoTech.ScaleCheck` makes it repeatable |
 | ☐ | 84 | Admin tools — job monitoring, failed jobs, integration health | |
 
 ---

@@ -7,32 +7,44 @@ namespace JiranisokoTech.Infrastructure.Work;
 /// <summary>The reads the work screens do, kept out of the screens.</summary>
 public sealed class WorkQueries(AppDbContext database)
 {
+    /// <summary>
+    /// One work item, by its identifier.
+    /// </summary>
+    /// <remarks>
+    /// Here because the screen that shows one used to read every work item in the system
+    /// and pick its own out of the list. That is invisible on a laptop with forty rows and
+    /// it is three quarters of a second and eighty thousand objects at a hundred and twenty
+    /// thousand — per view, of one item. Found by the scale check, which did not test this
+    /// path: it measured the list, and reading who called the list found this.
+    /// </remarks>
+    public async Task<WorkItemRow?> ItemAsync(
+        Guid id, CancellationToken cancellationToken = default) =>
+        (await ItemsAsync(id: id, cancellationToken: cancellationToken)).FirstOrDefault();
+
+    /// <summary>How many items match, for a screen that pages them.</summary>
+    public Task<int> CountItemsAsync(
+        Guid? projectId = null,
+        Guid? assigneeId = null,
+        bool openOnly = false,
+        CancellationToken cancellationToken = default) =>
+        Narrow(database.WorkItems.AsNoTracking(), null, projectId, assigneeId, openOnly)
+            .CountAsync(cancellationToken);
+
+    /// <param name="take">
+    /// How many at most. Null means all of them, which is right for a project's own board
+    /// and wrong for the whole firm's — see the note on the skip and take in BusinessQueries
+    /// .InvoicesAsync for why this is a parameter rather than a cap applied here.
+    /// </param>
     public async Task<List<WorkItemRow>> ItemsAsync(
         Guid? projectId = null,
         Guid? assigneeId = null,
         bool openOnly = false,
+        Guid? id = null,
+        int skip = 0,
+        int? take = null,
         CancellationToken cancellationToken = default)
     {
-        var query = database.WorkItems.AsNoTracking();
-
-        if (projectId is { } project)
-        {
-            query = query.Where(item => item.ProjectId == project);
-        }
-
-        if (assigneeId is { } assignee)
-        {
-            query = query.Where(item => item.AssigneeId == assignee);
-        }
-
-        if (openOnly)
-        {
-            // The domain's list of finished states rather than a pair of
-            // comparisons written out here. The pair was the bug waiting to
-            // happen: when a seventh state arrived, every copy of it went on
-            // reporting released work as open.
-            query = query.Where(item => !WorkItem.Finished.Contains(item.Status));
-        }
+        var query = Narrow(database.WorkItems.AsNoTracking(), id, projectId, assigneeId, openOnly);
 
         var rows = await query
             // Most pressing first: a board sorted by when a row was written is a
@@ -41,6 +53,8 @@ public sealed class WorkQueries(AppDbContext database)
             .ThenBy(item => item.DueOn == null)
             .ThenBy(item => item.DueOn)
             .ThenBy(item => item.Title)
+            .Skip(skip)
+            .Take(take ?? int.MaxValue)
             .Select(item => new
             {
                 item.Id,
@@ -77,6 +91,47 @@ public sealed class WorkQueries(AppDbContext database)
             row.DueOn,
             row.EstimateMinutes,
             row.BlockedReason)).ToList();
+    }
+
+    /// <summary>
+    /// The filtering, in one place, because a count and a page have to agree.
+    /// </summary>
+    /// <remarks>
+    /// Two copies of these four conditions is how a screen ends up saying "1 to 50 of 200"
+    /// over a list of eighty — which nobody reports as a bug, they just stop trusting the
+    /// number.
+    /// </remarks>
+    private static IQueryable<WorkItem> Narrow(
+        IQueryable<WorkItem> query,
+        Guid? id,
+        Guid? projectId,
+        Guid? assigneeId,
+        bool openOnly)
+    {
+        if (id is { } one)
+        {
+            query = query.Where(item => item.Id == one);
+        }
+
+        if (projectId is { } project)
+        {
+            query = query.Where(item => item.ProjectId == project);
+        }
+
+        if (assigneeId is { } assignee)
+        {
+            query = query.Where(item => item.AssigneeId == assignee);
+        }
+
+        if (openOnly)
+        {
+            // The domain's list of finished states rather than a pair of comparisons
+            // written out here. The pair was the bug waiting to happen: when a seventh
+            // state arrived, every copy of it went on reporting released work as open.
+            query = query.Where(item => !WorkItem.Finished.Contains(item.Status));
+        }
+
+        return query;
     }
 
     public async Task<List<ProjectRow>> ProjectsAsync(

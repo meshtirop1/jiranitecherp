@@ -151,6 +151,18 @@ else
     </EditForm>
 }
 
+@if (Behind > 0)
+{
+    @*
+        Said rather than hidden. A capped list that does not admit it is a list somebody
+        clears and believes they have finished.
+    *@
+    <p class="subtle">
+        @Behind.ToString("N0") more are waiting. Approve some of these and they will
+        appear here.
+    </p>
+}
+
 @code {
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
@@ -192,10 +204,41 @@ else
 
     private async Task LoadAsync()
     {
-        var waiting = await Queries.TimeAsync(awaitingApprovalOnly: true);
+        /*
+         * Capped, and the cap is visible on the screen rather than silent. This read every
+         * unapproved entry there had ever been — fifty thousand of them at the volume the
+         * scale check uses, all rendered into one table with a tick box each.
+         *
+         * A cap rather than a pager because of what the screen is for: somebody works
+         * through this queue until it is empty, and paging a queue that is being emptied
+         * moves rows under the reader between one page and the next. Oldest first, so the
+         * cap always hides the least urgent, and it says how many are behind it.
+         */
+        var waiting = await Queries.TimeAsync(
+            awaitingApprovalOnly: true, take: Ceiling + 1);
 
-        Waiting = waiting.OrderBy(entry => entry.On).ThenBy(entry => entry.EmployeeName).ToList();
+        Behind = Math.Max(0, waiting.Count - Ceiling);
+
+        // Already oldest first from the query — see the note there on why the order and
+        // the cap are one decision. Only the name within a day is settled here.
+        Waiting = waiting
+            .Take(Ceiling)
+            .OrderBy(entry => entry.On)
+            .ThenBy(entry => entry.EmployeeName)
+            .ToList();
     }
+
+    /// <summary>
+    /// How many entries are shown at once.
+    /// </summary>
+    /// <remarks>
+    /// Two hundred: more than anybody approves in a sitting, few enough that the page is
+    /// one table and not a two-megabyte document with two hundred tick boxes in it.
+    /// </remarks>
+    private const int Ceiling = 200;
+
+    /// <summary>How many more are waiting than fit on the page.</summary>
+    private int Behind { get; set; }
 
     private object Nothing { get; } = new();
 

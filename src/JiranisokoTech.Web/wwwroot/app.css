@@ -909,6 +909,16 @@ code.key {
 .pill--danger { background: #fdf2f2; color: #8a1b1b; }
 .pill--wait { background: #fff4e5; color: #8a5300; }
 
+/* Newer / older, with where you are between them. Wraps rather than squeezing on a
+   narrow screen: "51–100 of 40,000" is the half that answers the question. */
+.pager {
+    display: flex;
+    gap: 1rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+}
+
 /* --- The pipeline -------------------------------------------------------- */
 
 /* An opportunity nobody has touched for a fortnight. Said in words beside it as

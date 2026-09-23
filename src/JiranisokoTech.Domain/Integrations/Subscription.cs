@@ -121,8 +121,21 @@ public sealed class Subscription : Entity, IAuditable
 
     public bool IsActive => DisabledAt is null;
 
-    /// <remarks>Returns a copy — see the note on Invoice.Lines for why.</remarks>
-    public IReadOnlyList<SubscribedEvent> Events => _events.ToList();
+    /// <summary>
+    /// The events this subscription asked for.
+    /// </summary>
+    /// <remarks>
+    /// Returns a copy — see the note on Invoice.Lines for why.
+    ///
+    /// Called Wanted and not Events, which is what it was, because that name hid
+    /// <see cref="Entity.Events"/> — the domain events waiting to go to the outbox.
+    /// Nothing was broken by it yet and the next thing written here would have been:
+    /// this codebase's convention for testing that something was announced is
+    /// <c>Assert.Single(thing.Events.OfType&lt;SomethingHappened&gt;())</c>, and on
+    /// this type that would have compiled against the wrong list and found nothing,
+    /// for ever, without failing. A test that cannot fail is worse than no test.
+    /// </remarks>
+    public IReadOnlyList<SubscribedEvent> Wanted => _events.ToList();
 
     public bool Wants(string eventName) =>
         IsActive && _events.Any(one => one.Name == eventName);

@@ -98,6 +98,26 @@ else
     </table>
 }
 
+@if (Total > PageSize)
+{
+    @* The same shape the audit trail uses, so the two read as one application. *@
+    <nav class="pager" aria-label="More invoices">
+        @if (Page > 0)
+        {
+            <a href="@($"/invoices?page={Page - 1}")">Newer</a>
+        }
+
+        <span class="subtle">
+            @(Page * PageSize + 1)–@(Page * PageSize + All.Count) of @Total.ToString("N0")
+        </span>
+
+        @if (HasMore)
+        {
+            <a href="@($"/invoices?page={Page + 1}")">Older</a>
+        }
+    </nav>
+}
+
 @code {
     private DraftInput _input = new();
 
@@ -120,7 +140,21 @@ else
 
     private string? Refusal { get; set; }
 
-    protected override async Task OnInitializedAsync()
+    /// <summary>How many invoices are on one page.</summary>
+    /// <remarks>
+    /// The same fifty the audit trail uses. Not a setting: two screens disagreeing about
+    /// what a page is costs a reader more than either number saves them.
+    /// </remarks>
+    private const int PageSize = 50;
+
+    [SupplyParameterFromQuery]
+    private int Page { get; set; }
+
+    private int Total { get; set; }
+
+    private bool HasMore => (Math.Max(0, Page) + 1) * PageSize < Total;
+
+    protected override async Task OnParametersSetAsync()
     {
         Today = Clock.Today;
         await LoadAsync();
@@ -128,24 +162,29 @@ else
 
     private async Task LoadAsync()
     {
-        All = await Queries.InvoicesAsync();
+        /*
+         * A page of them, not all of them. This screen read every invoice the firm had
+         * ever issued, with its lines and its payments: 1.8 seconds and forty thousand
+         * aggregates at the volume the scale check uses. The number of rows a person can
+         * read is the same either way.
+         */
+        var at = Math.Max(0, Page);
+
+        All = await Queries.InvoicesAsync(skip: at * PageSize, take: PageSize);
+        Total = await Queries.CountInvoicesAsync();
         Billable = await Queries.ClientsAsync(status: ClientStatus.Active);
 
         // The default for the dropdown, so submitting it without touching it
         // drafts for the first client rather than for nobody.
         Input.ClientId ??= Billable.FirstOrDefault()?.Id;
 
-        var unsettled = All
-            .Where(invoice => invoice.Status is InvoiceStatus.Sent or InvoiceStatus.PartlyPaid)
-            .ToList();
-
-        Outstanding = unsettled.Count == 0
-            ? null
-            : unsettled.Aggregate(
-                Domain.Common.Money.Zero(unsettled[0].Outstanding.Currency),
-                (running, invoice) => running + invoice.Outstanding);
-
-        Overdue = unsettled.Count(invoice => invoice.IsOverdueOn(Today));
+        /*
+         * The header is asked for separately rather than added up from the rows above.
+         * Adding up a page would have made "outstanding" mean the outstanding balance of
+         * whichever fifty invoices happened to be on screen — a wrong number about money,
+         * shown confidently, which is the worst kind.
+         */
+        (Outstanding, Overdue) = await Queries.OutstandingAsync(Today);
     }
 
     private async Task Draft()

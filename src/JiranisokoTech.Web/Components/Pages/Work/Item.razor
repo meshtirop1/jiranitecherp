@@ -287,7 +287,12 @@ else
 
     private async Task LoadAsync()
     {
-        Row = (await Queries.ItemsAsync()).FirstOrDefault(item => item.Id == Id);
+        /*
+         * By its identifier. This read every work item in the system and picked its own
+         * out of the list — invisible with forty rows, and three quarters of a second and
+         * eighty thousand objects per view at a hundred and twenty thousand.
+         */
+        Row = await Queries.ItemAsync(Id);
 
         var user = (await AuthenticationState).User;
 

@@ -167,6 +167,24 @@ public sealed class TimeEntryConfiguration : IEntityTypeConfiguration<TimeEntry>
         // project that has not been invoiced yet.
         builder.HasIndex(entry => new { entry.EmployeeId, entry.On });
         builder.HasIndex(entry => new { entry.ProjectId, entry.IsBillable, entry.InvoiceId });
+
+        /*
+         * The approval queue, and the only partial index in this schema.
+         *
+         * Added because the scale check measured it: at a quarter of a million entries the
+         * queue was a sequential scan of the whole table, because unapproved entries are a
+         * fifth of it and a plain index on ApprovedAt would not have been worth using. A
+         * partial index holds only the rows that are null, so it is the size of the queue
+         * rather than the size of the history — and the queue is small in a firm where
+         * somebody approves timesheets, which is the firm this is for.
+         *
+         * Ordered by the day, because that is what the queue is sorted by and what its cap
+         * depends on: the index answers the filter and the order together, so the plan has
+         * nothing left to sort.
+         */
+        builder.HasIndex(entry => entry.On)
+            .HasFilter("\"ApprovedAt\" IS NULL")
+            .HasDatabaseName("IX_time_entries_awaiting_approval");
     }
 }
 

@@ -105,10 +105,25 @@ public static class PublicApi
             [FromQuery] int? take,
             CancellationToken cancellationToken) =>
         {
+            var paging = Paging.From(skip, take);
+
+            /*
+             * The page is asked for in SQL, not taken out of a list that was read whole.
+             * This endpoint used to read every invoice the firm has ever issued, with its
+             * lines and its payments, and then hand back fifty — which the scale check
+             * measured at 1.8 seconds and forty thousand aggregates for a request whose
+             * answer was fifty rows.
+             */
             var invoices = await queries.InvoicesAsync(
+                status: status,
+                skip: paging.Skip,
+                take: paging.Take,
+                cancellationToken: cancellationToken);
+
+            var total = await queries.CountInvoicesAsync(
                 status: status, cancellationToken: cancellationToken);
 
-            return Results.Ok(Paging.Wrap(invoices, Paging.From(skip, take)).Map(invoice => new
+            return Results.Ok(Paging.Of(invoices, total, paging).Map(invoice => new
             {
                 id = invoice.Id,
                 number = invoice.Number,
