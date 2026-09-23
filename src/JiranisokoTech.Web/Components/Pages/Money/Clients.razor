@@ -86,7 +86,7 @@ else
             @foreach (var client in All)
             {
                 <tr>
-                    <td>@client.Name</td>
+                    <td><a href="/clients/@client.Id">@client.Name</a></td>
                     <td><code>@client.Code</code></td>
                     <td>
                         @(client.ContactName ?? "—")

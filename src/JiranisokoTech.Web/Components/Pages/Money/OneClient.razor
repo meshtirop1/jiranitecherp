@@ -1,0 +1,279 @@
+@page "/clients/{Id:guid}"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Application.Documents
+@using JiranisokoTech.Domain.Clients
+@using JiranisokoTech.Domain.Documents
+@using JiranisokoTech.Infrastructure.Business
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ClientsView)]
+@inject BusinessQueries Queries
+@inject ClientService Service
+@inject DocumentService Files
+@inject PeopleQueries People
+@inject NavigationManager Navigation
+
+@*
+    Clients were a flat list with no way to open one, which meant the contract
+    you could attach to a client had nowhere to be attached from. The list is
+    still where you scan; this is where you deal with one of them.
+*@
+
+@if (Client is null)
+{
+    <PageTitle>Client not found — Jiranisoko Delivery</PageTitle>
+
+    <h1>No such client</h1>
+    <p>Nothing here has that identifier. <a href="/clients">Back to clients</a>.</p>
+}
+else
+{
+    <PageTitle>@Client.Name — Jiranisoko Delivery</PageTitle>
+
+    <nav class="crumbs"><a href="/clients">Clients</a></nav>
+
+    <div class="page-head">
+        <h1>@Client.Name</h1>
+        <span class="pill @PillFor(Client.Status)">@Words.For(Client.Status)</span>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    <dl class="facts">
+        <dt>Code</dt>
+        <dd><code>@Client.Code</code></dd>
+
+        <dt>Who we deal with</dt>
+        <dd>@(Client.ContactName ?? "—")</dd>
+
+        <dt>Their email</dt>
+        <dd>@(Client.ContactEmail ?? "—")</dd>
+
+        <dt>Where invoices go</dt>
+        <dd>@(Client.InvoiceAddress ?? "Nowhere — no email has been recorded")</dd>
+
+        <dt>Terms</dt>
+        <dd>@Client.PaymentTermDays days</dd>
+    </dl>
+
+    <AuthorizeView Policy="@ManagePolicy" Context="mayManage">
+        <EditForm Model="State" method="post" OnValidSubmit="MoveTo" FormName="status"
+                  class="inline">
+            <label>
+                <span>State</span>
+                <InputSelect @bind-Value="State.Status">
+                    @foreach (var status in Enum.GetValues<ClientStatus>())
+                    {
+                        <option value="@status">@Words.For(status)</option>
+                    }
+                </InputSelect>
+            </label>
+            <button type="submit" class="button button--quiet">Change it</button>
+        </EditForm>
+    </AuthorizeView>
+
+    <section class="standing">
+        <h2>Invoices</h2>
+
+        @if (Invoices.Count == 0)
+        {
+            <p class="empty">Nothing has been invoiced to this client.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Invoices for this client</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Number</th>
+                        <th scope="col">Issued</th>
+                        <th scope="col">Total</th>
+                        <th scope="col">Outstanding</th>
+                        <th scope="col">State</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var invoice in Invoices)
+                    {
+                        <tr>
+                            <td><a href="/invoices/@invoice.Id"><code>@invoice.Number</code></a></td>
+                            <td>@invoice.IssuedOn.ToString("d MMM yyyy")</td>
+                            <td class="number">@invoice.Total</td>
+                            <td class="number">@invoice.Outstanding</td>
+                            <td>@Words.For(invoice.Status)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="standing">
+        <h2>Attached</h2>
+
+        @if (Attached.Count == 0)
+        {
+            <p class="empty">Nothing attached. Contracts and signed orders belong here.</p>
+        }
+        else
+        {
+            <ul class="plain">
+                @foreach (var file in Attached)
+                {
+                    <li>
+                        <a href="/documents/@file.Id">@file.FileName</a>
+                        <span class="subtle">
+                            @file.Size, @file.UploadedAt.ToString("d MMM yyyy")@(file.Note is { } note ? $" — {note}" : null)
+                        </span>
+                    </li>
+                }
+            </ul>
+        }
+
+        <AuthorizeView Policy="@ManagePolicy" Context="mayAttach">
+            <EditForm Model="Attaching" method="post" OnValidSubmit="Attach" FormName="attach"
+                      enctype="multipart/form-data" class="inline">
+                <label>
+                    <span class="visually-hidden">A file</span>
+                    <input type="file" name="document" />
+                </label>
+                <InputText @bind-Value="Attaching.Note" placeholder="What it is" />
+                <button type="submit" class="button button--quiet">Attach</button>
+            </EditForm>
+        </AuthorizeView>
+    </section>
+}
+
+@code {
+    private const string ManagePolicy = PermissionClaim.PolicyPrefix + Permissions.ClientsManage;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private StatusInput _state = new();
+
+    [SupplyParameterFromForm(FormName = "status")]
+    private StatusInput State
+    {
+        get => _state;
+        set => _state = value ?? new StatusInput();
+    }
+
+    private AttachInput _attaching = new();
+
+    [SupplyParameterFromForm(FormName = "attach")]
+    private AttachInput Attaching
+    {
+        get => _attaching;
+        set => _attaching = value ?? new AttachInput();
+    }
+
+    private Client? Client { get; set; }
+
+    private Guid? Me { get; set; }
+
+    private List<InvoiceRow> Invoices { get; set; } = [];
+
+    private List<Attachment> Attached { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationState;
+
+        if (Guid.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            Me = await People.EmployeeForAccountAsync(account);
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Client = await Queries.ClientAsync(Id);
+
+        if (Client is null)
+        {
+            return;
+        }
+
+        Invoices = await Queries.InvoicesAsync(clientId: Id);
+        Attached = await Files.ForAsync(AttachedTo.Client, Id);
+
+        // Only before the form has been posted, or a refused change would show
+        // the stored value rather than the one somebody chose.
+        if (!_loaded)
+        {
+            State.Status = Client.Status;
+            _loaded = true;
+        }
+    }
+
+    private Task MoveTo() => TryAsync(() => Service.MoveToAsync(Id, State.Status));
+
+    private Task Attach() => TryAsync(async () =>
+    {
+        var file = Request?.Request.Form.Files["document"];
+
+        if (file is not { Length: > 0 })
+        {
+            throw new InvalidOperationException("Choose a file first.");
+        }
+
+        await using var contents = file.OpenReadStream();
+
+        await Files.AttachAsync(
+            AttachedTo.Client, Id, contents, file.FileName, file.Length, Me, Attaching.Note);
+    });
+
+    private async Task TryAsync(Func<Task> act)
+    {
+        Refusal = null;
+
+        try
+        {
+            await act();
+            Navigation.NavigateTo($"/clients/{Id}", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string? PillFor(ClientStatus status) => status switch
+    {
+        ClientStatus.Active => "pill--done",
+        ClientStatus.Former => "pill--quiet",
+        _ => null,
+    };
+
+    private sealed class StatusInput
+    {
+        public ClientStatus Status { get; set; } = ClientStatus.Prospect;
+    }
+
+    private sealed class AttachInput
+    {
+        [StringLength(500)]
+        public string? Note { get; set; }
+    }
+}

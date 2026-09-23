@@ -1,0 +1,194 @@
+@page "/audit"
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Infrastructure.Audit
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.AuditView)]
+@inject AuditQueries Queries
+
+@*
+    The trail, finally readable. Every change in this system has been recorded
+    in the same transaction that made it since the first week, and there has
+    never been anywhere to see one — audit.view was held by four roles and did
+    nothing at all. A trail nobody can read is a cost with no benefit: it slows
+    every write and answers no question.
+
+    Filters are a GET form, so a particular view of it has an address. "Here is
+    everything that happened to that invoice" is then a link somebody can send,
+    which is what a trail is for.
+*@
+
+<PageTitle>Trail — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Trail</h1>
+    <p class="subtle">@Result.Total @(Result.Total == 1 ? "entry" : "entries").</p>
+</div>
+
+<form method="get" class="filters">
+    <label>
+        <span>Kind of thing</span>
+        <select name="type">
+            <option value="">Anything</option>
+            @foreach (var name in Types)
+            {
+                <option value="@name" selected="@(SubjectType == name)">@name</option>
+            }
+        </select>
+    </label>
+
+    <label>
+        <span>What happened</span>
+        <select name="action">
+            <option value="">Anything</option>
+            @foreach (var name in Actions)
+            {
+                <option value="@name" selected="@(Action == name)">@name</option>
+            }
+        </select>
+    </label>
+
+    <button type="submit">Show</button>
+    <a class="filters__clear" href="/audit">Clear</a>
+</form>
+
+@if (Result.Entries.Count == 0)
+{
+    <p class="empty">Nothing matches that.</p>
+}
+else
+{
+    @foreach (var entry in Result.Entries)
+    {
+        <article class="entry">
+            <div class="entry__head">
+                <code>@entry.Action</code>
+                <span class="subtle">
+                    @(entry.ActorName ?? "The system")@(entry.ActorName is null ? ", on its own" : null),
+                    @entry.OccurredAt.ToString("d MMM yyyy HH:mm")
+                </span>
+            </div>
+
+            @if (entry.Reason is { } reason)
+            {
+                @* Often the most useful line here, and the only one a person
+                   wrote rather than the machine. *@
+                <p class="entry__reason">“@reason”</p>
+            }
+
+            @{
+                var changes = Changed(entry).ToList();
+            }
+
+            @if (changes.Count > 0)
+            {
+                <table class="grid">
+                    <caption class="visually-hidden">What changed</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Field</th>
+                            <th scope="col">Was</th>
+                            <th scope="col">Became</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var (field, before, after) in changes)
+                        {
+                            <tr>
+                                <td>@field</td>
+                                <td class="subtle">@(before ?? "—")</td>
+                                <td>@(after ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            <p class="subtle entry__subject">@entry.SubjectType @entry.SubjectId</p>
+        </article>
+    }
+
+    <div class="actions">
+        @if (Result.HasPrevious)
+        {
+            <a class="button button--quiet" href="@Link(Result.Page - 1)">Newer</a>
+        }
+
+        @if (Result.HasMore)
+        {
+            <a class="button button--quiet" href="@Link(Result.Page + 1)">Older</a>
+        }
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "type")]
+    private string? SubjectType { get; set; }
+
+    [SupplyParameterFromQuery(Name = "action")]
+    private string? Action { get; set; }
+
+    [SupplyParameterFromQuery(Name = "subject")]
+    private Guid? SubjectId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "page")]
+    private int? Page { get; set; }
+
+    private AuditPage Result { get; set; } = new([], 0, 0);
+
+    private List<string> Types { get; set; } = [];
+
+    private List<string> Actions { get; set; } = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Result = await Queries.RecentAsync(SubjectType, Action, SubjectId, Page ?? 0);
+        Types = await Queries.SubjectTypesAsync();
+        Actions = await Queries.ActionsAsync();
+    }
+
+    /// <summary>
+    /// The fields that actually moved, and what they moved between.
+    /// </summary>
+    /// <remarks>
+    /// The entry holds the before and after separately, and either can be
+    /// absent: a creation has no before and a deletion has no after. Walking
+    /// the union of both key sets is what makes all three cases render without
+    /// three branches.
+    /// </remarks>
+    private static IEnumerable<(string Field, string? Before, string? After)> Changed(
+        Domain.Audit.AuditEntry entry)
+    {
+        var before = entry.Before ?? new Dictionary<string, string?>();
+        var after = entry.After ?? new Dictionary<string, string?>();
+
+        foreach (var field in before.Keys.Union(after.Keys).OrderBy(name => name))
+        {
+            yield return (
+                field,
+                before.GetValueOrDefault(field),
+                after.GetValueOrDefault(field));
+        }
+    }
+
+    private string Link(int page)
+    {
+        var parts = new List<string> { $"page={page}" };
+
+        if (!string.IsNullOrWhiteSpace(SubjectType))
+        {
+            parts.Add($"type={Uri.EscapeDataString(SubjectType)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(Action))
+        {
+            parts.Add($"action={Uri.EscapeDataString(Action)}");
+        }
+
+        if (SubjectId is { } subject)
+        {
+            parts.Add($"subject={subject}");
+        }
+
+        return $"/audit?{string.Join('&', parts)}";
+    }
+}

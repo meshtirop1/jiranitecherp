@@ -970,3 +970,28 @@ code.key {
     gap: 0.5rem;
     font-weight: 400;
 }
+
+/* One entry in the trail. Bordered rather than carded: there are fifty on a
+   page and fifty cards is a wall. */
+.entry {
+    padding: 0.85rem 0;
+    border-bottom: 1px solid #e3e5e9;
+    max-width: 52rem;
+}
+
+.entry__head {
+    display: flex;
+    gap: 0.75rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+
+.entry__reason {
+    margin: 0.35rem 0;
+    font-style: italic;
+}
+
+.entry__subject {
+    font-size: 0.78rem;
+    margin: 0.35rem 0 0;
+}

@@ -1,5 +1,6 @@
 using System.Net;
 using JiranisokoTech.Application.Authorization;
+using JiranisokoTech.Application.Business;
 using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Tests.Identity;
 using Microsoft.AspNetCore.Identity;
@@ -374,6 +375,40 @@ public class BusinessPageTests(ApplicationFactory factory) : IClassFixture<Appli
 
         // Seen, not signed off. The approve button belongs to time.approve.
         Assert.DoesNotContain("Approve</button>", html);
+    }
+
+    /// <summary>
+    /// A client can be opened, which is where its documents live.
+    /// </summary>
+    /// <remarks>
+    /// Clients were a flat list with no detail page, so the attachment feature
+    /// built for them had nowhere to be reached from — a capability with no
+    /// door, which is this codebase's recurring fault in another costume.
+    /// </remarks>
+    [Fact]
+    public async Task A_client_can_be_opened_from_the_list()
+    {
+        var browser = await SignedInAsync("clientpm@jiranisokotech.co.ke", Roles.ProjectManager);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var clients = scope.ServiceProvider.GetRequiredService<ClientService>();
+            await clients.TakeOnAsync($"Openable {Guid.CreateVersion7():N}");
+        }
+
+        var list = await browser.GetAsync("/clients");
+        var html = await list.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+
+        var link = System.Text.RegularExpressions.Regex.Match(html, @"href=""/clients/([0-9a-f-]{36})""");
+
+        Assert.True(link.Success, "The client list offered no link to open a client.");
+
+        var detail = await browser.GetAsync($"/clients/{link.Groups[1].Value}");
+
+        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+        Assert.Contains("Attached", await detail.Content.ReadAsStringAsync());
     }
 
     private async Task<HttpClient> SignedInAsync(string email, string role)

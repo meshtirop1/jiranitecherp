@@ -20,6 +20,7 @@ using JiranisokoTech.Application.Settings;
 using JiranisokoTech.Application.Api;
 using JiranisokoTech.Application.Documents;
 using JiranisokoTech.Infrastructure.Api;
+using JiranisokoTech.Infrastructure.Audit;
 using JiranisokoTech.Infrastructure.Documents;
 using JiranisokoTech.Infrastructure.Reporting;
 using JiranisokoTech.Infrastructure.Search;
@@ -143,6 +144,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<BusinessQueries>();
         services.AddScoped<ReportingQueries>();
         services.AddScoped<SearchQueries>();
+        services.AddScoped<AuditQueries>();
 
         services.Configure<DocumentStoreOptions>(
             configuration.GetSection(DocumentStoreOptions.Section));
