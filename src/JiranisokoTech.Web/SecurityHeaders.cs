@@ -38,33 +38,40 @@ public static class SecurityHeaders
              *     which is the difference between an injected form being ugly
              *     and it being a credential harvester.
              *
+             *   connect-src 'self'  — a script that does run cannot post what
+             *     it found to somewhere else.
+             *
              *   object-src 'none'  — there is no plugin content here and there
              *     never will be.
              *
-             * What is NOT here is script-src, and that is the honest part. The
-             * page carries two inline scripts that are not ours to move: Blazor
-             * renders its import map inline, and the framework needs it to
-             * resolve modules at all. A script-src without a nonce on that tag
-             * breaks the application outright; a script-src with 'unsafe-inline'
-             * would allow every injected script on the page and read, to
-             * anybody scanning the headers, as though scripts were restricted.
-             * A policy that looks like protection and is not is worse than an
-             * absent one, so it is absent and said out loud. Giving the import
-             * map a nonce is the way to close it.
+             * What is NOT here is script-src, and the reason is worth the
+             * space, because the first version of this got it wrong.
              *
-             * One surprise worth writing down: every Razor component endpoint
-             * comes back with a SECOND Content-Security-Policy header saying
-             * frame-ancestors 'self', added by the framework rather than by
-             * anything here. Two policies are not a conflict — a browser
-             * enforces all of them, so the effective rule is the intersection,
-             * and 'none' is narrower than 'self'. The stricter value wins and
-             * the duplicate is harmless. It is mentioned because finding two
-             * headers and assuming one had overwritten the other is the
-             * obvious wrong conclusion.
+             * Blazor renders its import map inline and needs it to resolve
+             * modules at all. A script-src without a nonce on that tag breaks
+             * the application; a script-src with 'unsafe-inline' permits every
+             * injected script on the page while reading, to anybody scanning
+             * the headers, as though scripts were restricted — protection that
+             * looks like protection and is not, which is worse than none.
+             *
+             * So script-src is absent on purpose. The mistake was also setting
+             * default-src 'self', which sounds unrelated and is not:
+             * default-src is the fallback for every fetch directive that has
+             * not been named, script-src included. The browser therefore
+             * applied 'self' to scripts anyway and blocked the import map,
+             * reporting it as a default-src violation. Nothing visible broke,
+             * because nothing on this application is interactive yet — which is
+             * exactly how a policy like this reaches production.
+             *
+             * The directives below are therefore named one at a time. Nothing
+             * falls back to anything, and adding script-src is a deliberate act
+             * with a nonce attached rather than a side effect of tightening
+             * something else.
              */
             headers.ContentSecurityPolicy =
-                "default-src 'self'; " +
                 "img-src 'self' data:; " +
+                "font-src 'self'; " +
+                "connect-src 'self'; " +
                 "object-src 'none'; " +
                 "base-uri 'self'; " +
                 "form-action 'self'; " +

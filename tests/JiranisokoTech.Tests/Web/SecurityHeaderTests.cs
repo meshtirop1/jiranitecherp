@@ -52,6 +52,7 @@ public class SecurityHeaderTests(ApplicationFactory factory) : IClassFixture<App
     [InlineData("base-uri 'self'")]
     [InlineData("form-action 'self'")]
     [InlineData("object-src 'none'")]
+    [InlineData("connect-src 'self'")]
     public async Task The_policy_carries_each_directive(string directive)
     {
         using var browser = factory.CreateBrowser();
@@ -84,6 +85,17 @@ public class SecurityHeaderTests(ApplicationFactory factory) : IClassFixture<App
 
         Assert.DoesNotContain("unsafe-inline", policy);
         Assert.DoesNotContain("unsafe-eval", policy);
+
+        /*
+         * And no default-src either, which is the same mistake wearing a
+         * different name. default-src is the fallback for every fetch
+         * directive not named, script-src included — so setting it while
+         * leaving script-src out does restrict scripts, silently, and blocks
+         * Blazor's inline import map. The first version of this policy did
+         * exactly that and nothing visibly broke, because nothing here is
+         * interactive yet.
+         */
+        Assert.DoesNotContain("default-src", policy);
     }
 
     /// <summary>
