@@ -875,6 +875,31 @@ public sealed class InvoiceService(
         await business.SaveAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Record a payment as a count of minor units, in the invoice's own currency.
+    /// </summary>
+    /// <remarks>
+    /// For callers that have an amount and an invoice and no business deciding a currency —
+    /// a bank feed, a payment gateway. Taking the currency from the invoice rather than from
+    /// the caller is the whole point: a payment posted in the wrong currency against the
+    /// right invoice is an amount that looks settled and is not, and Money would refuse the
+    /// arithmetic only after the figure had been believed by whoever sent it.
+    /// </remarks>
+    public async Task RecordPaymentAsync(
+        Guid invoiceId,
+        long minorUnits,
+        DateOnly on,
+        string? reference,
+        CancellationToken cancellationToken = default)
+    {
+        var invoice = await RequiredInvoice(invoiceId, cancellationToken);
+
+        invoice.RecordPayment(
+            Domain.Common.Money.Of(minorUnits, invoice.Currency), on, reference, clock.Now);
+
+        await business.SaveAsync(cancellationToken);
+    }
+
     public async Task VoidAsync(
         Guid invoiceId, string reason, CancellationToken cancellationToken = default)
     {

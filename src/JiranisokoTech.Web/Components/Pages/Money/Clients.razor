@@ -14,6 +14,13 @@
 
 <div class="page-head">
     <h1>Clients</h1>
+
+    <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ClientsManage)"
+                   Context="mayImport">
+        @* For somebody's first afternoon, holding three years of client records in a
+           spreadsheet and no appetite for typing them in one at a time. *@
+        <p class="subtle"><a href="/clients/import">Import from a spreadsheet</a></p>
+    </AuthorizeView>
 </div>
 
 @if (Refusal is not null)

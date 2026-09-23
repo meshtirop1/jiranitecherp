@@ -184,11 +184,11 @@ This block is the brief's stated centre of gravity and none of it exists.
 | --- | --- | --- | --- |
 | ✅ | 73 | API tokens | Scoped, hashed, shown once, revocable, rate limited |
 | ✅ | 74 | Service accounts | The same keys; machine identity with scoped permissions |
-| ◐ | 39 | API-first | Read-only `/api/v1`, versioned, OpenAPI. No writes, no pagination |
+| ✅ | 39 | API-first | Versioned `/api/v1`, OpenAPI, paged reads with a capped limit, and three writes that go through the same services the screens use |
 | ✅ | 34 | Global search | Six kinds, each behind its own permission. No filter syntax |
 | ◐ | 35 | Dashboards | One home page and one standing report. No role-specific dashboards |
 | ✅ | 38 | Reporting | Money, hours, absence, delivery and the repositories, with CSV export |
-| ◐ | 52 | Import / export | CSV export. No import |
+| ✅ | 52 | Import / export | CSV export, and client import with a dry run that writes nothing unless the whole file is sound |
 | ◐ | 47 | UI and UX | Responsive, consistent. No command palette, keyboard shortcuts, dark mode or bulk actions |
 | ☐ | 48 | Developer experience shortcuts | |
 | ☐ | 50 | CLI | |

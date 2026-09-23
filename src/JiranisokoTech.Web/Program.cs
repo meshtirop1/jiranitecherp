@@ -89,6 +89,13 @@ builder.Services.AddHealthChecks()
  * a gigabyte. The application has no other upload, so one global figure is
  * enough and there is nothing to keep in step.
  */
+/*
+ * Bringing a spreadsheet of clients in. Reads the whole file and checks it before writing
+ * anything, because a partial import leaves somebody comparing a spreadsheet against a
+ * screen to find out what went in — see ClientImport.
+ */
+builder.Services.AddScoped<JiranisokoTech.Web.Reporting.ClientImport>();
+
 builder.Services.AddRateLimiter(options =>
 {
     options.AddCareersLimit();
@@ -136,6 +143,18 @@ if (!app.Environment.IsDevelopment())
  * page instead of refusing them with a 401.
  */
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+
+/*
+ * Registered immediately after, which puts it immediately before on the way out: an
+ * empty failing response on an API or webhook path is given a JSON body here, and status
+ * code pages then sees a body and leaves it alone.
+ *
+ * Without it, every empty error on those paths reached the caller as 400 — a 503 from the
+ * webhook endpoint, which a provider would then give up on rather than retry, and a 403
+ * from authorization, which told an integration its JSON was wrong when the truth was
+ * that its key could read and not write. See ApiProblems.
+ */
+app.UseApiProblems();
 
 /*
  * TLS is terminated by the reverse proxy in front of the container, so the app
@@ -223,6 +242,12 @@ app.MapReportEndpoints();
 
 // What another system may read from this one.
 app.MapPublicApi();
+
+/*
+ * And what another system may change. Every write goes through the same service the
+ * screen calls, so no rule is enforced twice — see PublicApiWrites.
+ */
+app.MapPublicApiWrites();
 
 /*
  * Where the Git hosts post. Anonymous because a webhook has no account, and

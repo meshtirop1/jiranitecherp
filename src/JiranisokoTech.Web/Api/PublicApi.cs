@@ -56,11 +56,13 @@ public static class PublicApi
         api.MapGet("/clients", async (
             BusinessQueries queries,
             [FromQuery] ClientStatus? status,
+            [FromQuery] int? skip,
+            [FromQuery] int? take,
             CancellationToken cancellationToken) =>
         {
             var clients = await queries.ClientsAsync(status, cancellationToken);
 
-            return Results.Ok(clients.Select(client => new
+            return Results.Ok(Paging.Wrap(clients, Paging.From(skip, take)).Map(client => new
             {
                 id = client.Id,
                 name = client.Name,
@@ -75,11 +77,14 @@ public static class PublicApi
         .WithSummary("The firm's clients.");
 
         api.MapGet("/projects", async (
-            WorkQueries queries, CancellationToken cancellationToken) =>
+            WorkQueries queries,
+            [FromQuery] int? skip,
+            [FromQuery] int? take,
+            CancellationToken cancellationToken) =>
         {
             var projects = await queries.ProjectsAsync(cancellationToken: cancellationToken);
 
-            return Results.Ok(projects.Select(project => new
+            return Results.Ok(Paging.Wrap(projects, Paging.From(skip, take)).Map(project => new
             {
                 id = project.Id,
                 name = project.Name,
@@ -96,12 +101,14 @@ public static class PublicApi
         api.MapGet("/invoices", async (
             BusinessQueries queries,
             [FromQuery] InvoiceStatus? status,
+            [FromQuery] int? skip,
+            [FromQuery] int? take,
             CancellationToken cancellationToken) =>
         {
             var invoices = await queries.InvoicesAsync(
                 status: status, cancellationToken: cancellationToken);
 
-            return Results.Ok(invoices.Select(invoice => new
+            return Results.Ok(Paging.Wrap(invoices, Paging.From(skip, take)).Map(invoice => new
             {
                 id = invoice.Id,
                 number = invoice.Number,
@@ -126,11 +133,14 @@ public static class PublicApi
          * caller.
          */
         api.MapGet("/openings", async (
-            RecruitmentQueries queries, CancellationToken cancellationToken) =>
+            RecruitmentQueries queries,
+            [FromQuery] int? skip,
+            [FromQuery] int? take,
+            CancellationToken cancellationToken) =>
         {
             var openings = await queries.OpeningsAsync(cancellationToken);
 
-            return Results.Ok(openings.Select(opening => new
+            return Results.Ok(Paging.Wrap(openings, Paging.From(skip, take)).Map(opening => new
             {
                 slug = opening.Slug,
                 title = opening.Title,
@@ -154,7 +164,7 @@ public static class PublicApi
     /// use, which is the point: there is one definition of who may see clients,
     /// and both the screen and the API ask it.
     /// </remarks>
-    private static RouteHandlerBuilder RequirePermission(
+    internal static RouteHandlerBuilder RequirePermission(
         this RouteHandlerBuilder builder, string permission) =>
         builder.RequireAuthorization(new AuthorizeAttribute
         {

@@ -1,0 +1,215 @@
+@page "/clients/import"
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Web.Reporting
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ClientsManage)]
+@inject ClientImport Import
+
+<PageTitle>Import clients — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/clients">Clients</a></nav>
+
+<div class="page-head">
+    <h1>Import clients</h1>
+</div>
+
+<p class="instructions">
+    A comma-separated file with a header row. The only column that has to be there is
+    <code>name</code>; <code>code</code>, <code>contact</code> and <code>email</code> are
+    used when present.
+</p>
+
+<p class="subtle">
+    Nothing is written until you ask for it. Check the file first, read what would
+    happen, and then import — and if anything at all is wrong, none of it goes in, so
+    the answer is never "some of them".
+</p>
+
+@if (Outcome is { State: ImportState.Refused })
+{
+    <p class="refusal" role="alert">@Outcome.Refusal</p>
+}
+
+@*
+    A plain file input in a multipart form. These pages are statically rendered, so
+    InputFile never runs and @onchange never fires — the bytes arrive with the rest of
+    the body and are read off the request.
+*@
+<EditForm Model="Nothing" method="post" OnValidSubmit="Check" FormName="check"
+          enctype="multipart/form-data" class="panel stack">
+    <h2>Check a file</h2>
+
+    <label>
+        <span>The file</span>
+        <input type="file" name="clients" accept=".csv,text/csv" />
+    </label>
+
+    <button type="submit">See what would happen</button>
+</EditForm>
+
+@if (Outcome is { State: ImportState.WouldFail })
+{
+    <p class="refusal" role="alert">
+        <strong>@Outcome.Problems.Count</strong>
+        @(Outcome.Problems.Count == 1 ? "row is" : "rows are") wrong, so nothing has been
+        imported. Correct them and check the file again.
+    </p>
+
+    <table class="grid">
+        <caption class="visually-hidden">Problems in the file</caption>
+        <thead>
+            <tr>
+                <th scope="col">Line</th>
+                <th scope="col">What is wrong</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var problem in Outcome.Problems)
+            {
+                <tr>
+                    @* The line number as the file has it, so this sends somebody to line 43
+                       of their spreadsheet rather than to the forty-third data row. *@
+                    <td class="number">@problem.Line</td>
+                    <td>@problem.What</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (Outcome is { State: ImportState.WouldWork })
+{
+    <p class="done" role="status">
+        <strong>@Outcome.Clients.Count</strong>
+        @(Outcome.Clients.Count == 1 ? "client" : "clients") would be taken on, and nothing
+        is wrong with the file. Nothing has been written yet.
+    </p>
+
+    <EditForm Model="Nothing" method="post" OnValidSubmit="Commit" FormName="commit"
+              enctype="multipart/form-data" class="panel stack">
+        @*
+            The file is uploaded again rather than held between requests. Keeping it would
+            mean storing somebody's client list in a session for the minute they spend
+            reading the preview, and a second upload costs nothing — the check runs again
+            on the way in, so the thing imported is the thing that was checked.
+        *@
+        <h2>Import it</h2>
+
+        <p class="subtle">Choose the same file again, and it will be imported.</p>
+
+        <label>
+            <span>The file</span>
+            <input type="file" name="clients" accept=".csv,text/csv" />
+        </label>
+
+        <button type="submit">Import them</button>
+    </EditForm>
+}
+
+@if (Outcome is { State: ImportState.Done })
+{
+    <p class="done" role="status">
+        <strong>@Outcome.Clients.Count</strong>
+        @(Outcome.Clients.Count == 1 ? "client has" : "clients have") been taken on.
+        <a href="/clients">Go to clients</a>
+    </p>
+}
+
+@if (Outcome is { State: ImportState.WouldWork or ImportState.Done })
+{
+    <table class="grid">
+        <caption class="visually-hidden">Clients in the file</caption>
+        <thead>
+            <tr>
+                <th scope="col">Line</th>
+                <th scope="col">Name</th>
+                <th scope="col">Code</th>
+                <th scope="col">Contact</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var client in Outcome.Clients)
+            {
+                <tr>
+                    <td class="number">@client.Line</td>
+                    <td>@client.Name</td>
+                    <td><code>@client.Code</code></td>
+                    <td class="subtle">
+                        @(client.Contact ?? "—")
+                        @if (client.Email is { } email)
+                        {
+                            <text>— @email</text>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    /// <summary>
+    /// The file is read off the request rather than from a bound model.
+    /// </summary>
+    /// <remarks>
+    /// Static rendering, so a plain input inside a multipart form is the only thing that
+    /// works — the same arrangement as every other upload in this application.
+    /// </remarks>
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    private object Nothing { get; } = new();
+
+    private ImportOutcome? Outcome { get; set; }
+
+    private Task Check() => RunAsync(commit: false);
+
+    private Task Commit() => RunAsync(commit: true);
+
+    private async Task RunAsync(bool commit)
+    {
+        var file = Request?.Request.Form.Files["clients"];
+
+        if (file is null || file.Length == 0)
+        {
+            Outcome = ImportOutcome.Refused("Choose a file first.");
+            return;
+        }
+
+        /*
+         * A megabyte. Two thousand client rows is perhaps two hundred kilobytes, so this is
+         * generous — and it is here because the file is read into memory to be parsed, and
+         * an unbounded read is whoever uploads it choosing how much memory this process
+         * uses.
+         */
+        if (file.Length > 1024 * 1024)
+        {
+            Outcome = ImportOutcome.Refused(
+                "That file is larger than a megabyte, which is far more than two thousand "
+                + "clients. Check it is the right file.");
+
+            return;
+        }
+
+        using var reader = new StreamReader(file.OpenReadStream());
+        var text = await reader.ReadToEndAsync();
+
+        try
+        {
+            Outcome = await Import.RunAsync(text, commit);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            /*
+             * A refusal from the service during a commit, after the whole file checked out.
+             * It means something changed between the check and the import — somebody else
+             * took on a client with the same name in the minute in between — and saying so
+             * plainly is better than a half-finished import with no explanation.
+             */
+            Outcome = ImportOutcome.Refused(
+                $"{exception.Message} Something changed since the file was checked. "
+                + "Check it again.");
+        }
+    }
+}
