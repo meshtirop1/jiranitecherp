@@ -50,6 +50,8 @@ public class BusinessRuleTests
 
         public LeaveService Leave => new(Repository, db.Clock);
 
+        public HolidayService Holidays => new(Repository);
+
         public ExpenseService Expenses => new(Repository, db.Clock);
 
         public SettingsService Settings => new(new SettingsRepository(_context));
@@ -281,12 +283,19 @@ public class BusinessRuleTests
         await using var module = new Module(db);
 
         var engineer = await WorkingAsync(module, "Faith");
-        var yesterday = db.Clock.Today.AddDays(-1);
+
+        // Last Thursday rather than yesterday, and the distinction is new: the
+        // clock sits on a Monday, so yesterday is a Sunday, and a request with no
+        // working time in it is now refused outright. That refusal is the subject
+        // of a test of its own; this one is about being allowed to date sick leave
+        // in the past at all, so it uses a day somebody was actually working.
+        var lastThursday = db.Clock.Today.AddDays(-4);
 
         var sick = await module.Leave.AskForAsync(
-            engineer, LeaveKind.Sick, yesterday, yesterday, "Food poisoning.");
+            engineer, LeaveKind.Sick, lastThursday, lastThursday, "Food poisoning.");
 
         Assert.Equal(LeaveStatus.Draft, sick.Status);
+        Assert.Equal(1, sick.Days);
 
         // A different day, so this is refused for being in the past rather
         // than for overlapping the sick day above.
@@ -312,6 +321,325 @@ public class BusinessRuleTests
             engineer, LeaveKind.Annual, from, from.AddDays(13), "Two weeks.");
 
         Assert.Equal(10, leave.Days);
+    }
+
+    // --- public holidays ----------------------------------------------------
+
+    /// <summary>Monday 21 December 2026, the Monday of Christmas week.</summary>
+    private static readonly DateOnly ChristmasWeek = new(2026, 12, 21);
+
+    /// <summary>Christmas Day 2026, which is a Friday.</summary>
+    private static readonly DateOnly ChristmasDay = new(2026, 12, 25);
+
+    /// <summary>Boxing Day 2026, which is a Saturday.</summary>
+    private static readonly DateOnly BoxingDay = new(2026, 12, 26);
+
+    /// <summary>
+    /// The reason this feature exists. A week off over Christmas is four days of
+    /// somebody's entitlement, not five.
+    /// </summary>
+    /// <remarks>
+    /// In Kenya this is roughly a dozen days a year for every member of staff.
+    /// Charging them as ordinary leave is not a rounding error; it is a fortnight
+    /// of entitlement taken from everybody in the firm over two years.
+    /// </remarks>
+    [Fact]
+    public async Task Leave_across_a_public_holiday_is_charged_a_day_less()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var engineer = await WorkingAsync(module, "Kevin");
+
+        await module.Holidays.DeclareAsync(ChristmasDay, "Christmas Day");
+
+        var leave = await module.Leave.AskForAsync(
+            engineer, LeaveKind.Annual, ChristmasWeek, ChristmasWeek.AddDays(4), "Christmas.");
+
+        Assert.Equal(4, leave.Days);
+    }
+
+    /// <summary>
+    /// A public holiday on a weekend gives nothing back.
+    /// </summary>
+    /// <remarks>
+    /// The mistake this rules out is subtracting the holidays in a range from the
+    /// weekdays in it, which deducts a Saturday nobody was being charged for.
+    /// Boxing Day 2026 falls on a Saturday, and Kenya has one of these most
+    /// years, so the wrong version would be handing out invented leave regularly.
+    /// </remarks>
+    [Fact]
+    public async Task A_public_holiday_on_a_weekend_is_not_deducted_twice()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var engineer = await WorkingAsync(module, "Mercy");
+
+        await module.Holidays.DeclareAsync(BoxingDay, "Boxing Day");
+
+        // Monday the 21st to the following Monday the 28th: six working days,
+        // with the Saturday holiday sitting in the middle of them.
+        var leave = await module.Leave.AskForAsync(
+            engineer, LeaveKind.Annual, ChristmasWeek, ChristmasWeek.AddDays(7), "Christmas.");
+
+        Assert.Equal(6, leave.Days);
+    }
+
+    /// <summary>
+    /// Leave with no working time in it is refused rather than recorded as
+    /// nought.
+    /// </summary>
+    /// <remarks>
+    /// Refused because a zero-day request is not harmless. It asks somebody to
+    /// approve nothing, and the overlap rule then refuses any real request
+    /// touching those dates — so a request that costs nobody anything would sit
+    /// there blocking the one that matters. The useful answer is that those days
+    /// are already off, which is what the refusal says.
+    /// </remarks>
+    [Fact]
+    public async Task Leave_entirely_inside_holidays_and_weekends_is_refused()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var engineer = await WorkingAsync(module, "Dennis");
+
+        await module.Holidays.DeclareAsync(ChristmasDay, "Christmas Day");
+
+        // Friday the 25th to Sunday the 27th: a holiday and a weekend.
+        var refused = await Assert.ThrowsAsync<ArgumentException>(
+            () => module.Leave.AskForAsync(
+                engineer,
+                LeaveKind.Annual,
+                ChristmasDay,
+                ChristmasDay.AddDays(2),
+                "The Christmas weekend."));
+
+        Assert.Contains("no working time in it", refused.Message);
+    }
+
+    /// <summary>
+    /// A holiday declared after leave was approved shortens it.
+    /// </summary>
+    /// <remarks>
+    /// The deliberate answer to the awkward question, and the reason for it is
+    /// the Kenyan practice of gazetting a public holiday with a week's notice or
+    /// less. By the time the notice appears, leave over those dates is long
+    /// approved; freezing the figure means the firm charges people for a day the
+    /// country was shut every single time it happens, and the only people who get
+    /// it back are the ones who notice and ask.
+    ///
+    /// Read back through a second context, because what is being asserted is that
+    /// the recount reached the database rather than that an object in memory was
+    /// changed.
+    /// </remarks>
+    [Fact]
+    public async Task Declaring_a_holiday_recounts_leave_that_is_already_approved()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+
+        Guid leaveId;
+
+        await using (var module = new Module(db))
+        {
+            var engineer = await WorkingAsync(module, "Sharon");
+
+            var leave = await module.Leave.AskForAsync(
+                engineer, LeaveKind.Annual, ChristmasWeek, ChristmasWeek.AddDays(4), "Christmas.");
+
+            leaveId = leave.Id;
+
+            Assert.Equal(5, leave.Days);
+
+            await module.Leave.SubmitAsync(leaveId);
+            await module.Leave.RecordDecisionAsync(leaveId, approved: true, reason: null);
+        }
+
+        await using (var module = new Module(db))
+        {
+            var recounted = await module.Holidays.DeclareAsync(ChristmasDay, "Christmas Day");
+
+            Assert.Equal(1, recounted);
+        }
+
+        await using (var read = db.NewContext())
+        {
+            var saved = await read.Leave.SingleAsync(leave => leave.Id == leaveId);
+
+            Assert.Equal(4, saved.Days);
+            Assert.Equal(LeaveStatus.Approved, saved.Status);
+        }
+    }
+
+    /// <summary>
+    /// Withdrawing a holiday puts the day back.
+    /// </summary>
+    /// <remarks>
+    /// A day typed in by mistake has to be reversible in both directions. Taking
+    /// the row out and leaving the shortened counts alone is the error that
+    /// favours the employee and would therefore go unreported for years.
+    /// </remarks>
+    [Fact]
+    public async Task Withdrawing_a_holiday_puts_the_day_back_onto_the_leave_it_shortened()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+
+        Guid leaveId;
+        Guid holidayId;
+
+        await using (var module = new Module(db))
+        {
+            var engineer = await WorkingAsync(module, "Collins");
+
+            var leave = await module.Leave.AskForAsync(
+                engineer, LeaveKind.Annual, ChristmasWeek, ChristmasWeek.AddDays(4), "Christmas.");
+
+            leaveId = leave.Id;
+
+            await module.Holidays.DeclareAsync(ChristmasDay, "Christmas Day");
+        }
+
+        await using (var read = db.NewContext())
+        {
+            Assert.Equal(4, (await read.Leave.SingleAsync(leave => leave.Id == leaveId)).Days);
+
+            holidayId = (await read.Holidays.SingleAsync(holiday => holiday.On == ChristmasDay)).Id;
+        }
+
+        await using (var module = new Module(db))
+        {
+            Assert.Equal(1, await module.Holidays.WithdrawAsync(holidayId));
+        }
+
+        await using (var read = db.NewContext())
+        {
+            Assert.Equal(5, (await read.Leave.SingleAsync(leave => leave.Id == leaveId)).Days);
+            Assert.Empty(read.Holidays);
+        }
+    }
+
+    /// <summary>
+    /// Leave that was cancelled is left where it is.
+    /// </summary>
+    /// <remarks>
+    /// It charges nobody anything, so recounting it moves no entitlement and
+    /// would put an audit entry against it for every holiday ever declared across
+    /// those dates — noise in the one record that has to stay readable.
+    /// </remarks>
+    [Fact]
+    public async Task Declaring_a_holiday_leaves_cancelled_leave_alone()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+
+        Guid leaveId;
+
+        await using (var module = new Module(db))
+        {
+            var engineer = await WorkingAsync(module, "Naomi");
+
+            var leave = await module.Leave.AskForAsync(
+                engineer, LeaveKind.Annual, ChristmasWeek, ChristmasWeek.AddDays(4), "Christmas.");
+
+            leaveId = leave.Id;
+
+            await module.Leave.CancelAsync(leaveId);
+        }
+
+        await using (var module = new Module(db))
+        {
+            Assert.Equal(0, await module.Holidays.DeclareAsync(ChristmasDay, "Christmas Day"));
+        }
+
+        await using (var read = db.NewContext())
+        {
+            var saved = await read.Leave.SingleAsync(leave => leave.Id == leaveId);
+
+            Assert.Equal(5, saved.Days);
+            Assert.Equal(LeaveStatus.Cancelled, saved.Status);
+        }
+    }
+
+    /// <summary>
+    /// One date, one row.
+    /// </summary>
+    /// <remarks>
+    /// A duplicate would not change any day count — the calendar is read as a set
+    /// of dates — but it makes the screen misreport the calendar, and withdrawing
+    /// the day then silently only half works.
+    /// </remarks>
+    [Fact]
+    public async Task A_date_cannot_be_declared_a_holiday_twice()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        await module.Holidays.DeclareAsync(ChristmasDay, "Christmas Day");
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => module.Holidays.DeclareAsync(ChristmasDay, "Christmas"));
+
+        Assert.Contains("already on the calendar", refused.Message);
+    }
+
+    /// <summary>
+    /// The list a screen reads and the figure the aggregate agreed are the same
+    /// number.
+    /// </summary>
+    /// <remarks>
+    /// This is the test that would have caught the drift the old arrangement
+    /// invited. The leave list used to hold its own copy of the weekend rule so
+    /// that thirty rows need not become thirty aggregates; that copy knew nothing
+    /// about holidays, and the day it and the aggregate disagreed, somebody's
+    /// leave balance would have depended on which screen was open. The list now
+    /// selects the stored column, and this asserts the two agree over a holiday.
+    /// </remarks>
+    [Fact]
+    public async Task The_leave_list_reports_the_same_count_the_request_agreed()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var engineer = await WorkingAsync(module, "Wanjiru");
+
+        await module.Holidays.DeclareAsync(ChristmasDay, "Christmas Day");
+
+        var leave = await module.Leave.AskForAsync(
+            engineer, LeaveKind.Annual, ChristmasWeek, ChristmasWeek.AddDays(4), "Christmas.");
+
+        await using var read = db.NewContext();
+
+        var listed = Assert.Single(await new BusinessQueries(read).LeaveAsync(employeeId: engineer));
+
+        Assert.Equal(leave.Days, listed.Days);
+        Assert.Equal(4, listed.Days);
+    }
+
+    /// <summary>
+    /// The calendar is listed by year, because that is how somebody checks it
+    /// against a gazette notice.
+    /// </summary>
+    [Fact]
+    public async Task The_calendar_is_read_a_year_at_a_time()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        await module.Holidays.DeclareAsync(ChristmasDay, "Christmas Day");
+        await module.Holidays.DeclareAsync(BoxingDay, "Boxing Day");
+        await module.Holidays.DeclareAsync(new DateOnly(2027, 1, 1), "New Year's Day");
+
+        await using var read = db.NewContext();
+        var queries = new BusinessQueries(read);
+
+        var christmas = await queries.HolidaysAsync(2026);
+
+        Assert.Equal(2, christmas.Count);
+        Assert.Equal(ChristmasDay, christmas[0].On);
+        Assert.Equal("Boxing Day", christmas[1].Name);
+
+        Assert.Single(await queries.HolidaysAsync(2027));
+        Assert.Equal([2027, 2026], await queries.HolidayYearsAsync());
     }
 
     // --- expenses ----------------------------------------------------------

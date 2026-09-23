@@ -111,6 +111,31 @@ public sealed class BusinessRepository(AppDbContext database) : IBusinessReposit
             .Where(leave => except == null || leave.Id != except)
             .ToListAsync(cancellationToken);
 
+    public Task<Holiday?> FindHolidayAsync(
+        Guid id, CancellationToken cancellationToken = default) =>
+        database.Holidays.FirstOrDefaultAsync(holiday => holiday.Id == id, cancellationToken);
+
+    public Task<bool> HolidayTakenAsync(
+        DateOnly on, CancellationToken cancellationToken = default) =>
+        database.Holidays.AnyAsync(holiday => holiday.On == on, cancellationToken);
+
+    public async Task<IReadOnlySet<DateOnly>> HolidaysAsync(
+        CancellationToken cancellationToken = default) =>
+        (await database.Holidays
+            .AsNoTracking()
+            .Select(holiday => holiday.On)
+            .ToListAsync(cancellationToken))
+        .ToHashSet();
+
+    public Task<List<LeaveRequest>> LiveLeaveSpanningAsync(
+        DateOnly on, CancellationToken cancellationToken = default) =>
+        database.Leave
+            .Where(leave => leave.From <= on && on <= leave.To)
+            .Where(leave => leave.Status == LeaveStatus.Draft
+                || leave.Status == LeaveStatus.AwaitingApproval
+                || leave.Status == LeaveStatus.Approved)
+            .ToListAsync(cancellationToken);
+
     public Task<Interview?> FindInterviewAsync(
         Guid id, CancellationToken cancellationToken = default) =>
         database.Interviews
@@ -134,6 +159,10 @@ public sealed class BusinessRepository(AppDbContext database) : IBusinessReposit
     public void Add(LeaveRequest leave) => database.Leave.Add(leave);
 
     public void Add(Interview interview) => database.Interviews.Add(interview);
+
+    public void Add(Holiday holiday) => database.Holidays.Add(holiday);
+
+    public void Remove(Holiday holiday) => database.Holidays.Remove(holiday);
 
     public Task SaveAsync(CancellationToken cancellationToken = default) =>
         database.SaveChangesAsync(cancellationToken);

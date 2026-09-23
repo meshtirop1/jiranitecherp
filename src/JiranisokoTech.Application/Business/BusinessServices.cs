@@ -64,6 +64,35 @@ public interface IBusinessRepository
         Guid? except = null,
         CancellationToken cancellationToken = default);
 
+    Task<Holiday?> FindHolidayAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<bool> HolidayTakenAsync(DateOnly on, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every public holiday there is, as a set of dates.
+    /// </summary>
+    /// <remarks>
+    /// All of them rather than the ones a particular request spans, which would
+    /// be the careful thing to do if the table were large. It is a dozen rows a
+    /// year: a firm that has been running for twenty years has two hundred and
+    /// forty dates here, and reading them all costs less than getting the
+    /// boundaries of a range query right. A range query is also the shape that
+    /// invites an off-by-one, and an off-by-one here is a day of somebody's
+    /// leave.
+    /// </remarks>
+    Task<IReadOnlySet<DateOnly>> HolidaysAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Live leave requests that contain a date, whoever they belong to.
+    /// </summary>
+    /// <remarks>
+    /// The one query the holiday calendar needs, and it is here rather than in
+    /// the read-side queries because these come back as aggregates meant to be
+    /// changed — a holiday going onto the calendar has to recount them.
+    /// </remarks>
+    Task<List<LeaveRequest>> LiveLeaveSpanningAsync(
+        DateOnly on, CancellationToken cancellationToken = default);
+
     Task<Interview?> FindInterviewAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<JobApplication?> FindApplicationAsync(
@@ -80,6 +109,20 @@ public interface IBusinessRepository
     void Add(LeaveRequest leave);
 
     void Add(Interview interview);
+
+    void Add(Holiday holiday);
+
+    /// <summary>
+    /// Take a day off the calendar.
+    /// </summary>
+    /// <remarks>
+    /// The only genuine delete in this interface, and it is right for this one
+    /// thing. Everything else here is a record of something that happened and is
+    /// archived rather than removed; a holiday is a statement about a date, and a
+    /// wrong statement typed by mistake should leave nothing behind but the audit
+    /// entry saying it was there and is not.
+    /// </remarks>
+    void Remove(Holiday holiday);
 
     Task SaveAsync(CancellationToken cancellationToken = default);
 }
@@ -281,7 +324,16 @@ public sealed class LeaveService(IBusinessRepository business, IClock clock)
                 + $"{clash.To:d MMM}. Cancel that first if the dates have changed.");
         }
 
-        var leave = LeaveRequest.For(employeeId, kind, from, to, reason, clock.Today);
+        /*
+         * The calendar is read here and handed to the aggregate, the same way
+         * the firm's settings hand it whether any invoice exists. Which days are
+         * working days is a rule and belongs in the domain; which days the
+         * government has declared holidays is a fact in a table, and the domain
+         * has no business asking for it.
+         */
+        var holidays = await business.HolidaysAsync(cancellationToken);
+
+        var leave = LeaveRequest.For(employeeId, kind, from, to, reason, clock.Today, holidays);
 
         business.Add(leave);
         await business.SaveAsync(cancellationToken);
@@ -328,6 +380,146 @@ public sealed class LeaveService(IBusinessRepository business, IClock clock)
     private async Task<LeaveRequest> RequiredLeave(Guid id, CancellationToken cancellationToken) =>
         await business.FindLeaveAsync(id, cancellationToken)
         ?? throw new InvalidOperationException("There is no leave request with that identifier.");
+}
+
+/// <summary>
+/// The public holiday calendar, and the leave it shortens.
+/// </summary>
+/// <remarks>
+/// Next to <see cref="LeaveService"/> rather than in a file of its own, because
+/// this class is the only thing keeping the day count stored on a leave request
+/// honest. <see cref="LeaveRequest.Days"/> is worked out once against the
+/// calendar and kept, which means it goes stale the moment the calendar moves;
+/// the recount below is the whole answer to that, and a reader of leave who
+/// cannot see it from where leave is written has no way of knowing it exists.
+///
+/// Managing the calendar sits behind settings.manage rather than a permission of
+/// its own. It is the same kind of act as setting the payment terms — a
+/// firm-wide fact that a handful of people maintain and everybody else is
+/// affected by — and the roles that already hold that are exactly the ones who
+/// would be given this.
+/// </remarks>
+public sealed class HolidayService(IBusinessRepository business)
+{
+    public Task<IReadOnlySet<DateOnly>> CalendarAsync(
+        CancellationToken cancellationToken = default) =>
+        business.HolidaysAsync(cancellationToken);
+
+    /// <summary>
+    /// Put a day on the calendar, and shorten the leave across it.
+    /// </summary>
+    /// <remarks>
+    /// Returns how many requests were recounted, because whoever typed the date
+    /// in should be told that it moved somebody's leave rather than left to
+    /// discover it from a balance later. It is also the number that says the
+    /// recount happened at all, which is worth having on the screen when the
+    /// alternative is trusting that it did.
+    /// </remarks>
+    public async Task<int> DeclareAsync(
+        DateOnly on, string name, CancellationToken cancellationToken = default)
+    {
+        if (await business.HolidayTakenAsync(on, cancellationToken))
+        {
+            /*
+             * Two rows for one date would not break the count — the calendar is
+             * a set of dates and a set swallows the duplicate — but it makes the
+             * screen lie about what is on the calendar, and it makes withdrawing
+             * the day a thing somebody has to do twice without being told so.
+             */
+            throw new InvalidOperationException(
+                $"{on:d MMMM yyyy} is already on the calendar. Rename it if it is called "
+                + "something else, or withdraw it and declare the right day.");
+        }
+
+        var calendar = new HashSet<DateOnly>(await business.HolidaysAsync(cancellationToken))
+        {
+            on,
+        };
+
+        business.Add(Holiday.Declared(on, name));
+
+        var recounted = await RecountAsync(on, calendar, cancellationToken);
+
+        // One save for the holiday and every recount it caused. Two saves would
+        // leave a window in which the day is a public holiday and the leave
+        // across it is still charged in full, and a failure in that window would
+        // make the window permanent.
+        await business.SaveAsync(cancellationToken);
+
+        return recounted;
+    }
+
+    public async Task RenameAsync(
+        Guid holidayId, string name, CancellationToken cancellationToken = default)
+    {
+        var holiday = await Required(holidayId, cancellationToken);
+
+        holiday.Rename(name);
+        await business.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Take a day off the calendar, and put the leave across it back.
+    /// </summary>
+    /// <remarks>
+    /// The requests across it are recounted against a calendar this date has
+    /// been taken out of, which is what puts the day back onto the ones it
+    /// shortened. Removing the row and leaving the counts alone is the direction
+    /// that quietly favours the firm, so it is the one worth being deliberate
+    /// about.
+    /// </remarks>
+    public async Task<int> WithdrawAsync(
+        Guid holidayId, CancellationToken cancellationToken = default)
+    {
+        var holiday = await Required(holidayId, cancellationToken);
+        var on = holiday.On;
+
+        var calendar = new HashSet<DateOnly>(await business.HolidaysAsync(cancellationToken));
+        calendar.Remove(on);
+
+        business.Remove(holiday);
+
+        var recounted = await RecountAsync(on, calendar, cancellationToken);
+
+        await business.SaveAsync(cancellationToken);
+
+        return recounted;
+    }
+
+    /// <summary>
+    /// Count every live request across a date again, against the calendar as it
+    /// is about to be.
+    /// </summary>
+    /// <remarks>
+    /// The calendar is handed in with the one date already added or taken away,
+    /// rather than read back from the database here, and that is forced rather
+    /// than chosen: the row has been added to the unit of work and not saved, so
+    /// a query would not see it and every request would be recounted against the
+    /// calendar as it was. Saving first to make it visible is the thing the one
+    /// transaction exists to avoid.
+    ///
+    /// Adjusting a set of dates by one date is not a second implementation of
+    /// anything — the set is what the table means, and this is the same set with
+    /// the change in it. The rule that turns dates into a day count stays in
+    /// <see cref="WorkingDays"/>, which is the part there must only ever be one
+    /// of.
+    /// </remarks>
+    private async Task<int> RecountAsync(
+        DateOnly on, IReadOnlySet<DateOnly> calendar, CancellationToken cancellationToken)
+    {
+        var affected = await business.LiveLeaveSpanningAsync(on, cancellationToken);
+
+        foreach (var leave in affected)
+        {
+            leave.Recount(calendar);
+        }
+
+        return affected.Count;
+    }
+
+    private async Task<Holiday> Required(Guid id, CancellationToken cancellationToken) =>
+        await business.FindHolidayAsync(id, cancellationToken)
+        ?? throw new InvalidOperationException("There is no public holiday with that identifier.");
 }
 
 /// <summary>Expenses, and the claim nobody approves for themselves.</summary>
