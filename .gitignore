@@ -28,3 +28,6 @@ mail/
 # Candidate CVs written by the file store. Documents belonging to people
 # outside this firm, and not something to commit.
 cvs/
+
+# Worktrees the agent tooling creates. Not part of the project.
+.claude/worktrees/

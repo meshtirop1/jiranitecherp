@@ -39,7 +39,7 @@ public static class PublicApi
         var api = endpoints.MapGroup("/api/v1")
             .RequireAuthorization(new AuthorizeAttribute
             {
-                AuthenticationSchemes = ApiKeyAuthenticationHandler.Scheme,
+                AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName,
             })
             .RequireRateLimiting(ApiLimits.Policy);
 
@@ -159,6 +159,6 @@ public static class PublicApi
         builder.RequireAuthorization(new AuthorizeAttribute
         {
             Policy = PermissionClaim.PolicyPrefix + permission,
-            AuthenticationSchemes = ApiKeyAuthenticationHandler.Scheme,
+            AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName,
         });
 }

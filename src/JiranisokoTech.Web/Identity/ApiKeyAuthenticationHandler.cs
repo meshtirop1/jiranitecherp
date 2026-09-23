@@ -27,7 +27,17 @@ public sealed class ApiKeyAuthenticationHandler(
     UrlEncoder encoder,
     ApiKeyService keys) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
-    public const string Scheme = "ApiKey";
+    /// <summary>
+    /// The scheme's name.
+    /// </summary>
+    /// <remarks>
+    /// Called SchemeName rather than Scheme because the base handler already
+    /// has a Scheme property, and a constant of the same name hides it —
+    /// which compiles, warns, and would one day have somebody reading
+    /// this.Scheme expecting the framework's value and getting a string
+    /// literal.
+    /// </remarks>
+    public const string SchemeName = "ApiKey";
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
@@ -68,7 +78,7 @@ public sealed class ApiKeyAuthenticationHandler(
 
         await keys.NoteUseAsync(key, Context.RequestAborted);
 
-        var identity = new ClaimsIdentity(Scheme);
+        var identity = new ClaimsIdentity(SchemeName);
 
         identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, key.Id.ToString()));
         identity.AddClaim(new Claim(ClaimTypes.Name, key.Name));
@@ -84,7 +94,7 @@ public sealed class ApiKeyAuthenticationHandler(
         }
 
         return AuthenticateResult.Success(
-            new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme));
+            new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName));
     }
 
     /// <summary>

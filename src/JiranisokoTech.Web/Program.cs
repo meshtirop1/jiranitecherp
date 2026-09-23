@@ -43,7 +43,7 @@ builder.Services.AddPermissionAuthorization();
  */
 builder.Services.AddAuthentication()
     .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
-        ApiKeyAuthenticationHandler.Scheme, _ => { });
+        ApiKeyAuthenticationHandler.SchemeName, _ => { });
 
 // The key ring that signs the authentication cookie. Must outlive the
 // container, or a deploy signs everybody out.
@@ -104,6 +104,11 @@ var app = builder.Build();
 // First in the pipeline, before anything reads the client's address or the
 // request's scheme — which the rate limiter and the sign-in trail both do.
 app.UseReverseProxyHeaders();
+
+// Before anything writes a response, so that every one of them carries these —
+// including static assets and the API, because the response that matters is
+// whichever one an attacker can get a browser to treat as a document.
+app.UseSecurityHeaders();
 
 app.ReportSigningKeyRing();
 
