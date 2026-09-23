@@ -105,6 +105,9 @@ Each of these cost real time. They are written down so they cost it once.
 - **A test that asserts a sentence of Razor prose asserts its indentation.**
   Razor keeps the source's line breaks, so any assertion spanning a wrapped line
   fails while the screen is correct. Match a fragment that sits on one line.
+- **The container serves what was built, not what is on disk.** A `wwwroot` file edited
+  and then tested against the running container is tested in its previous version, and
+  the result looks like a fix that did not work. Rebuild before believing a browser.
 - **Page tests in one class share one database** through the class fixture, so
   "nothing has been recorded yet" is true only for whichever test runs first.
   Assert against a state no other test in the class produces.

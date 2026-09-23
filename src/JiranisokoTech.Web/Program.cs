@@ -231,6 +231,10 @@ using (var scope = app.Services.CreateScope())
 // Ending a session. A POST, so it cannot be triggered by a link.
 app.MapAuthenticationEndpoints();
 
+// Light or dark, remembered in a cookie so the page is never the wrong colour even for
+// the first paint. See ThemeEndpoints.
+app.MapThemeEndpoints();
+
 // A CV, to somebody allowed to read it.
 app.MapCvEndpoints();
 

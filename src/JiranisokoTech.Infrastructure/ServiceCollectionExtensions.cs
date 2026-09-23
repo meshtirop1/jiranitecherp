@@ -160,6 +160,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<BusinessQueries>();
         services.AddScoped<ReportingQueries>();
         services.AddScoped<ProjectMoneyQueries>();
+        services.AddScoped<WaitingQueries>();
         services.AddScoped<IExchangeRateRepository, ExchangeRateRepository>();
         services.AddScoped<ExchangeRateService>();
         /*

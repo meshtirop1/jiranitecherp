@@ -1,4 +1,5 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@using JiranisokoTech.Web.Identity
 
 <div class="page">
     <div class="sidebar">
@@ -7,7 +8,31 @@
 
     <main>
         <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+            @*
+                The command palette's opener, and the theme switch.
+
+                The palette is a button rather than only a keystroke, because a shortcut
+                nobody has been told about is a feature nobody has. The keystroke is on it
+                so that the second time somebody uses it, they use the keyboard.
+            *@
+            <button type="button" class="palette__open" data-palette-open>
+                Go to… <kbd>Ctrl</kbd><kbd>K</kbd>
+            </button>
+
+            @*
+                A form rather than a script.
+
+                These pages are statically rendered and the theme is stamped on the html
+                element by the server, so switching it is a post and a redirect — which
+                means it works with no JavaScript at all and the page never arrives in the
+                wrong colour.
+            *@
+            <form method="post" action="/theme" class="theme">
+                <AntiforgeryToken />
+                <input type="hidden" name="back" value="@Here" />
+                <input type="hidden" name="theme" value="@Next" />
+                <button type="submit" class="button button--quiet">@NextSaid</button>
+            </form>
         </div>
 
         <article class="content px-4">
@@ -16,8 +41,54 @@
     </main>
 </div>
 
+@*
+    Where the palette draws itself.
+
+    Rendered on every page and empty until the script fills it, because the destinations
+    come from the navigation — which is already filtered by what this person may open, so
+    the palette cannot offer a page that would then refuse them.
+*@
+<div class="palette" data-palette hidden>
+    <div class="palette__box" role="dialog" aria-modal="true" aria-label="Go to">
+        <input type="search" class="palette__input" placeholder="Go to…"
+               aria-label="Where to" autocomplete="off" data-palette-input />
+        <ul class="palette__list" data-palette-list></ul>
+        <p class="palette__hint">
+            <kbd>↑</kbd><kbd>↓</kbd> to choose, <kbd>Enter</kbd> to go,
+            <kbd>Esc</kbd> to close.
+        </p>
+    </div>
+</div>
+
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
     <a href="." class="reload">Reload</a>
     <span class="dismiss">🗙</span>
 </div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    /// <summary>Where to come back to after the theme switch.</summary>
+    /// <remarks>
+    /// Read from the request rather than from NavigationManager, because on a statically
+    /// rendered page the post is a fresh request and the only thing that knows where
+    /// somebody was is the request they made.
+    /// </remarks>
+    private string Here =>
+        Request is null ? "/" : Request.Request.Path + Request.Request.QueryString;
+
+    /// <summary>
+    /// What pressing the button will switch to.
+    /// </summary>
+    /// <remarks>
+    /// Two states on the button, not three, even though the cookie has three. Somebody who
+    /// has said nothing sees "Dark" and gets dark; from either explicit state the button
+    /// offers the other. Exposing "follow this device" as a third press would be a control
+    /// with three positions to explain, for a preference nobody thinks about twice.
+    /// </remarks>
+    private string Next => Request.ChosenTheme() == "dark" ? "light" : "dark";
+
+    private string NextSaid => Next == "dark" ? "Dark" : "Light";
+}

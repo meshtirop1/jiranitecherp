@@ -186,10 +186,10 @@ This block is the brief's stated centre of gravity and none of it exists.
 | ✅ | 74 | Service accounts | The same keys; machine identity with scoped permissions |
 | ✅ | 39 | API-first | Versioned `/api/v1`, OpenAPI, paged reads with a capped limit, and three writes that go through the same services the screens use |
 | ✅ | 34 | Global search | Six kinds, each behind its own permission. No filter syntax |
-| ◐ | 35 | Dashboards | One home page and one standing report. No role-specific dashboards |
+| ✅ | 35 | Dashboards | The home page shows what is waiting on this reader, decided by what they may do. One list rather than a page per role — see WaitingQueries for why |
 | ✅ | 38 | Reporting | Money, hours, absence, delivery and the repositories, with CSV export |
 | ✅ | 52 | Import / export | CSV export, and client import with a dry run that writes nothing unless the whole file is sound |
-| ◐ | 47 | UI and UX | Responsive, consistent. No command palette, keyboard shortcuts, dark mode or bulk actions |
+| ✅ | 47 | UI and UX | Responsive, consistent, dark mode stamped server-side, a command palette on Ctrl+K built from the reader's own navigation, and bulk approval of timesheets |
 | ☐ | 48 | Developer experience shortcuts | |
 | ☐ | 50 | CLI | |
 | ☐ | 51 | Integrations — Slack, Teams, cloud, calendar | |

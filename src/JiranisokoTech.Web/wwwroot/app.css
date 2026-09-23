@@ -1,9 +1,66 @@
+/*
+ * The colours this application is made of.
+ *
+ * Declared as tokens so that dark mode is a redefinition rather than a second copy of
+ * every rule. The structural surfaces below use them; the semantic accents — a danger
+ * red, a pill's green — keep their literals and get explicit overrides at the bottom of
+ * this file, because "the green that means approved" is not a variable anything else
+ * should be able to reach for.
+ *
+ * That is a deliberate half-measure and it is worth naming as one. A complete token
+ * migration would touch a hundred and twenty literals in rules whose light appearance is
+ * already right, for no benefit to the light theme and with a hundred and twenty chances
+ * to get one wrong silently. What is converted here is everything that decides whether a
+ * page is readable at all: the page behind the content, the surfaces on it, the text, the
+ * borders and the form controls.
+ */
+:root {
+    --page: #f5f6f8;
+    --surface: #fff;
+    --surface-sunken: #eef1f5;
+    --ink: #1f2937;
+    --ink-quiet: #6b7280;
+    --line: #e3e5e9;
+    --link: #006bb7;
+}
+
+/*
+ * Dark by the reader's own setting, unless they have said otherwise on this device.
+ *
+ * The attribute wins over the media query, which is what lets somebody who prefers dark
+ * everywhere choose light here — and the cookie that sets it survives a restart, because
+ * a preference that has to be set again every morning is one nobody sets.
+ */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --page: #161a1f;
+        --surface: #1e242b;
+        --surface-sunken: #262e37;
+        --ink: #e6e9ee;
+        --ink-quiet: #9aa4b2;
+        --line: #333c47;
+
+        /* Lifted, because #006bb7 on a dark ground fails contrast by a long way. */
+        --link: #6fb6ff;
+    }
+}
+
+:root[data-theme="dark"] {
+    --page: #161a1f;
+    --surface: #1e242b;
+    --surface-sunken: #262e37;
+    --ink: #e6e9ee;
+    --ink-quiet: #9aa4b2;
+    --line: #333c47;
+    --link: #6fb6ff;
+}
+
 html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
 a, .btn-link {
-    color: #006bb7;
+    color: var(--link);
 }
 
 .btn-primary {
@@ -67,7 +124,7 @@ h1:focus {
        the middle of a short page. */
     grid-template-rows: 1fr auto;
     padding: 2rem 1rem;
-    background-color: #f5f6f8;
+    background-color: var(--page);
 }
 
 /*
@@ -85,8 +142,8 @@ h1:focus {
     margin-inline: auto;
     align-self: center;
     padding: 2rem;
-    background: #fff;
-    border: 1px solid #e3e5e9;
+    background: var(--surface);
+    border: 1px solid var(--line);
     border-radius: 6px;
 }
 
@@ -265,7 +322,7 @@ h1:focus {
 
 .empty {
     padding: 1.5rem;
-    background: #f5f6f8;
+    background: var(--surface-sunken);
     border-radius: 6px;
     color: #4b5563;
 }
@@ -313,7 +370,7 @@ h1:focus {
     padding: 0.1rem 0.5rem;
     border-radius: 999px;
     font-size: 0.78rem;
-    background: #eef1f5;
+    background: var(--surface-sunken);
     color: #374151;
 }
 
@@ -479,7 +536,7 @@ button.danger:hover { background: #8a1b1b; }
 }
 
 .board__column {
-    background: #f5f6f8;
+    background: var(--surface-sunken);
     border-radius: 6px;
     padding: 0.75rem;
     min-width: 0;
@@ -500,8 +557,8 @@ button.danger:hover { background: #8a1b1b; }
 
 .card {
     display: block;
-    background: #fff;
-    border: 1px solid #e3e5e9;
+    background: var(--surface);
+    border: 1px solid var(--line);
     border-left: 3px solid #c8ccd4;
     border-radius: 4px;
     padding: 0.55rem 0.7rem;
@@ -615,7 +672,7 @@ code.link {
 code.key {
     font-size: 1rem;
     letter-spacing: 0.06em;
-    background: #f5f6f8;
+    background: var(--surface-sunken);
     padding: 0.15rem 0.4rem;
     border-radius: 3px;
 }
@@ -789,8 +846,8 @@ code.key {
 /* A form or a block of related controls, lifted off the page. */
 .panel {
     padding: 1.25rem;
-    background: #fff;
-    border: 1px solid #e3e5e9;
+    background: var(--surface);
+    border: 1px solid var(--line);
     border-radius: 6px;
     max-width: 38rem;
 }
@@ -868,7 +925,7 @@ code.key {
     align-items: center;
     gap: 0.15rem;
     padding: 0.6rem 0.4rem;
-    background: #f5f6f8;
+    background: var(--surface-sunken);
     border: 1px solid #e3e5e9;
     border-radius: 6px;
 }
@@ -954,7 +1011,7 @@ code.key {
     gap: 0.1rem;
     margin: 1rem 0;
     padding: 0.75rem 1rem;
-    background: #f5f6f8;
+    background: var(--surface-sunken);
     border-radius: 6px;
     font-size: 0.85rem;
     color: #4b5563;
@@ -1004,7 +1061,7 @@ code.key {
 .secret {
     display: inline-block;
     padding: 0.5rem 0.75rem;
-    background: #f5f6f8;
+    background: var(--surface-sunken);
     border: 1px solid #e3e5e9;
     border-radius: 4px;
     font-size: 0.95rem;
@@ -1056,4 +1113,252 @@ code.key {
 .entry__subject {
     font-size: 0.78rem;
     margin: 0.35rem 0 0;
+}
+
+
+/*
+ * Dark mode, for everything the tokens above do not reach.
+ *
+ * Two blocks with identical bodies rather than one selector list, because a list
+ * containing an unsupported selector is dropped whole by some browsers — and the one that
+ * would be dropped is the media query, leaving somebody who prefers dark with a light
+ * page and dark tokens.
+ */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) body,
+    :root:not([data-theme="light"]) html {
+        background-color: var(--page);
+        color: var(--ink);
+    }
+
+    :root:not([data-theme="light"]) .panel,
+    :root:not([data-theme="light"]) .bare__panel,
+    :root:not([data-theme="light"]) .card,
+    :root:not([data-theme="light"]) .standing {
+        background: var(--surface);
+        border-color: var(--line);
+        color: var(--ink);
+    }
+
+    :root:not([data-theme="light"]) .grid th {
+        background: var(--surface-sunken);
+        color: var(--ink);
+    }
+
+    :root:not([data-theme="light"]) .grid td,
+    :root:not([data-theme="light"]) .grid th {
+        border-color: var(--line);
+    }
+
+    :root:not([data-theme="light"]) .subtle,
+    :root:not([data-theme="light"]) .empty {
+        color: var(--ink-quiet);
+    }
+
+    /*
+     * Form controls are given explicit colours rather than left to the browser. A dark
+     * page with a white input is not a styling complaint — it is a field whose text a
+     * reader cannot see while typing into it, because the browser paints the value with
+     * its own dark ink on our dark ground.
+     */
+    :root:not([data-theme="light"]) input,
+    :root:not([data-theme="light"]) select,
+    :root:not([data-theme="light"]) textarea {
+        background: var(--surface-sunken);
+        color: var(--ink);
+        border-color: var(--line);
+    }
+
+    /*
+     * The pills keep their meanings and lose their pastel grounds, which are invisible
+     * against a dark surface. The hue carries the meaning; the lightness carries the
+     * contrast, and those are separate decisions.
+     */
+    :root:not([data-theme="light"]) .pill { background: #2c3641; color: var(--ink); }
+    :root:not([data-theme="light"]) .pill--done { background: #1d3a27; color: #7ddc9b; }
+    :root:not([data-theme="light"]) .pill--danger { background: #3d2126; color: #ff9aa2; }
+    :root:not([data-theme="light"]) .pill--quiet { background: #2c3641; color: var(--ink-quiet); }
+    :root:not([data-theme="light"]) .pill--active { background: #1d3a27; color: #7ddc9b; }
+
+    :root:not([data-theme="light"]) .refusal {
+        background-color: #3d2126;
+        color: #ff9aa2;
+    }
+
+    :root:not([data-theme="light"]) .done {
+        background-color: #1d3a27;
+        color: #7ddc9b;
+    }
+
+    :root:not([data-theme="light"]) .over { color: #ff9aa2; }
+
+    :root:not([data-theme="light"]) .portrait__initials {
+        background: var(--surface-sunken);
+        color: var(--ink-quiet);
+    }
+}
+
+:root[data-theme="dark"] body,
+:root[data-theme="dark"] html {
+    background-color: var(--page);
+    color: var(--ink);
+}
+
+:root[data-theme="dark"] .panel,
+:root[data-theme="dark"] .bare__panel,
+:root[data-theme="dark"] .card,
+:root[data-theme="dark"] .standing {
+    background: var(--surface);
+    border-color: var(--line);
+    color: var(--ink);
+}
+
+:root[data-theme="dark"] .grid th {
+    background: var(--surface-sunken);
+    color: var(--ink);
+}
+
+:root[data-theme="dark"] .grid td,
+:root[data-theme="dark"] .grid th {
+    border-color: var(--line);
+}
+
+:root[data-theme="dark"] .subtle,
+:root[data-theme="dark"] .empty {
+    color: var(--ink-quiet);
+}
+
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+    background: var(--surface-sunken);
+    color: var(--ink);
+    border-color: var(--line);
+}
+
+:root[data-theme="dark"] .pill { background: #2c3641; color: var(--ink); }
+:root[data-theme="dark"] .pill--done { background: #1d3a27; color: #7ddc9b; }
+:root[data-theme="dark"] .pill--danger { background: #3d2126; color: #ff9aa2; }
+:root[data-theme="dark"] .pill--quiet { background: #2c3641; color: var(--ink-quiet); }
+:root[data-theme="dark"] .pill--active { background: #1d3a27; color: #7ddc9b; }
+
+:root[data-theme="dark"] .refusal {
+    background-color: #3d2126;
+    color: #ff9aa2;
+}
+
+:root[data-theme="dark"] .done {
+    background-color: #1d3a27;
+    color: #7ddc9b;
+}
+
+:root[data-theme="dark"] .over { color: #ff9aa2; }
+
+:root[data-theme="dark"] .portrait__initials {
+    background: var(--surface-sunken);
+    color: var(--ink-quiet);
+}
+
+
+/* --- the command palette ------------------------------------------------- */
+
+/* The opener, in the top row beside the theme switch. Shows its own shortcut,
+   because a keystroke nobody has been told about is a feature nobody has. */
+.palette__open {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--ink-quiet);
+    padding: 0.3rem 0.7rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.palette__open kbd {
+    background: var(--surface-sunken);
+    border-radius: 3px;
+    padding: 0 0.25rem;
+    margin-left: 0.2rem;
+    font-size: 0.75rem;
+}
+
+.theme {
+    margin-left: auto;
+    padding-right: 1rem;
+}
+
+/* The backdrop. Fixed and full-viewport, so it covers a long page that has been
+   scrolled — a dialog anchored to the document would open above the fold and be
+   invisible to somebody reading the bottom of a board. */
+.palette {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 20, 26, 0.45);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 12vh;
+    z-index: 100;
+}
+
+.palette[hidden] {
+    display: none;
+}
+
+.palette__box {
+    width: min(32rem, calc(100vw - 2rem));
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+}
+
+.palette__input {
+    width: 100%;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 0.9rem 1rem;
+    font-size: 1rem;
+    background: var(--surface);
+    color: var(--ink);
+}
+
+.palette__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+
+    /* Capped and scrollable, so a firm with forty screens does not get a dialog
+       taller than the window with its own hint line off the bottom. */
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.palette__row a {
+    display: block;
+    padding: 0.55rem 1rem;
+    text-decoration: none;
+    color: var(--ink);
+}
+
+/* The chosen row is marked with a ground and a left rule rather than colour alone,
+   because roughly one man in twelve cannot separate this from its neighbours. */
+.palette__row--on {
+    background: var(--surface-sunken);
+    box-shadow: inset 3px 0 0 var(--link);
+}
+
+.palette__none,
+.palette__hint {
+    padding: 0.7rem 1rem;
+    margin: 0;
+    color: var(--ink-quiet);
+    font-size: 0.85rem;
+}
+
+.palette__hint kbd {
+    background: var(--surface-sunken);
+    border-radius: 3px;
+    padding: 0 0.3rem;
 }

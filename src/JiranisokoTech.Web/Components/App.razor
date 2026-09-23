@@ -1,5 +1,13 @@
+@using JiranisokoTech.Web.Identity
 ﻿<!DOCTYPE html>
-<html lang="en">
+@*
+    The theme is stamped here, on the server, before the first byte is written.
+
+    The usual approach — a script that reads storage and sets this after load — means every
+    page arrives in the wrong colour and repaints a moment later. A cookie is read before
+    the response starts, so it never does.
+*@
+<html lang="en" data-theme="@Theme">
 
 <head>
     <meta charset="utf-8" />
@@ -31,6 +39,27 @@
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     <script src="@Assets["nav.js"]"></script>
+    @*
+        The palette and the shortcuts. An external file, because the content security policy
+        refuses inline script — deliberately, and loosening it has already cost this
+        application one outage.
+    *@
+    <script src="palette.js"></script>
 </body>
 
 </html>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    /// <summary>
+    /// What this reader has chosen, or nothing.
+    /// </summary>
+    /// <remarks>
+    /// Nothing is the default, and it means "whatever this device prefers" — which the media
+    /// query in the stylesheet answers. Only the two known words are ever emitted, because
+    /// this value lands in an attribute and an unvalidated one would be an injection.
+    /// </remarks>
+    private string? Theme => Request.ChosenTheme();
+}

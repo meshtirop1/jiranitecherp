@@ -3,10 +3,14 @@
 @using JiranisokoTech.Application.Authorization
 @using JiranisokoTech.Domain.Work
 @using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Application.Abstractions
+@using JiranisokoTech.Infrastructure.Reporting
 @using JiranisokoTech.Infrastructure.Work
 @using JiranisokoTech.Web.Authorization
 @inject PeopleQueries People
 @inject WorkQueries Work
+@inject WaitingQueries Pending
+@inject IClock Clock
 
 @*
     What is in front of this person, and nothing else.
@@ -19,6 +23,31 @@
 <PageTitle>Jiranisoko Delivery</PageTitle>
 
 <h1>Good to see you, @(Name ?? "there")</h1>
+
+@*
+    What is waiting on this person, which depends on what they can do rather than on
+    which page they opened.
+
+    Not a page per role. Five dashboards of tiles would be five things to keep true, and a
+    count nobody can reduce is a tile nobody reads — so what appears here is only ever
+    something with a next action, and nothing appears at all when there is nothing to do.
+*@
+@if (Waiting.Count > 0)
+{
+    <section class="standing">
+        <h2>Waiting on you</h2>
+
+        <ul class="plain">
+            @foreach (var item in Waiting)
+            {
+                <li>
+                    <strong>@item.Count</strong> @item.Noun @item.What.
+                    <a href="@item.Where">Go there</a>
+                </li>
+            }
+        </ul>
+    </section>
+}
 
 @if (Employee is null)
 {
@@ -90,6 +119,16 @@ else
 
     private Guid? Employee { get; set; }
 
+    /// <summary>
+    /// What is waiting on this person, and nothing that is merely true of the firm.
+    /// </summary>
+    /// <remarks>
+    /// Empty is the normal state on a quiet morning, and the section is not drawn at all
+    /// then — a list that said "nothing waiting" every day would teach somebody to stop
+    /// reading it.
+    /// </remarks>
+    private List<WaitingOnYou> Waiting { get; set; } = [];
+
     private List<WorkItemRow> Mine { get; set; } = [];
 
     private List<WorkItemRow> Overdue => Mine
@@ -110,6 +149,15 @@ else
         }
 
         Employee = await People.EmployeeForAccountAsync(account);
+
+        /*
+         * Read from the same claims every authorization check reads, so this list cannot
+         * offer somebody a link to a page that would then refuse them.
+         */
+        Waiting = await Pending.ForAsync(
+            user.FindAll(PermissionClaim.Type).Select(claim => claim.Value).ToHashSet(),
+            Employee,
+            Clock.Today);
 
         if (Employee is not { } me)
         {

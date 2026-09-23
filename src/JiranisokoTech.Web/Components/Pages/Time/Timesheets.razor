@@ -35,6 +35,16 @@
     <p class="refusal" role="alert">@Refusal</p>
 }
 
+@*
+    Shown alongside the refusal rather than instead of it. A bulk approval where nineteen
+    worked and one did not is two facts, and somebody shown only the failure would re-tick
+    nineteen entries that are already approved.
+*@
+@if (Done is not null)
+{
+    <p class="done" role="status">@Done</p>
+}
+
 @if (Me is null)
 {
     <p class="refusal" role="alert">
@@ -48,10 +58,14 @@ else if (Waiting.Count == 0)
 }
 else
 {
+    <EditForm Model="Nothing" method="post" OnValidSubmit="ApproveChosen" FormName="bulk">
     <table class="grid">
         <caption class="visually-hidden">Hours waiting for approval</caption>
         <thead>
             <tr>
+                <AuthorizeView Policy="@ApprovePolicy" Context="mayTick">
+                    <th scope="col"><span class="visually-hidden">Choose</span></th>
+                </AuthorizeView>
                 <th scope="col">Who</th>
                 <th scope="col">Day</th>
                 <th scope="col">Hours</th>
@@ -64,6 +78,21 @@ else
             @foreach (var entry in Waiting)
             {
                 <tr>
+                    <AuthorizeView Policy="@ApprovePolicy" Context="mayTick">
+                        <td>
+                            @*
+                                Not offered for your own hours, because the domain refuses
+                                them — a checkbox that could be ticked and then silently
+                                skipped is worse than one that is not there, since somebody
+                                would tick everything and believe it all went through.
+                            *@
+                            @if (entry.EmployeeId != Me)
+                            {
+                                <input type="checkbox" name="chosen" value="@entry.Id"
+                                       aria-label="Approve this one too" />
+                            }
+                        </td>
+                    </AuthorizeView>
                     <td>@entry.EmployeeName</td>
                     <td>@entry.On.ToString("ddd d MMM")</td>
                     <td class="number">@entry.Duration</td>
@@ -106,6 +135,20 @@ else
             }
         </tbody>
     </table>
+
+    @*
+        Approving one at a time is the ordinary case and approving a week of them is
+        Friday afternoon. Everything ticked goes through one submission.
+    *@
+    <AuthorizeView Policy="@ApprovePolicy" Context="mayApproveMany">
+        <p class="subtle">
+            Tick whichever are right and approve them together. Anything the rules refuse
+            is reported by name rather than skipped quietly.
+        </p>
+
+        <button type="submit" class="button">Approve the ones I have ticked</button>
+    </AuthorizeView>
+    </EditForm>
 }
 
 @code {
@@ -119,6 +162,21 @@ else
     private List<TimeRow> Waiting { get; set; } = [];
 
     private string? Refusal { get; set; }
+
+    /// <summary>What went through, shown beside whatever did not.</summary>
+    /// <remarks>
+    /// Both at once, because a bulk approval where nineteen worked and one did not is two
+    /// facts and a reader needs them both. Showing only the failure would leave somebody
+    /// re-ticking nineteen entries that are already approved.
+    /// </remarks>
+    private string? Done { get; set; }
+
+    /*
+     * The ticked boxes are read off the request rather than from a bound model. This page is
+     * statically rendered, so a checkbox list arrives in the form collection.
+     */
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
@@ -137,6 +195,76 @@ else
         var waiting = await Queries.TimeAsync(awaitingApprovalOnly: true);
 
         Waiting = waiting.OrderBy(entry => entry.On).ThenBy(entry => entry.EmployeeName).ToList();
+    }
+
+    private object Nothing { get; } = new();
+
+    /// <summary>
+    /// Approve everything that was ticked, and say what could not be.
+    /// </summary>
+    /// <remarks>
+    /// Each one is approved on its own rather than in one transaction, which is deliberate.
+    /// A single transaction would mean one entry the rules refuse — somebody's own hours
+    /// slipped in, an entry already approved by a colleague a minute ago — rolling back
+    /// nineteen that were fine, and Friday afternoon spent working out which.
+    ///
+    /// So the ones that work go through, the ones that do not are named, and the screen says
+    /// both. What is never done is skipping a failure quietly: somebody who ticked twenty and
+    /// was told nothing would believe twenty went through.
+    /// </remarks>
+    private async Task ApproveChosen()
+    {
+        Refusal = null;
+        Done = null;
+
+        // Read off the posted form rather than bound: a set of checkboxes under one name is
+        // a list, and the binder hands back only what was ticked.
+        var chosen = Request?.Request.Form["chosen"].ToArray() ?? [];
+
+        if (chosen.Length == 0)
+        {
+            Refusal = "Nothing was ticked.";
+            await LoadAsync();
+            return;
+        }
+
+        var approved = 0;
+        var refused = new List<string>();
+
+        foreach (var value in chosen)
+        {
+            if (!Guid.TryParse(value, out var entryId))
+            {
+                continue;
+            }
+
+            try
+            {
+                await Service.ApproveAsync(entryId, Me!.Value);
+                approved++;
+            }
+            catch (Exception exception) when (
+                exception is ArgumentException or InvalidOperationException)
+            {
+                var whose = Waiting.FirstOrDefault(entry => entry.Id == entryId);
+
+                refused.Add(whose is null
+                    ? exception.Message
+                    : $"{whose.EmployeeName}, {whose.On:ddd d MMM}: {exception.Message}");
+            }
+        }
+
+        if (approved > 0)
+        {
+            Done = $"{approved} {(approved == 1 ? "entry" : "entries")} approved.";
+        }
+
+        if (refused.Count > 0)
+        {
+            Refusal = string.Join(" ", refused);
+        }
+
+        await LoadAsync();
     }
 
     private async Task Approve(Guid entryId)
