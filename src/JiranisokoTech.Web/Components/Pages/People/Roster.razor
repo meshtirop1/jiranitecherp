@@ -3,8 +3,11 @@
 @using JiranisokoTech.Domain.People
 @using JiranisokoTech.Infrastructure.People
 @using Microsoft.AspNetCore.Authorization
+@using JiranisokoTech.Infrastructure.Authorization
+@using System.Security.Claims
 @attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.EmployeesView)]
 @inject PeopleQueries People
+@inject Reaches Reaches
 
 @*
     Static. The filters are a GET form, so every view of this list has an
@@ -102,6 +105,9 @@ else
 }
 
 @code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
     [SupplyParameterFromQuery(Name = "q")]
     private string? Search { get; set; }
 
@@ -123,8 +129,26 @@ else
     protected override async Task OnInitializedAsync()
     {
         Departments = await People.DepartmentNamesAsync();
-        Rows = await People.RosterAsync(DepartmentId, Status, Search);
-        Total = (await People.RosterAsync()).Count;
+        /*
+         * Narrowed to what this reader may see. Somebody holding employees.view_all — HR,
+         * a delivery manager, an administrator — sees the firm; a department head sees
+         * their own department and whatever they head, which is what they answer for.
+         */
+        var user = (await AuthenticationState).User;
+
+        Guid? me = Guid.TryParse(
+            user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        var within = await Reaches.DepartmentsAsync(
+            user.FindAll(PermissionClaim.Type).Select(claim => claim.Value).ToHashSet(),
+            me);
+
+        Rows = await People.RosterAsync(DepartmentId, Status, Search, within);
+        // The total is of what they can see, not of the firm. A count somebody cannot
+        // reconcile with the list beneath it reads as a fault in the list.
+        Total = (await People.RosterAsync(within: within)).Count;
     }
 
     /// <summary>

@@ -64,6 +64,9 @@ public static class IdentityConfiguration
         // pages that sign people in, the third one forgets, and the omission is
         // invisible: sign-in still works and only the history is wrong.
         services.AddScoped<SignInService>();
+
+        // Where an account has been used, and whether this sign-in is from somewhere new.
+        services.AddScoped<SignInPlaces>();
         services.AddScoped<TwoFactor>();
 
         /*

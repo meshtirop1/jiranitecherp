@@ -1,3 +1,4 @@
+using JiranisokoTech.Application.Authorization;
 using JiranisokoTech.Domain.People;
 using JiranisokoTech.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -22,9 +23,30 @@ public sealed class PeopleQueries(AppDbContext database)
         Guid? departmentId = null,
         EmploymentStatus? status = null,
         string? search = null,
+        Reach? within = null,
         CancellationToken cancellationToken = default)
     {
         var query = database.Employees.AsNoTracking();
+
+        /*
+         * Narrowed to the departments the reader may see, when one was given.
+         *
+         * Optional, and that is a compromise worth naming. Every internal caller here
+         * loads the roster to populate a dropdown of people who could take some work, and
+         * narrowing those would make somebody unassignable because of who was looking at
+         * the screen. So the limit is applied where a roster is being read, and not where
+         * it is being used as a list of staff.
+         *
+         * Somebody who reaches no department sees nobody, which is why Reach.Nothing exists
+         * as a value distinct from an empty limit — an empty set meaning "no limit" is how
+         * a narrowing silently becomes a widening.
+         */
+        if (within is { IsEverything: false } limit)
+        {
+            query = limit.IsNothing
+                ? query.Where(employee => false)
+                : limit.Apply(query, employee => employee.DepartmentId ?? Guid.Empty);
+        }
 
         if (departmentId is { } department)
         {

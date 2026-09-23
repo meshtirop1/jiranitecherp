@@ -1,10 +1,12 @@
 @page "/search"
 @using System.Security.Claims
 @using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Infrastructure.People
 @using JiranisokoTech.Infrastructure.Search
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize]
 @inject SearchQueries Finder
+@inject PeopleQueries People
 
 @*
     A GET form, so every search has an address. "Here is what I found when I
@@ -98,7 +100,18 @@ else
             .Select(claim => claim.Value)
             .ToHashSet();
 
-        Results = await Finder.FindAsync(Term, permissions);
+        /*
+         * The staff record as well as the permissions, because a permission can now mean
+         * "the projects you are on" — and answering that needs to know who "you" is. A
+         * search given only the claims would have to read the narrow permission as either
+         * everything or nothing, which is the fault this replaced.
+         */
+        Guid? me = Guid.TryParse(
+            state.User.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        Results = await Finder.FindAsync(Term, permissions, me);
     }
 
     private static string Heading(ResultKind kind, int count) => kind switch

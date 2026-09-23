@@ -10,6 +10,7 @@ using JiranisokoTech.Infrastructure.Settings;
 using JiranisokoTech.Infrastructure.Work;
 using JiranisokoTech.Tests.Infrastructure;
 using Money = JiranisokoTech.Domain.Common.Money;
+using JiranisokoTech.Infrastructure.Authorization;
 
 namespace JiranisokoTech.Tests.Search;
 
@@ -32,6 +33,8 @@ public class SearchTests
 
         public PeopleService People => new(new PeopleRepository(_context), db.Clock);
 
+        public WorkQueries WorkQueries => new(_context);
+
         public WorkService Work =>
             new(new WorkRepository(_context), new PeopleRepository(_context), db.Clock);
 
@@ -42,7 +45,7 @@ public class SearchTests
             new SettingsService(new SettingsRepository(_context)),
             db.Clock);
 
-        public SearchQueries Search => new(_context);
+        public SearchQueries Search => new(_context, new Reaches(_context));
 
         public ValueTask DisposeAsync() => _context.DisposeAsync();
     }
@@ -135,15 +138,29 @@ public class SearchTests
 
         var invoice = await module.Invoices.DraftAsync(client.Id);
 
+        /*
+         * Put on the project, because a developer's project permission is now scoped to
+         * the ones they are on. This assertion used to pass because it was not scoped at
+         * all — which meant every engineer could find every project in the firm by name.
+         */
+        var project = (await module.WorkQueries.ProjectsAsync())
+            .First(row => row.Name.Contains("Acme", StringComparison.OrdinalIgnoreCase));
+
+        var person = await module.People.HireAsync("Meshack Tirop", db.Clock.Today);
+        await module.People.StartAsync(person.Id);
+
+        var item = await module.Work.RaiseAsync("Fit the tracker", person.Id, project.Id);
+        await module.Work.AssignAsync(item.Id, person.Id);
+
         var developer = HeldBy(Roles.Developer);
-        var found = await module.Search.FindAsync("acme", developer);
+        var found = await module.Search.FindAsync("acme", developer, person.Id);
 
         Assert.Contains(found, result => result.Kind == ResultKind.Project);
         Assert.DoesNotContain(found, result => result.Kind == ResultKind.Client);
         Assert.DoesNotContain(found, result => result.Kind == ResultKind.Person);
 
         // And the invoice is not found by its own number either.
-        var byNumber = await module.Search.FindAsync(invoice.Number, developer);
+        var byNumber = await module.Search.FindAsync(invoice.Number, developer, person.Id);
 
         Assert.DoesNotContain(byNumber, result => result.Kind == ResultKind.Invoice);
     }
@@ -189,25 +206,75 @@ public class SearchTests
     }
 
     /// <summary>
-    /// An engineer who may only see the projects they are on can still search
-    /// projects.
+    /// The narrower project permission finds the projects somebody is on, and no others.
     /// </summary>
     /// <remarks>
-    /// The same mistake as the work board, which shipped unopenable because no
-    /// role held tasks.view_own. Checking only projects.view_all here would have
-    /// meant a search box that found no projects for the people who work on
-    /// them.
+    /// This test previously asserted the opposite, and was right to fail when the
+    /// behaviour was corrected — so what it asserted is worth recording.
+    ///
+    /// It held that projects.view_member was enough to search every project, reasoning
+    /// that checking only projects.view_all would leave the search box finding nothing
+    /// for the people who do the work. That reasoning was sound and the conclusion was
+    /// still wrong: the answer was never "everything or nothing", it was the projects they
+    /// are on. There was simply no way to express that until Reach existed, so the wide
+    /// reading was chosen and a test was written to lock it in.
+    ///
+    /// The effect was that every engineer in the firm could find every project by name
+    /// through the search box, while holding a permission that says otherwise.
     /// </remarks>
     [Fact]
-    public async Task The_narrower_project_permission_is_enough_to_search_projects()
+    public async Task The_narrower_project_permission_finds_only_the_projects_somebody_is_on()
     {
         await using var db = await DatabaseFixture.CreateAsync();
         await using var module = new Module(db);
 
         await PopulateAsync(module);
 
-        var found = await module.Search.FindAsync(
+        // Not on it, and holding only the narrow permission.
+        var stranger = await module.Search.FindAsync(
+            "acme",
+            new HashSet<string> { Permissions.ProjectsViewMember },
+            Guid.CreateVersion7());
+
+        Assert.DoesNotContain(stranger, result => result.Kind == ResultKind.Project);
+
+        // And nothing at all for an account with no staff record behind it, because
+        // there is no honest set of projects to give one.
+        var unlinked = await module.Search.FindAsync(
             "acme", new HashSet<string> { Permissions.ProjectsViewMember });
+
+        Assert.DoesNotContain(unlinked, result => result.Kind == ResultKind.Project);
+    }
+
+    /// <summary>
+    /// Somebody assigned work on a project is on that project.
+    /// </summary>
+    /// <remarks>
+    /// The definition of membership, asserted because it is the half that makes the
+    /// narrowing usable rather than merely safe. Without it, tightening the search would
+    /// have produced exactly the empty box the old test was written to prevent.
+    /// </remarks>
+    [Fact]
+    public async Task Somebody_assigned_work_on_a_project_can_search_it()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        await PopulateAsync(module);
+
+        var project = (await module.WorkQueries.ProjectsAsync())
+            .First(row => row.Name.Contains("Acme", StringComparison.OrdinalIgnoreCase));
+
+        var person = await module.People.HireAsync("Meshack Tirop", db.Clock.Today);
+        await module.People.StartAsync(person.Id);
+
+        var item = await module.Work.RaiseAsync("Fit the tracker", person.Id, project.Id);
+        await module.Work.AssignAsync(item.Id, person.Id);
+
+        var found = await module.Search.FindAsync(
+            "acme",
+            new HashSet<string> { Permissions.ProjectsViewMember },
+            person.Id);
 
         Assert.Contains(found, result => result.Kind == ResultKind.Project);
     }

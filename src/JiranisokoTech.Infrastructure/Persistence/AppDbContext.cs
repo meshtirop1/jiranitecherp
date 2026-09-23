@@ -327,6 +327,25 @@ public class AppDbContext(
     };
 
     /// <summary>
+    /// Put an event on the outbox that no aggregate raised.
+    /// </summary>
+    /// <remarks>
+    /// One caller, and it is meant to stay that way: a successful sign-in from somewhere
+    /// an account has not been used before. Signing in is not a change to a business
+    /// record, so there is no aggregate to raise it and nothing for CollectDomainEvents to
+    /// find — and the alternative, inventing an entity to hold the fact, would put a row
+    /// in a table for the sake of the plumbing.
+    ///
+    /// Serialised the same way as every other event, so the dispatcher cannot tell the
+    /// difference and no second code path exists on the way out.
+    /// </remarks>
+    public void Announce(IDomainEvent domainEvent) =>
+        Outbox.Add(new OutboxMessage(
+            domainEvent.GetType().Name,
+            JsonSerializer.Serialize(domainEvent, domainEvent.GetType(), JsonOptions),
+            domainEvent.OccurredAt));
+
+    /// <summary>
     /// Move every raised domain event onto the outbox, in this transaction.
     /// </summary>
     private void CollectDomainEvents()

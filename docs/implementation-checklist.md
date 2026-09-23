@@ -50,12 +50,12 @@ By section: **34 done, 22 partial, 42 not started, 1 excluded by agreement.**
 | --- | --- | --- | --- |
 | ✅ | 4 | Authentication | Sign-in, throttled, sign-in trail, two-step |
 | ✅ | 4 | MFA / 2FA | TOTP, QR, recovery codes. Offered, not compulsory |
-| ◐ | 4 | Session and device management | Sign out everywhere works; no per-device list, no suspicious-login detection |
+| ✅ | 4 | Session and device management | Sign out everywhere, plus where the account has been used and an email the first time it is used somewhere new. Called "places" not "devices", because cookie auth gives no way to end one session |
 | ☐ | 4 | Self-service password reset | An administrator must issue a link. There is no forgot-password page |
 | ☐ | 4 | Email verification | |
 | ✅ | 4 | Profile | A page about yourself at /my-profile — photo, phone, location, time zone, next of kin, skills, qualifications. Pay and identity numbers deliberately not editable there |
 | ✅ | 5 | RBAC | 7 roles, one matrix, permission-as-claim, deny by default |
-| ◐ | 5 | Permission granularity | Resource-level by ownership (own work, own file). No department, project or team scoping |
+| ✅ | 5 | Permission granularity | Reach adds the missing middle between firm-wide and own-record. Fixed a real leak: projects.view_member let every engineer find every project through search |
 | ✅ | 29 | Audit log | Append-only, same transaction, readable and filterable |
 | ✅ | 30 | Event system | Domain events, transactional outbox, handlers, backoff, dead-lettering |
 | ✅ | 41 | Database | PostgreSQL, migrations applied on start, indexed |

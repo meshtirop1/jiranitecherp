@@ -19,9 +19,11 @@ using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Clients;
 using JiranisokoTech.Application.Currencies;
 using JiranisokoTech.Infrastructure.Currencies;
+using JiranisokoTech.Domain.Audit;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Infrastructure.Messaging;
 using JiranisokoTech.Infrastructure.Approvals;
+using JiranisokoTech.Infrastructure.Authorization;
 using JiranisokoTech.Infrastructure.Business;
 using JiranisokoTech.Infrastructure.Mail;
 using JiranisokoTech.Infrastructure.Identity;
@@ -158,6 +160,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ProjectMoneyQueries>();
         services.AddScoped<IExchangeRateRepository, ExchangeRateRepository>();
         services.AddScoped<ExchangeRateService>();
+        /*
+         * How far somebody can see, when the answer is neither everything nor nothing.
+         * Registered before the queries that use it, and used by every one of them rather
+         * than each deciding for itself what a narrow permission means — which is how the
+         * search box came to treat "the projects you are on" as "every project".
+         */
+        services.AddScoped<Reaches>();
         services.AddScoped<SearchQueries>();
         services.AddScoped<AuditQueries>();
 
@@ -176,6 +185,12 @@ public static class ServiceCollectionExtensions
         // Reactions between modules. People knows nothing about work items and
         // must not; the event is what carries a departure across to the board.
         services.AddScoped<IDomainEventHandler<EmployeeLeft>, ReleaseWorkWhenSomebodyLeaves>();
+
+        // Somebody's account was used from a browser and address it has not been used
+        // from before. Sent through the outbox, so a slow mail server cannot make
+        // signing in slow — see TellSomebodyAboutANewPlace.
+        services.AddScoped<IDomainEventHandler<SignedInSomewhereNew>,
+            TellSomebodyAboutANewPlace>();
 
         /*
          * The Git integration. One adapter per provider, registered as a set so

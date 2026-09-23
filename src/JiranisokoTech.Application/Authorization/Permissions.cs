@@ -169,6 +169,21 @@ public static class Permissions
     public const string TasksDeploy = "tasks.deploy";
 
     /// <summary>
+    /// See everybody on the staff list, not only your own department.
+    /// </summary>
+    /// <remarks>
+    /// A new permission rather than a narrowing of employees.view, and the difference
+    /// matters. employees.view is granted to every department head and every delivery
+    /// manager because a roster is meant to be read widely; redefining it as
+    /// "your own department" would have silently taken the roster away from all of them.
+    ///
+    /// So employees.view keeps its meaning of "may open the staff list", and this says how
+    /// much of it. Without it a head sees their own department and whatever they head —
+    /// which is what they answer for — and nothing else.
+    /// </remarks>
+    public const string EmployeesViewAll = "employees.view_all";
+
+    /// <summary>
     /// See and set what somebody is paid, and their identity and tax numbers.
     /// </summary>
     /// <remarks>
@@ -218,7 +233,8 @@ public static class Permissions
         UsersView, UsersInvite, UsersManage, UsersAssignRoles, RolesManage,
         AuditView, SettingsManage,
 
-        EmployeesView, EmployeesManage, EmployeesPay, DepartmentsView, DepartmentsManage,
+        EmployeesView, EmployeesViewAll, EmployeesManage, EmployeesPay,
+        DepartmentsView, DepartmentsManage,
 
         RequisitionsCreate, RequisitionsView, PostingsManage, CandidatesView,
         ApplicationsManage, ApplicationsHire, InterviewsSchedule, InterviewsView,
@@ -280,7 +296,8 @@ public static class Roles
             [HumanResources] =
             [
                 Permissions.UsersView, Permissions.UsersInvite, Permissions.UsersManage,
-                Permissions.EmployeesView, Permissions.EmployeesManage,
+                Permissions.EmployeesView, Permissions.EmployeesViewAll,
+                Permissions.EmployeesManage,
 
                 // HR keeps the contracts and runs the payroll, so HR holds this.
                 // A head of department deliberately does not: they decide what their
@@ -356,7 +373,13 @@ public static class Roles
 
             [ProjectManager] =
             [
-                Permissions.DepartmentsView, Permissions.EmployeesView, Permissions.UsersView,
+                Permissions.DepartmentsView, Permissions.EmployeesView,
+
+                // A delivery manager staffs work from across the firm, so their roster
+                // cannot stop at the department they happen to sit in.
+                Permissions.EmployeesViewAll,
+
+                Permissions.UsersView,
                 Permissions.ProjectsViewAll, Permissions.ProjectsManage,
                 Permissions.TasksViewAll, Permissions.TasksViewOwn, Permissions.TasksCreate,
                 Permissions.TasksAssign, Permissions.TasksReview,

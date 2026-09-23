@@ -1,4 +1,5 @@
 using JiranisokoTech.Application.Authorization;
+using JiranisokoTech.Infrastructure.Authorization;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Work;
 using JiranisokoTech.Infrastructure.Persistence;
@@ -39,7 +40,7 @@ public sealed record SearchResult(ResultKind Kind, Guid Id, string Title, string
 /// the kind of difference that is found by a person typing their own name in
 /// lower case and getting nothing.
 /// </remarks>
-public sealed class SearchQueries(AppDbContext database)
+public sealed class SearchQueries(AppDbContext database, Reaches reaches)
 {
     /// <summary>Short enough to match half the database, so it is refused.</summary>
     public const int ShortestTerm = 2;
@@ -50,6 +51,7 @@ public sealed class SearchQueries(AppDbContext database)
     public async Task<List<SearchResult>> FindAsync(
         string term,
         IReadOnlySet<string> permissions,
+        Guid? employeeId = null,
         CancellationToken cancellationToken = default)
     {
         var cleaned = (term ?? string.Empty).Trim().ToLowerInvariant();
@@ -97,15 +99,22 @@ public sealed class SearchQueries(AppDbContext database)
                 ResultKind.Client, client.Id, client.Name, client.Code, "/clients")));
         }
 
-        // A project is visible to somebody who can see all of them, and also to
-        // an engineer who can only see the ones they are on. The narrower
-        // permission is the one most people hold, so leaving it out would mean
-        // the search box found nothing for almost everybody.
-        if (permissions.Contains(Permissions.ProjectsViewAll)
-            || permissions.Contains(Permissions.ProjectsViewMember))
+        /*
+         * Narrowed to the projects this person can actually see, which it was not.
+         *
+         * This block used to treat holding projects.view_member — granted to every
+         * engineer — as permission to find every project in the firm by name, on the
+         * reasoning that returning nothing would make the search box useless for almost
+         * everybody. Both halves of that were true and the conclusion was still wrong: the
+         * answer was never "everything or nothing", it was the projects they are on, and
+         * there was no way to express that until Reach existed.
+         */
+        var reach = await reaches.ProjectsAsync(permissions, employeeId, cancellationToken);
+
+        if (!reach.IsNothing)
         {
-            var projects = await database.Projects
-                .AsNoTracking()
+            var projects = await reach
+                .Apply(database.Projects.AsNoTracking(), project => project.Id)
                 .Where(project => project.Name.ToLower().Contains(cleaned)
                     || project.Code.ToLower().Contains(cleaned))
                 .OrderBy(project => project.Name)

@@ -1,5 +1,6 @@
 using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Infrastructure.Persistence;
+using JiranisokoTech.Domain.Audit;
 using JiranisokoTech.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -18,6 +19,7 @@ public sealed class SignInService(
     ApplicationSignInManager signInManager,
     UserManager<ApplicationUser> users,
     AppDbContext database,
+    SignInPlaces places,
     IClock clock,
     ILogger<SignInService> logger)
 {
@@ -166,8 +168,47 @@ public sealed class SignInService(
         string? userAgent,
         CancellationToken cancellationToken)
     {
+        /*
+         * Asked before the record is written, because the answer is "has this account
+         * been used here before" and writing this sign-in first makes the answer yes.
+         */
+        var somewhereNew = outcome == SignInOutcome.Succeeded && userId is { } account
+            && await places.IsSomewhereNewAsync(account, ipAddress, userAgent, cancellationToken);
+
         database.Set<SignInRecord>().Add(
             SignInRecord.For(userId, email, outcome, clock.Now, ipAddress, userAgent));
+
+        if (somewhereNew)
+        {
+            /*
+             * Told through the outbox rather than sent here. A mail server that is slow
+             * or down must not make signing in slow or impossible — and the one moment a
+             * person must be able to get in is the moment something has gone wrong with
+             * their account.
+             *
+             * A notice, never a block. This fires for a new laptop as readily as for a
+             * stolen password, and refusing the sign-in would lock people out of their own
+             * accounts on the day they buy a machine.
+             */
+            logger.LogInformation(
+                "Account {UserId} signed in from somewhere it has not been used before.",
+                userId);
+
+            var told = new SignedInSomewhereNew(
+                userId!.Value,
+                email,
+                SignInPlaces.Describe(userAgent),
+                ipAddress ?? "an unknown address",
+                clock.Now);
+
+            /*
+             * Written onto the outbox by hand, which is the only place in this system
+             * that happens. Every other event is raised by an aggregate and collected on
+             * save, and signing in is not a change to a business record — so there is no
+             * aggregate to raise it.
+             */
+            database.Announce(told);
+        }
 
         await database.SaveChangesAsync(cancellationToken);
     }

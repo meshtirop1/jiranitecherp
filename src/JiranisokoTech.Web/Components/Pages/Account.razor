@@ -5,6 +5,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Identity
 @inject SignInService Authentication
+@inject SignInPlaces Where
 @inject UserManager<ApplicationUser> Users
 @inject NavigationManager Navigation
 
@@ -44,6 +45,67 @@ else
             <a href="/account/two-factor">@(TwoStep ? "Change" : "Set it up")</a>
         </dd>
     </dl>
+
+    <h2>Where your account has been used</h2>
+
+    @*
+        Called what it is, and not "your devices".
+
+        A device list implies each row can be ended on its own, and cookie
+        authentication gives no way to do that — there is no server-side record of live
+        sessions to revoke one of. What this reads is the sign-in history, so it can say
+        "this browser at this address has signed in eleven times" and cannot say "end
+        that one". The only honest button is the one below: end all of them.
+
+        Somebody shown a list headed "your devices" reasonably assumes otherwise, and
+        finds out at the worst possible moment.
+    *@
+    @if (Places.Count == 0)
+    {
+        <p class="empty">Nothing recorded yet.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Browsers and addresses this account has used</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Browser</th>
+                    <th scope="col">Address</th>
+                    <th scope="col">First</th>
+                    <th scope="col">Last</th>
+                    <th scope="col">Times</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var place in Places)
+                {
+                    <tr>
+                        <td>@place.Browser</td>
+                        <td><code>@place.Address</code></td>
+                        <td>@place.FirstAt.ToString("d MMM yyyy")</td>
+                        <td>@place.LastAt.ToString("d MMM yyyy HH:mm")</td>
+                        <td class="number">
+                            @place.Times
+                            @if (place.Once)
+                            {
+                                @* Used once and never again is either a borrowed machine
+                                   or the one an attacker used, and both deserve a look. *@
+                                <span class="pill pill--quiet">once</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <p class="subtle">
+            If a row here is not you, use "sign out everywhere" below and ask an
+            administrator for a new password link. You are emailed automatically the
+            first time your account is used from a browser and address it has not been
+            used from before.
+        </p>
+    }
 
     <h2>Recent sign-ins</h2>
 
@@ -132,6 +194,16 @@ else
 
     private List<SignInRecord> History { get; set; } = [];
 
+    /// <summary>
+    /// Browsers and addresses that have signed in, not devices.
+    /// </summary>
+    /// <remarks>
+    /// The distinction is on the screen too. See SignInPlaces: there is no way to end one
+    /// of these on its own, so calling them devices would promise something the page
+    /// cannot do.
+    /// </remarks>
+    private List<SignInPlace> Places { get; set; } = [];
+
     private TimeZoneInfo Zone { get; set; } = TimeZoneInfo.Utc;
 
     private bool TwoStep { get; set; }
@@ -156,6 +228,7 @@ else
         Roles = await Users.GetRolesAsync(Person);
         Zone = ZoneFor(Person.TimeZone);
         History = await Authentication.HistoryFor(userId);
+        Places = await Where.ForAsync(userId);
         TwoStep = await Users.GetTwoFactorEnabledAsync(Person);
     }
 

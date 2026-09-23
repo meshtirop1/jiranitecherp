@@ -44,6 +44,47 @@ public static class Letters
         return Compose(toAddress, toName, "Your Jiranisoko Tech account", text, link);
     }
 
+    /// <summary>
+    /// The account was used somewhere it has not been used before.
+    /// </summary>
+    /// <remarks>
+    /// A notice and not an alarm, and the wording is the whole of the design. This fires
+    /// for a new laptop as readily as for a stolen password, so a message that shouted
+    /// would train somebody to ignore the one that mattered. It says what happened, says
+    /// what to do if it was not them, and does not ask them to confirm anything — there
+    /// is no link to click, because teaching people to click links in security emails is
+    /// how the next attack succeeds.
+    /// </remarks>
+    public static EmailMessage SignedInSomewhereNew(
+        string toAddress, string toName, string browser, string address, DateTimeOffset at)
+    {
+        var text = $"""
+            Hello {toName},
+
+            Your Jiranisoko Tech account was just used to sign in from somewhere it
+            has not been used before.
+
+              When:    {at:dddd d MMMM yyyy 'at' HH:mm} UTC
+              Browser: {browser}
+              Address: {address}
+
+            If that was you — a new laptop, a different office, a phone — there is
+            nothing to do.
+
+            If it was not you, sign in, change your password, and use "sign out
+            everywhere" on your account page. Then tell whoever administers this
+            system.
+
+            There is no link in this message on purpose. Go to the system the way
+            you normally do.
+
+            {Signature}
+            """;
+
+        return Compose(
+            toAddress, toName, "Your account was used somewhere new", text, link: null);
+    }
+
     /// <summary>Somebody is waiting on this person to decide something.</summary>
     public static EmailMessage AwaitingDecision(
         string toAddress,
