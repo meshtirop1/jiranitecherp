@@ -40,9 +40,15 @@ to measure again without refilling. Stop the sidecar with
 `docker rm -f pg-tunnel` when finished; it is a route into the database and it
 should not outlive the measurement.
 
-It exits non-zero when there is a finding, so it can be a gate later. It is not a
-gate now: it needs a database and several minutes, and a check that slow is one
-people learn to skip.
+It exits 0 when nothing is found, 1 when there is a finding or there is nothing
+in the database to measure, and 2 when it refused to start — so it can be a gate
+later. It is not a gate now: it needs a database and several minutes, and a check
+that slow is one people learn to skip.
+
+Both refusals were exercised rather than assumed, by planting a row in
+`AspNetUsers` and running it: it printed two sentences, exited 2, and the row was
+still there afterwards. A guard for something destructive that has never been
+seen refusing is a comment, not a guard.
 
 ## What it measures, and why those three things
 

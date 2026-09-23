@@ -124,9 +124,9 @@ internal static class Program
         Console.WriteLine("Applying migrations.");
         await database.Database.MigrateAsync();
 
-        if (!args.Contains("--no-seed"))
+        if (!args.Contains("--no-seed") && !await SeedAsync(database, connection))
         {
-            await SeedAsync(database, connection);
+            return 2;
         }
 
         await using var planner = new Planner(connection);
@@ -146,7 +146,8 @@ internal static class Program
     /// production connection string into a tool whose first statement is TRUNCATE, and
     /// anything subtler would be something to argue with rather than a stop.
     /// </remarks>
-    private static async Task SeedAsync(AppDbContext database, string connection)
+    /// <returns>False when it refused, and nothing was touched.</returns>
+    private static async Task<bool> SeedAsync(AppDbContext database, string connection)
     {
         var accounts = await database.Database
             .SqlQuery<long>($"""SELECT count(*) AS "Value" FROM "AspNetUsers" """)
@@ -154,9 +155,21 @@ internal static class Program
 
         if (accounts > 0)
         {
-            throw new InvalidOperationException(
-                $"This database holds {accounts} account(s), so somebody signs in to it. The "
-                + "scale check truncates thirteen tables. Point it somewhere else.");
+            /*
+             * Said and returned rather than thrown. This is the one message in this tool
+             * that has to be read, and a .NET unhandled exception puts four lines of stack
+             * trace under it — which is where somebody's eye goes, and it tells them
+             * nothing. The refusal is the whole output.
+             */
+            Console.Error.WriteLine(
+                $"Refusing: this database holds {accounts} account(s), so somebody signs "
+                + "in to it.");
+
+            Console.Error.WriteLine(
+                "The scale check truncates thirteen tables. Point it somewhere else "
+                + "— see docs/performance.md.");
+
+            return false;
         }
 
         var sql = await File.ReadAllTextAsync(
@@ -181,6 +194,8 @@ internal static class Program
         await command.ExecuteNonQueryAsync();
 
         Console.WriteLine($"Filled in {clock.Elapsed.TotalSeconds:F0}s.");
+
+        return true;
     }
 
     private static async Task ReportAsync(AppDbContext database, Planner planner)
@@ -191,9 +206,25 @@ internal static class Program
         var money = new ProjectMoneyQueries(database);
         var reporting = new ReportingQueries(database);
 
-        var anyClient = await database.Clients.Select(one => one.Id).FirstAsync();
-        var anyEmployee = await database.Employees.Select(one => one.Id).FirstAsync();
-        var anyProject = await database.Projects.Select(one => one.Id).FirstAsync();
+        /*
+         * Said as a sentence rather than thrown. Running with --no-seed against a database
+         * nothing has filled is the obvious mistake to make on the second use of this tool,
+         * and "Sequence contains no elements" with a stack trace under it is not an answer
+         * anybody can act on.
+         */
+        var anyClient = await database.Clients.Select(one => one.Id).FirstOrDefaultAsync();
+        var anyEmployee = await database.Employees.Select(one => one.Id).FirstOrDefaultAsync();
+        var anyProject = await database.Projects.Select(one => one.Id).FirstOrDefaultAsync();
+        var anyItem = await database.WorkItems.Select(one => one.Id).FirstOrDefaultAsync();
+
+        if (anyClient == Guid.Empty || anyEmployee == Guid.Empty || anyProject == Guid.Empty)
+        {
+            Console.Error.WriteLine(
+                "There is nothing in this database to measure. Run it without --no-seed.");
+
+            _findings++;
+            return;
+        }
 
         Console.WriteLine();
         Console.WriteLine("What is in it:");
@@ -210,7 +241,6 @@ internal static class Program
         Console.WriteLine($"{"Query",-34}{"rows",9}{"stmts",7}{"median",10}");
         Console.WriteLine(new string('-', 60));
 
-        var anyItem = await database.WorkItems.Select(one => one.Id).FirstAsync();
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
         // --- what a screen does ------------------------------------------------
