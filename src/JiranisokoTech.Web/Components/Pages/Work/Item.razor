@@ -71,16 +71,19 @@ else
         }
     </dl>
 
-    <AuthorizeView Policy="@MovePolicy" Context="permitted">
+    @if (Moves.Count > 0)
+    {
         <h2>Move it</h2>
 
         <div class="actions">
             @*
-                Only the moves the state machine allows are offered. Showing
-                every column and refusing four of them after the click teaches
-                people to distrust the buttons.
+                Only the moves the state machine allows, narrowed to the ones
+                this person may actually make. Two filters, and both matter:
+                showing every column and refusing four after the click teaches
+                people to distrust the buttons, and showing a move somebody is
+                not permitted teaches them the same thing more slowly.
             *@
-            @foreach (var next in WorkItem.NextFrom(Row.Status).Where(status => status != WorkItemStatus.Blocked))
+            @foreach (var next in Moves.Where(status => status != WorkItemStatus.Blocked))
             {
                 <form method="post" @formname="@($"move-{next}")"
                       @onsubmit="() => Move(next, null)">
@@ -91,7 +94,7 @@ else
                 </form>
             }
 
-            @if (WorkItem.NextFrom(Row.Status).Contains(WorkItemStatus.Blocked))
+            @if (Moves.Contains(WorkItemStatus.Blocked))
             {
                 <EditForm Model="Block" method="post" FormName="block"
                           OnValidSubmit="() => Move(WorkItemStatus.Blocked, Block.Reason)"
@@ -104,6 +107,11 @@ else
             }
         </div>
 
+    }
+
+    @* Giving work to somebody is still the board-runner's act, not the
+       worker's, so it keeps its own permission. *@
+    <AuthorizeView Policy="@AssignPolicy" Context="permitted">
         <h2>Assign it</h2>
 
         <EditForm Model="Assignment" method="post" FormName="assign"
@@ -123,7 +131,7 @@ else
 }
 
 @code {
-    private const string MovePolicy = PermissionClaim.PolicyPrefix + Permissions.TasksAssign;
+    private const string AssignPolicy = PermissionClaim.PolicyPrefix + Permissions.TasksAssign;
 
     [Parameter]
     public Guid Id { get; set; }
@@ -151,6 +159,9 @@ else
     private WorkItemRow? Row { get; set; }
 
     private bool MayRead { get; set; }
+
+    /// <summary>The moves this person may make from where the work is now.</summary>
+    private IReadOnlyList<WorkItemStatus> Moves { get; set; } = [];
 
     private List<PersonRow> Staff { get; set; } = [];
 
@@ -183,6 +194,17 @@ else
         MayRead = user.HasPermission(Permissions.TasksViewAll)
             || (Row?.AssigneeId is { } owner && viewer is { } me && owner == me);
 
+        /*
+         * Which buttons to draw, decided by the same code the move itself asks.
+         * Drawing and doing have to agree, and the only way to be sure of that
+         * is that they are one function rather than two that look alike.
+         */
+        var held = user.FindAll(PermissionClaim.Type).Select(claim => claim.Value).ToHashSet();
+
+        Moves = Row is null
+            ? []
+            : WorkPermissions.MovesFor(held, Row.Status, Row.AssigneeId, viewer);
+
         // Only people who can actually take it are offered, which is the same
         // rule the service enforces.
         Staff = await People.RosterAsync(status: EmploymentStatus.Active);
@@ -194,8 +216,30 @@ else
         }
     }
 
+    /// <summary>
+    /// Checked again here, not only when the buttons were drawn.
+    /// </summary>
+    /// <remarks>
+    /// Drawing fewer buttons is what somebody sees; this is what stops it. A
+    /// form post carries a status and a form name, and nothing about a browser
+    /// prevents either being whatever the sender likes — so the page that
+    /// decides which moves to offer has to decide again when one arrives.
+    /// The same function answers both, so the two cannot drift apart.
+    /// </remarks>
     private Task Move(WorkItemStatus status, string? because) =>
-        Run(() => Service.MoveAsync(Id, status, because), $"Moved to {Name(status).ToLowerInvariant()}.");
+        Moves.Contains(status)
+            ? Run(
+                () => Service.MoveAsync(Id, status, because),
+                $"Moved to {Name(status).ToLowerInvariant()}.")
+            : Refuse("That is not a move you can make on this piece of work.");
+
+    private async Task Refuse(string why)
+    {
+        Refusal = why;
+        Done = null;
+
+        await LoadAsync();
+    }
 
     private Task Assign() =>
         Run(() => Service.AssignAsync(Id, Assignment.AssigneeId), "Assigned.");

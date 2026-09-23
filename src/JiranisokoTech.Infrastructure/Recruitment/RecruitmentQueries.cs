@@ -137,6 +137,81 @@ public sealed class RecruitmentQueries(AppDbContext database)
                 database.Applications.Count(application => application.PostingId == posting.Id)))
             .ToListAsync(cancellationToken);
 
+    /// <summary>Every advert, whatever state it is in.</summary>
+    public Task<List<PostingRow>> PostingsAsync(CancellationToken cancellationToken = default) =>
+        database.Postings
+            .AsNoTracking()
+            .OrderByDescending(posting => posting.PublishedAt)
+            .ThenBy(posting => posting.Title)
+            .Select(posting => new PostingRow(
+                posting.Id,
+                posting.Title,
+                posting.Slug,
+                posting.Status,
+                posting.Location,
+                posting.PublishedAt,
+                database.Applications.Count(application => application.PostingId == posting.Id)))
+            .ToListAsync(cancellationToken);
+
+    /// <summary>
+    /// Applications across every advert, for the people who work through them.
+    /// </summary>
+    /// <remarks>
+    /// The existing read takes one advert, which suits a page about that advert
+    /// and not the question somebody in HR actually has, which is "what has come
+    /// in". Ordered oldest first: an application nobody has looked at for three
+    /// weeks is the one that matters, and it is the one a newest-first list
+    /// hides.
+    /// </remarks>
+    public async Task<List<WaitingApplicationRow>> ApplicationsAsync(
+        ApplicationStatus? status = null,
+        Guid? postingId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = database.Applications.AsNoTracking();
+
+        if (status is { } only)
+        {
+            query = query.Where(application => application.Status == only);
+        }
+
+        if (postingId is { } advert)
+        {
+            query = query.Where(application => application.PostingId == advert);
+        }
+
+        var applications = await query
+            .OrderBy(application => application.AppliedAt)
+            .Select(application => new
+            {
+                application.Id,
+                application.PostingId,
+                application.CandidateId,
+                application.Status,
+                application.AppliedAt,
+                HasCv = application.CvStoredName != null,
+            })
+            .ToListAsync(cancellationToken);
+
+        var candidates = await database.Candidates
+            .AsNoTracking()
+            .ToDictionaryAsync(one => one.Id, one => new { one.FullName, one.Email }, cancellationToken);
+
+        var postings = await database.Postings
+            .AsNoTracking()
+            .ToDictionaryAsync(one => one.Id, one => one.Title, cancellationToken);
+
+        return [.. applications.Select(application => new WaitingApplicationRow(
+            application.Id,
+            candidates.GetValueOrDefault(application.CandidateId)?.FullName ?? "A candidate since removed",
+            candidates.GetValueOrDefault(application.CandidateId)?.Email ?? string.Empty,
+            postings.GetValueOrDefault(application.PostingId) ?? "An advert since removed",
+            application.PostingId,
+            application.Status,
+            application.AppliedAt,
+            application.HasCv))];
+    }
+
     /// <summary>
     /// Applications against one advert.
     /// </summary>
@@ -201,6 +276,17 @@ public sealed record PostingRow(
     string? Location,
     DateTimeOffset? PublishedAt,
     int Applications);
+
+/// <summary>An application, with enough around it to act on without opening it.</summary>
+public sealed record WaitingApplicationRow(
+    Guid Id,
+    string CandidateName,
+    string CandidateEmail,
+    string PostingTitle,
+    Guid PostingId,
+    ApplicationStatus Status,
+    DateTimeOffset AppliedAt,
+    bool HasCv);
 
 public sealed record ApplicationRow(
     Guid Id,

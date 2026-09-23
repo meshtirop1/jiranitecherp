@@ -70,6 +70,17 @@
                             }
                             else
                             {
+                                @*
+                                    Approving is expenses.approve, not merely
+                                    being able to open this page. They were the
+                                    same thing before — so the separation
+                                    between approving a claim and paying it,
+                                    which has a test proving no role holds
+                                    both, existed in the role matrix and not in
+                                    the code.
+                                *@
+                                <AuthorizeView Policy="@ApprovePolicy" Context="mayDecide">
+                                <Authorized>
                                 <form method="post" @formname="@($"approve-{claim.Id}")"
                                       @onsubmit="() => Decide(claim.Id, true)">
                                     <AntiforgeryToken />
@@ -93,6 +104,11 @@
                                     <button type="submit" class="danger">Refuse</button>
                                     <ValidationMessage For="() => Refusing.Reason" />
                                 </EditForm>
+                                </Authorized>
+                                <NotAuthorized>
+                                    <span class="subtle">A manager decides these.</span>
+                                </NotAuthorized>
+                                </AuthorizeView>
                             }
                         </td>
                     </tr>
@@ -167,6 +183,8 @@
         get => _refusing;
         set => _refusing = value ?? new RefusalInput();
     }
+
+    private const string ApprovePolicy = PermissionClaim.PolicyPrefix + Permissions.ExpensesApprove;
 
     private Guid? Me { get; set; }
 

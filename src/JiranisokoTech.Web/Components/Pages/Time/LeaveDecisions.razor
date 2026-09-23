@@ -7,7 +7,8 @@
 @using JiranisokoTech.Infrastructure.Business
 @using JiranisokoTech.Infrastructure.People
 @using Microsoft.AspNetCore.Authorization
-@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.LeaveApprove)]
+@* Seeing who is off and deciding a request are different permissions. *@
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.LeaveViewAll)]
 @inject BusinessQueries Queries
 @inject PeopleQueries People
 @inject LeaveService Service
@@ -62,21 +63,28 @@
                             }
                             else
                             {
-                                <form method="post" @formname="@($"approve-{leave.Id}")"
-                                      @onsubmit="() => Decide(leave.Id, true)">
-                                    <AntiforgeryToken />
-                                    <button type="submit" class="button button--quiet">Approve</button>
-                                </form>
+                                <AuthorizeView Policy="@DecidePolicy" Context="mayDecide">
+                                    <Authorized>
+                                        <form method="post" @formname="@($"approve-{leave.Id}")"
+                                              @onsubmit="() => Decide(leave.Id, true)">
+                                            <AntiforgeryToken />
+                                            <button type="submit" class="button button--quiet">Approve</button>
+                                        </form>
 
-                                <EditForm Model="Refusing" method="post"
-                                          FormName="@($"refuse-{leave.Id}")"
-                                          OnValidSubmit="() => Decide(leave.Id, false)"
-                                          class="inline">
-                                    <DataAnnotationsValidator />
-                                    <InputText @bind-Value="Refusing.Reason" placeholder="Why not" />
-                                    <button type="submit" class="danger">Refuse</button>
-                                    <ValidationMessage For="() => Refusing.Reason" />
-                                </EditForm>
+                                        <EditForm Model="Refusing" method="post"
+                                                  FormName="@($"refuse-{leave.Id}")"
+                                                  OnValidSubmit="() => Decide(leave.Id, false)"
+                                                  class="inline">
+                                            <DataAnnotationsValidator />
+                                            <InputText @bind-Value="Refusing.Reason" placeholder="Why not" />
+                                            <button type="submit" class="danger">Refuse</button>
+                                            <ValidationMessage For="() => Refusing.Reason" />
+                                        </EditForm>
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        <span class="subtle">A manager decides these.</span>
+                                    </NotAuthorized>
+                                </AuthorizeView>
                             }
                         </td>
                     </tr>
@@ -125,6 +133,8 @@
         get => _refusing;
         set => _refusing = value ?? new RefusalInput();
     }
+
+    private const string DecidePolicy = PermissionClaim.PolicyPrefix + Permissions.LeaveApprove;
 
     private Guid? Me { get; set; }
 

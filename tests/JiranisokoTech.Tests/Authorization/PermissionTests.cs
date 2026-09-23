@@ -90,7 +90,6 @@ public class PermissionTests
         Assert.DoesNotContain(Permissions.UsersAssignRoles, developer);
         Assert.DoesNotContain(Permissions.RolesManage, developer);
         Assert.DoesNotContain(Permissions.ApprovalsDecide, developer);
-        Assert.DoesNotContain(Permissions.TasksDeploy, developer);
         Assert.DoesNotContain(Permissions.AuditView, developer);
     }
 
@@ -117,7 +116,6 @@ public class PermissionTests
         Assert.Contains(Permissions.TasksCreate, head);
         Assert.Contains(Permissions.TasksAssign, head);
         Assert.Contains(Permissions.TasksReview, head);
-        Assert.Contains(Permissions.TasksDeploy, head);
     }
 
     /// <summary>
@@ -230,15 +228,15 @@ public class PermissionTests
     public async Task The_requirement_is_met_only_by_holding_the_permission()
     {
         var handler = new PermissionAuthorizationHandler();
-        var requirement = new PermissionRequirement(Permissions.TasksDeploy);
+        var requirement = new PermissionRequirement(Permissions.TasksReview);
 
-        var holder = Principal(Permissions.TasksDeploy, Permissions.TasksReview);
+        var holder = Principal(Permissions.TasksReview, Permissions.TasksCreate);
         var granted = new AuthorizationHandlerContext([requirement], holder, null);
         await handler.HandleAsync(granted);
 
         Assert.True(granted.HasSucceeded);
 
-        var other = Principal(Permissions.TasksReview);
+        var other = Principal(Permissions.TasksCreate);
         var refused = new AuthorizationHandlerContext([requirement], other, null);
         await handler.HandleAsync(refused);
 
@@ -269,7 +267,7 @@ public class PermissionTests
         var principal = Principal(Permissions.TasksCreate, Permissions.ReportsView);
 
         Assert.True(principal.HasPermission(Permissions.TasksCreate));
-        Assert.False(principal.HasPermission(Permissions.TasksDeploy));
+        Assert.False(principal.HasPermission(Permissions.TasksReview));
         // Compared as a set: the claim order on a principal is not meaningful,
         // and asserting it would make this fail the day the order changed for
         // a reason nobody cares about.

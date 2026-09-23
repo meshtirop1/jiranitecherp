@@ -1,0 +1,106 @@
+@page "/accounts/roles"
+@using JiranisokoTech.Application.Authorization
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.RolesManage)]
+
+@*
+    The role matrix, shown and not edited — and that is the whole design.
+
+    The matrix lives in one file in code, which is what lets the seeder, the
+    policies, the tests and this page all read the same thing. A screen that
+    edited it would mean the database could disagree with the code, and the
+    disagreement would be invisible: the tests would still pass, because they
+    test the code.
+
+    So roles.manage opens this rather than a set of checkboxes. What it buys is
+    the ability to answer "why can Charity do that" without reading source,
+    which is the question this page actually gets asked.
+*@
+
+<PageTitle>Roles — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/accounts">Accounts</a></nav>
+
+<div class="page-head">
+    <h1>Roles</h1>
+    <p class="subtle">@Roles.All.Count roles, @Permissions.All.Count permissions.</p>
+</div>
+
+<p>
+    Roles are additive: somebody may hold several, and what they can do is the
+    union. <strong>Interviewer</strong> is meant to be worn alongside another
+    role rather than on its own.
+</p>
+
+<p class="subtle">
+    This is read from the code that enforces it, not from the database — so what
+    is on this page is what actually applies. Changing it is a change to
+    <code>Permissions.cs</code>, deliberately: a matrix editable at runtime is
+    one the tests can no longer vouch for.
+</p>
+
+@foreach (var group in Grouped)
+{
+    <section class="standing">
+        <h2>@group.Key</h2>
+
+        <table class="grid">
+            <caption class="visually-hidden">@group.Key permissions by role</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Permission</th>
+                    @foreach (var role in Roles.All)
+                    {
+                        <th scope="col">@Name(role)</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var permission in group)
+                {
+                    <tr>
+                        <td><code>@permission</code></td>
+                        @foreach (var role in Roles.All)
+                        {
+                            <td class="number">
+                                @if (Roles.PermissionsFor(role).Contains(permission))
+                                {
+                                    <span aria-label="yes">●</span>
+                                }
+                                else
+                                {
+                                    <span class="subtle" aria-label="no">—</span>
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+@code {
+    /// <summary>
+    /// Grouped by the noun in front of the dot.
+    /// </summary>
+    /// <remarks>
+    /// Which is the grouping the naming convention was chosen for:
+    /// resource.action means the resource is already the first thing on every
+    /// line, and a table of sixty rows is unreadable without it.
+    /// </remarks>
+    private static IEnumerable<IGrouping<string, string>> Grouped =>
+        Permissions.All.GroupBy(permission => permission.Split('.')[0]);
+
+    private static string Name(string role) => role switch
+    {
+        Roles.Owner => "Owner",
+        Roles.Administrator => "Admin",
+        Roles.HumanResources => "HR",
+        Roles.DepartmentHead => "Head",
+        Roles.ProjectManager => "Manager",
+        Roles.Developer => "Developer",
+        Roles.Interviewer => "Interviewer",
+        _ => role,
+    };
+}

@@ -5,7 +5,12 @@
 @using JiranisokoTech.Infrastructure.Business
 @using JiranisokoTech.Infrastructure.People
 @using Microsoft.AspNetCore.Authorization
-@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.TimeApprove)]
+@*
+    Opening this needs time.view_all; approving needs time.approve. They were
+    the same check before, which meant HR — who hold the first and not the
+    second — could not see a timesheet at all, having been granted exactly that.
+*@
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.TimeViewAll)]
 @inject BusinessQueries Queries
 @inject PeopleQueries People
 @inject TimesheetService Service
@@ -83,11 +88,18 @@ else
                         }
                         else
                         {
-                            <form method="post" @formname="@($"approve-{entry.Id}")"
-                                  @onsubmit="() => Approve(entry.Id)">
-                                <AntiforgeryToken />
-                                <button type="submit" class="button button--quiet">Approve</button>
-                            </form>
+                            <AuthorizeView Policy="@ApprovePolicy" Context="mayApprove">
+                                <Authorized>
+                                    <form method="post" @formname="@($"approve-{entry.Id}")"
+                                          @onsubmit="() => Approve(entry.Id)">
+                                        <AntiforgeryToken />
+                                        <button type="submit" class="button button--quiet">Approve</button>
+                                    </form>
+                                </Authorized>
+                                <NotAuthorized>
+                                    <span class="subtle">A manager signs these off.</span>
+                                </NotAuthorized>
+                            </AuthorizeView>
                         }
                     </td>
                 </tr>
@@ -99,6 +111,8 @@ else
 @code {
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private const string ApprovePolicy = PermissionClaim.PolicyPrefix + Permissions.TimeApprove;
 
     private Guid? Me { get; set; }
 

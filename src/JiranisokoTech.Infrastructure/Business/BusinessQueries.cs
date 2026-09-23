@@ -1,4 +1,5 @@
 using JiranisokoTech.Domain.Clients;
+using JiranisokoTech.Domain.Recruitment;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Time;
 using JiranisokoTech.Infrastructure.Persistence;
@@ -373,6 +374,73 @@ public sealed class BusinessQueries(AppDbContext database)
             .AsNoTracking()
             .FirstOrDefaultAsync(client => client.Id == id, cancellationToken);
 
+    // --- interviews ---------------------------------------------------------
+
+    /// <summary>
+    /// Interviews with enough around them to run one.
+    /// </summary>
+    /// <remarks>
+    /// Loaded as aggregates rather than projected, because everything worth
+    /// showing — who is on the panel, who has scored, what the panel concluded
+    /// — is computed by the interview from its own owned collections. A
+    /// projection would have to restate those rules in SQL, and the one that
+    /// matters is the rule that a single strong no carries the panel.
+    /// </remarks>
+    public async Task<List<InterviewRow>> InterviewsAsync(
+        bool upcomingOnly = false, CancellationToken cancellationToken = default)
+    {
+        var query = database.Interviews
+            .AsNoTracking()
+            .Include(interview => interview.Panel)
+            .Include(interview => interview.Scorecards)
+            .AsQueryable();
+
+        if (upcomingOnly)
+        {
+            query = query.Where(interview => interview.Status == InterviewStatus.Scheduled);
+        }
+
+        var interviews = await query
+            .OrderBy(interview => interview.ScheduledFor)
+            .ToListAsync(cancellationToken);
+
+        var applications = await database.Applications
+            .AsNoTracking()
+            .ToDictionaryAsync(one => one.Id, one => one.CandidateId, cancellationToken);
+
+        var candidates = await database.Candidates
+            .AsNoTracking()
+            .ToDictionaryAsync(one => one.Id, one => one.FullName, cancellationToken);
+
+        var people = await PeopleAsync(cancellationToken);
+
+        return [.. interviews.Select(interview =>
+        {
+            var candidate = applications.TryGetValue(interview.ApplicationId, out var candidateId)
+                ? candidates.GetValueOrDefault(candidateId)
+                : null;
+
+            return new InterviewRow(
+                interview.Id,
+                interview.ApplicationId,
+                candidate ?? "A candidate since removed",
+                interview.Kind,
+                interview.ScheduledFor,
+                interview.Where,
+                interview.Status,
+                [.. interview.Panel.Select(one =>
+                    people.GetValueOrDefault(one.EmployeeId) ?? "Somebody who has left")],
+                [.. interview.Panel.Select(one => one.EmployeeId)],
+                [.. interview.Scorecards.Select(card => new ScorecardRow(
+                    people.GetValueOrDefault(card.InterviewerId) ?? "Somebody who has left",
+                    card.InterviewerId,
+                    card.Recommendation,
+                    card.Notes))],
+                interview.IsScored,
+                interview.Scorecards.Count > 0 ? interview.Verdict() : null);
+        })];
+    }
+
     // --- shared lookups -----------------------------------------------------
 
     private Task<Dictionary<Guid, string>> PeopleAsync(CancellationToken cancellationToken) =>
@@ -468,3 +536,24 @@ public sealed record InvoiceRow(
     public bool IsOverdueOn(DateOnly today) =>
         DueOn < today && Status is InvoiceStatus.Sent or InvoiceStatus.PartlyPaid;
 }
+
+/// <summary>One interview, and what the panel has said so far.</summary>
+public sealed record InterviewRow(
+    Guid Id,
+    Guid ApplicationId,
+    string CandidateName,
+    InterviewKind Kind,
+    DateTimeOffset ScheduledFor,
+    string? Where,
+    InterviewStatus Status,
+    IReadOnlyList<string> Panel,
+    IReadOnlyList<Guid> PanelIds,
+    IReadOnlyList<ScorecardRow> Scorecards,
+    bool IsScored,
+    Recommendation? Verdict);
+
+public sealed record ScorecardRow(
+    string InterviewerName,
+    Guid InterviewerId,
+    Recommendation Recommendation,
+    string Notes);

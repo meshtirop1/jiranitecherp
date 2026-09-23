@@ -1,0 +1,245 @@
+@page "/hiring/applications"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Recruitment
+@using JiranisokoTech.Domain.Recruitment
+@using JiranisokoTech.Infrastructure.Recruitment
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.CandidatesView)]
+@inject RecruitmentQueries Queries
+@inject RecruitmentService Service
+@inject NavigationManager Navigation
+
+@*
+    The page that was missing. The careers site has been accepting applications
+    and storing CVs, and there was nowhere to read them — so an application
+    arrived, the outbox sent its acknowledgement, and it sat in a table nobody
+    could open.
+
+    Oldest first, because the application nobody has looked at for three weeks
+    is the one that matters, and a newest-first list is exactly what hides it.
+*@
+
+<PageTitle>Applications — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/hiring">Hiring</a></nav>
+
+<div class="page-head">
+    <h1>Applications</h1>
+    <p class="subtle">@Rows.Count @(Rows.Count == 1 ? "application" : "applications").</p>
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<form method="get" class="filters">
+    <label>
+        <span>Advert</span>
+        <select name="posting">
+            <option value="">All adverts</option>
+            @foreach (var posting in Postings)
+            {
+                <option value="@posting.Id" selected="@(PostingId == posting.Id)">@posting.Title</option>
+            }
+        </select>
+    </label>
+
+    <label>
+        <span>State</span>
+        <select name="state">
+            <option value="">Anything open</option>
+            @foreach (var state in Enum.GetValues<ApplicationStatus>())
+            {
+                <option value="@state" selected="@(State == state)">@Spaced(state)</option>
+            }
+        </select>
+    </label>
+
+    <button type="submit">Show</button>
+    <a class="filters__clear" href="/hiring/applications">Clear</a>
+</form>
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">Nothing matches that.</p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Applications</caption>
+        <thead>
+            <tr>
+                <th scope="col">Who</th>
+                <th scope="col">For</th>
+                <th scope="col">Applied</th>
+                <th scope="col">State</th>
+                <th scope="col">CV</th>
+                <th scope="col"><span class="visually-hidden">What to do</span></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Rows)
+            {
+                <tr>
+                    <td>
+                        @row.CandidateName
+                        <span class="subtle">@row.CandidateEmail</span>
+                    </td>
+                    <td>@row.PostingTitle</td>
+                    <td>@row.AppliedAt.ToString("d MMM yyyy")</td>
+                    <td><span class="pill @PillFor(row.Status)">@Spaced(row.Status)</span></td>
+                    <td>
+                        @if (row.HasCv)
+                        {
+                            @* Through code that checks who is asking, never from
+                               a folder: these are strangers' CVs. *@
+                            <a href="/cv/@row.Id">Read it</a>
+                        }
+                        else
+                        {
+                            <span class="subtle">None sent</span>
+                        }
+                    </td>
+                    <td class="actions">
+                        <AuthorizeView Policy="@MovePolicy" Context="mayMove">
+                            @foreach (var next in Next(row.Status))
+                            {
+                                <form method="post" @formname="@($"move-{row.Id}-{next}")"
+                                      @onsubmit="() => Move(row.Id, next)">
+                                    <AntiforgeryToken />
+                                    <button type="submit"
+                                            class="@(next == ApplicationStatus.Rejected ? "danger" : "button button--quiet")">
+                                        @Spaced(next)
+                                    </button>
+                                </form>
+                            }
+                        </AuthorizeView>
+
+                        @if (row.Status == ApplicationStatus.Offered)
+                        {
+                            <AuthorizeView Policy="@HirePolicy" Context="mayHire">
+                                <Authorized>
+                                    @*
+                                        Hiring is its own permission because it is
+                                        not a step in a pipeline — it creates a
+                                        member of staff and takes a place off the
+                                        requisition.
+                                    *@
+                                    <form method="post" @formname="@($"hire-{row.Id}")"
+                                          @onsubmit="() => Hire(row.Id)">
+                                        <AntiforgeryToken />
+                                        <button type="submit">Hire them</button>
+                                    </form>
+                                </Authorized>
+                                <NotAuthorized>
+                                    <span class="subtle">HR completes the hire.</span>
+                                </NotAuthorized>
+                            </AuthorizeView>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private const string MovePolicy = PermissionClaim.PolicyPrefix + Permissions.ApplicationsManage;
+    private const string HirePolicy = PermissionClaim.PolicyPrefix + Permissions.ApplicationsHire;
+
+    [SupplyParameterFromQuery(Name = "posting")]
+    private Guid? PostingId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "state")]
+    private string? StateName { get; set; }
+
+    private ApplicationStatus? State =>
+        Enum.TryParse<ApplicationStatus>(StateName, out var parsed) ? parsed : null;
+
+    private List<WaitingApplicationRow> Rows { get; set; } = [];
+
+    private List<PostingRow> Postings { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Postings = await Queries.PostingsAsync();
+
+        var all = await Queries.ApplicationsAsync(State, PostingId);
+
+        // With no filter asked for, the settled ones are left out. Somebody
+        // opening this wants what still needs doing; the rejected pile is a
+        // different question and has a filter of its own.
+        Rows = State is null
+            ? [.. all.Where(row => row.Status is not (ApplicationStatus.Rejected
+                or ApplicationStatus.Withdrawn or ApplicationStatus.Hired))]
+            : all;
+    }
+
+    /// <summary>
+    /// Where an application can go from here.
+    /// </summary>
+    /// <remarks>
+    /// Named here rather than read from the domain because JobApplication has no
+    /// transition table — it validates the move when asked. Offering only these
+    /// keeps the buttons honest; the service is still what refuses a bad one.
+    /// </remarks>
+    private static IReadOnlyList<ApplicationStatus> Next(ApplicationStatus status) => status switch
+    {
+        ApplicationStatus.Received =>
+            [ApplicationStatus.Screening, ApplicationStatus.Rejected],
+        ApplicationStatus.Screening =>
+            [ApplicationStatus.Interviewing, ApplicationStatus.Rejected],
+        ApplicationStatus.Interviewing =>
+            [ApplicationStatus.Offered, ApplicationStatus.Rejected],
+        ApplicationStatus.Offered =>
+            [ApplicationStatus.Rejected],
+        _ => [],
+    };
+
+    private Task Move(Guid id, ApplicationStatus status) =>
+        TryAsync(() => Service.MoveApplicationAsync(id, status));
+
+    private Task Hire(Guid id) => TryAsync(() => Service.HireAsync(id));
+
+    private async Task TryAsync(Func<Task> act)
+    {
+        Refusal = null;
+
+        try
+        {
+            await act();
+            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string Spaced(ApplicationStatus status) => status switch
+    {
+        ApplicationStatus.Received => "Received",
+        ApplicationStatus.Screening => "Screening",
+        ApplicationStatus.Interviewing => "Interviewing",
+        ApplicationStatus.Offered => "Offered",
+        ApplicationStatus.Hired => "Hired",
+        ApplicationStatus.Rejected => "Not taken forward",
+        ApplicationStatus.Withdrawn => "Withdrawn",
+        _ => status.ToString(),
+    };
+
+    private static string? PillFor(ApplicationStatus status) => status switch
+    {
+        ApplicationStatus.Hired => "pill--done",
+        ApplicationStatus.Rejected or ApplicationStatus.Withdrawn => "pill--quiet",
+        _ => null,
+    };
+}

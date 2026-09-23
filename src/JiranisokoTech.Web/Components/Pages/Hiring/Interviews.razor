@@ -1,0 +1,406 @@
+@page "/hiring/interviews"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Abstractions
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Domain.People
+@using JiranisokoTech.Domain.Recruitment
+@using JiranisokoTech.Infrastructure.Business
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Infrastructure.Recruitment
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.InterviewsView)]
+@inject BusinessQueries Queries
+@inject RecruitmentQueries Hiring
+@inject PeopleQueries People
+@inject InterviewService Service
+@inject IClock Clock
+@inject NavigationManager Navigation
+
+@*
+    The interviews had a domain, a service and twenty-odd tests, and no screen
+    at all — so nobody could schedule one or submit a scorecard. Three roles
+    were granted scorecards.submit and there was nothing to submit to.
+
+    One page rather than a list and a detail page, because an interview is a
+    short-lived thing: it is scheduled, it happens, three people score it, and
+    it is done. Paging through to a detail screen to type four sentences is how
+    scorecards go unwritten, and a scorecard that is never written is the whole
+    apparatus wasted.
+*@
+
+<PageTitle>Interviews — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/hiring">Hiring</a></nav>
+
+<div class="page-head">
+    <h1>Interviews</h1>
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Me is null)
+{
+    <p class="refusal" role="alert">
+        Your sign-in is not linked to a staff record. A scorecard records who
+        wrote it, so there has to be somebody to record.
+    </p>
+}
+
+<AuthorizeView Policy="@SchedulePolicy" Context="maySchedule">
+    @if (Interviewing.Count == 0)
+    {
+        <p class="subtle">
+            Nobody is at the interviewing stage. Move an application to
+            <a href="/hiring/applications">interviewing</a> first.
+        </p>
+    }
+    else
+    {
+        <EditForm Model="Input" method="post" OnValidSubmit="Schedule" FormName="schedule"
+                  class="panel stack">
+            <DataAnnotationsValidator />
+
+            <h2>Schedule one</h2>
+
+            <label>
+                <span>Who</span>
+                <InputSelect @bind-Value="Input.ApplicationId">
+                    @foreach (var application in Interviewing)
+                    {
+                        <option value="@application.Id">
+                            @application.CandidateName — @application.PostingTitle
+                        </option>
+                    }
+                </InputSelect>
+                <ValidationMessage For="() => Input.ApplicationId" />
+            </label>
+
+            <div class="fields">
+                <label>
+                    <span>What kind</span>
+                    <InputSelect @bind-Value="Input.Kind">
+                        @foreach (var kind in Enum.GetValues<InterviewKind>())
+                        {
+                            <option value="@kind">@kind</option>
+                        }
+                    </InputSelect>
+                </label>
+
+                <label>
+                    <span>When</span>
+                    <InputDate @bind-Value="Input.On" Type="InputDateType.DateTimeLocal" />
+                </label>
+
+                <label>
+                    <span>Where</span>
+                    <InputText @bind-Value="Input.Where" placeholder="A room, or a link" />
+                </label>
+            </div>
+
+            <fieldset class="scopes">
+                <legend>Who is on the panel</legend>
+
+                @*
+                    The panel is also who scorecards are expected from, which is
+                    why it is chosen now rather than left to whoever turns up.
+                *@
+                @foreach (var person in Staff)
+                {
+                    <label class="check">
+                        <input type="checkbox" name="panel" value="@person.Id" />
+                        <span>@person.FullName</span>
+                    </label>
+                }
+            </fieldset>
+
+            <button type="submit">Schedule it</button>
+        </EditForm>
+    }
+</AuthorizeView>
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">No interviews have been scheduled.</p>
+}
+else
+{
+    @foreach (var interview in Rows)
+    {
+        <section class="standing">
+            <h2>@interview.CandidateName — @interview.Kind</h2>
+
+            <p>
+                @interview.ScheduledFor.ToString("dddd d MMMM yyyy, HH:mm")@(interview.Where is { } where ? $", {where}" : null)
+                <span class="pill @PillFor(interview.Status)">@interview.Status</span>
+                @if (interview.Verdict is { } verdict)
+                {
+                    <span class="pill @(verdict is Recommendation.StrongNo or Recommendation.No ? "pill--danger" : "pill--done")">
+                        @Say(verdict)
+                    </span>
+                }
+            </p>
+
+            <p class="subtle">Panel: @string.Join(", ", interview.Panel)</p>
+
+            @if (interview.Scorecards.Count > 0)
+            {
+                <ul class="plain">
+                    @foreach (var card in interview.Scorecards)
+                    {
+                        <li>
+                            <strong>@card.InterviewerName</strong>
+                            <span class="pill">@Say(card.Recommendation)</span>
+                            <span>@card.Notes</span>
+                        </li>
+                    }
+                </ul>
+            }
+
+            @if (interview.Status == InterviewStatus.Scheduled)
+            {
+                <AuthorizeView Policy="@SchedulePolicy" Context="mayHold">
+                    <div class="actions">
+                        @*
+                            Marking it held is what opens it for scoring: the
+                            domain refuses a scorecard before then, because an
+                            opinion filed before the conversation is one formed
+                            from a CV.
+                        *@
+                        <form method="post" @formname="@($"held-{interview.Id}")"
+                              @onsubmit="() => Held(interview.Id)">
+                            <AntiforgeryToken />
+                            <button type="submit">It happened</button>
+                        </form>
+
+                        <EditForm Model="Cancelling" method="post"
+                                  FormName="@($"cancel-{interview.Id}")"
+                                  OnValidSubmit="() => Cancel(interview.Id)" class="inline">
+                            <DataAnnotationsValidator />
+                            <InputText @bind-Value="Cancelling.Reason" placeholder="Why not" />
+                            <button type="submit" class="danger">Cancel it</button>
+                            <ValidationMessage For="() => Cancelling.Reason" />
+                        </EditForm>
+                    </div>
+                </AuthorizeView>
+            }
+            else if (interview.Status == InterviewStatus.Held && MayScore(interview))
+            {
+                <AuthorizeView Policy="@ScorePolicy" Context="mayScore">
+                    <EditForm Model="Scoring" method="post"
+                              FormName="@($"score-{interview.Id}")"
+                              OnValidSubmit="() => Score(interview.Id)" class="panel stack">
+                        <DataAnnotationsValidator />
+
+                        <h3>What did you think?</h3>
+
+                        <label>
+                            <span>Your recommendation</span>
+                            <InputSelect @bind-Value="Scoring.Recommendation">
+                                @foreach (var option in Enum.GetValues<Recommendation>())
+                                {
+                                    <option value="@option">@Say(option)</option>
+                                }
+                            </InputSelect>
+                        </label>
+
+                        <label>
+                            <span>Why</span>
+                            <InputTextArea @bind-Value="Scoring.Notes" rows="3"
+                                           placeholder="What you saw. A recommendation on its own tells nobody anything." />
+                            <ValidationMessage For="() => Scoring.Notes" />
+                        </label>
+
+                        <button type="submit">Submit it</button>
+                    </EditForm>
+                </AuthorizeView>
+            }
+            else if (interview.Status == InterviewStatus.Held && interview.PanelIds.Contains(Me ?? Guid.Empty))
+            {
+                <p class="subtle">You have scored this one.</p>
+            }
+        </section>
+    }
+}
+
+@code {
+    private const string SchedulePolicy =
+        PermissionClaim.PolicyPrefix + Permissions.InterviewsSchedule;
+
+    private const string ScorePolicy = PermissionClaim.PolicyPrefix + Permissions.ScorecardsSubmit;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    private ScheduleInput _input = new();
+
+    [SupplyParameterFromForm(FormName = "schedule")]
+    private ScheduleInput Input
+    {
+        get => _input;
+        set => _input = value ?? new ScheduleInput();
+    }
+
+    private ScoreInput _scoring = new();
+
+    [SupplyParameterFromForm(FormName = "score")]
+    private ScoreInput Scoring
+    {
+        get => _scoring;
+        set => _scoring = value ?? new ScoreInput();
+    }
+
+    private CancelInput _cancelling = new();
+
+    [SupplyParameterFromForm(FormName = "cancel")]
+    private CancelInput Cancelling
+    {
+        get => _cancelling;
+        set => _cancelling = value ?? new CancelInput();
+    }
+
+    private Guid? Me { get; set; }
+
+    private List<InterviewRow> Rows { get; set; } = [];
+
+    private List<WaitingApplicationRow> Interviewing { get; set; } = [];
+
+    private List<PersonRow> Staff { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Input.On == default)
+        {
+            Input.On = Clock.Now.LocalDateTime.Date.AddDays(1).AddHours(10);
+        }
+
+        var state = await AuthenticationState;
+
+        if (Guid.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            Me = await People.EmployeeForAccountAsync(account);
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Rows = await Queries.InterviewsAsync();
+        Interviewing = await Hiring.ApplicationsAsync(ApplicationStatus.Interviewing);
+        Staff = await People.RosterAsync(status: EmploymentStatus.Active);
+
+        Input.ApplicationId ??= Interviewing.FirstOrDefault()?.Id;
+    }
+
+    /// <summary>
+    /// Whether to offer this person the scorecard form.
+    /// </summary>
+    /// <remarks>
+    /// On the panel, and has not scored yet. The domain refuses both cases
+    /// anyway; asking here is what stops a form being drawn that can only be
+    /// refused, which is a different and quieter kind of rudeness.
+    /// </remarks>
+    private bool MayScore(InterviewRow interview) =>
+        Me is { } me
+        && interview.PanelIds.Contains(me)
+        && interview.Scorecards.All(card => card.InterviewerId != me);
+
+    private Task Schedule() => TryAsync(async () =>
+    {
+        var panel = (Request?.Request.Form["panel"] ?? default)
+            .Select(value => Guid.TryParse(value, out var id) ? id : Guid.Empty)
+            .Where(id => id != Guid.Empty)
+            .ToList();
+
+        if (panel.Count == 0)
+        {
+            throw new ArgumentException("Choose at least one interviewer.");
+        }
+
+        await Service.ScheduleAsync(
+            Input.ApplicationId!.Value,
+            Input.Kind,
+            new DateTimeOffset(Input.On, TimeSpan.Zero),
+            panel,
+            Input.Where);
+    });
+
+    private Task Held(Guid id) => TryAsync(() => Service.HeldAsync(id));
+
+    private Task Cancel(Guid id) => TryAsync(() => Service.CancelAsync(id, Cancelling.Reason));
+
+    private Task Score(Guid id) => TryAsync(() => Service.ScoreAsync(
+        id, Me!.Value, Scoring.Recommendation, Scoring.Notes));
+
+    private async Task TryAsync(Func<Task> act)
+    {
+        Refusal = null;
+
+        try
+        {
+            await act();
+            Navigation.NavigateTo("/hiring/interviews", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string Say(Recommendation recommendation) => recommendation switch
+    {
+        Recommendation.StrongNo => "Strong no",
+        Recommendation.No => "No",
+        Recommendation.Yes => "Yes",
+        Recommendation.StrongYes => "Strong yes",
+        _ => recommendation.ToString(),
+    };
+
+    private static string? PillFor(InterviewStatus status) => status switch
+    {
+        InterviewStatus.Held => "pill--done",
+        InterviewStatus.Cancelled or InterviewStatus.NoShow => "pill--quiet",
+        _ => null,
+    };
+
+    private sealed class ScheduleInput
+    {
+        [Required(ErrorMessage = "Choose who is being interviewed.")]
+        public Guid? ApplicationId { get; set; }
+
+        public InterviewKind Kind { get; set; } = InterviewKind.Screening;
+
+        public DateTime On { get; set; }
+
+        [StringLength(200)]
+        public string? Where { get; set; }
+    }
+
+    private sealed class ScoreInput
+    {
+        public Recommendation Recommendation { get; set; } = Recommendation.Yes;
+
+        [Required(ErrorMessage = "Say what you saw. A recommendation on its own tells nobody anything.")]
+        [StringLength(4000)]
+        public string Notes { get; set; } = string.Empty;
+    }
+
+    private sealed class CancelInput
+    {
+        [Required(ErrorMessage = "Say why.")]
+        [StringLength(500)]
+        public string Reason { get; set; } = string.Empty;
+    }
+}

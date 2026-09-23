@@ -127,7 +127,6 @@ public static class Permissions
     public const string TasksUpdateOwn = "tasks.update_own";
     public const string TasksSubmit = "tasks.submit";
     public const string TasksReview = "tasks.review";
-    public const string TasksDeploy = "tasks.deploy";
 
     // --- approvals and reporting -------------------------------------------
     public const string ApprovalsDecide = "approvals.decide";
@@ -155,7 +154,7 @@ public static class Permissions
 
         ProjectsViewAll, ProjectsViewMember, ProjectsManage,
         TasksViewAll, TasksViewOwn, TasksCreate, TasksAssign, TasksUpdateOwn, TasksSubmit,
-        TasksReview, TasksDeploy,
+        TasksReview,
 
         ApprovalsDecide, ReportsView,
     ];
@@ -232,7 +231,7 @@ public static class Roles
                 // finishes. Review without create means they can only ever react
                 // to work somebody else set.
                 Permissions.TasksViewAll, Permissions.TasksViewOwn, Permissions.TasksCreate,
-                Permissions.TasksAssign, Permissions.TasksReview, Permissions.TasksDeploy,
+                Permissions.TasksAssign, Permissions.TasksReview,
 
                 Permissions.ApprovalsDecide,
                 Permissions.RequisitionsCreate, Permissions.RequisitionsView,

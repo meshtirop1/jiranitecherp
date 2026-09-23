@@ -299,6 +299,83 @@ public class BusinessPageTests(ApplicationFactory factory) : IClassFixture<Appli
         Assert.Contains("/sign-in", response.Headers.Location!.OriginalString);
     }
 
+    /// <summary>
+    /// The screens that were missing entirely open for the roles granted them.
+    /// </summary>
+    /// <remarks>
+    /// Applications and interviews had a domain, services and tests, and no
+    /// page — so the careers site accepted applications nobody could read, and
+    /// three roles held scorecards.submit with nothing to submit to.
+    /// </remarks>
+    [Theory]
+    [InlineData("/hiring/applications", "Applications")]
+    [InlineData("/hiring/interviews", "Interviews")]
+    public async Task Hr_can_open_the_recruitment_screens(string path, string heading)
+    {
+        var browser = await SignedInAsync("hr2@jiranisokotech.co.ke", Roles.HumanResources);
+
+        var response = await browser.GetAsync(path);
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains(heading, html);
+    }
+
+    /// <summary>
+    /// An interviewer can open the interview they are asked to score.
+    /// </summary>
+    /// <remarks>
+    /// Interviewer is the narrowest role and holds interviews.view precisely so
+    /// that this works. It is the role most likely to be forgotten, being the
+    /// one nobody holds on its own.
+    /// </remarks>
+    [Fact]
+    public async Task An_interviewer_can_open_interviews()
+    {
+        var browser = await SignedInAsync("panel@jiranisokotech.co.ke", Roles.Interviewer);
+
+        var response = await browser.GetAsync("/hiring/interviews");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_developer_cannot_open_the_recruitment_screens()
+    {
+        var browser = await SignedInAsync("dev6@jiranisokotech.co.ke", Roles.Developer);
+
+        foreach (var path in new[] { "/hiring/applications", "/hiring/interviews", "/accounts/roles" })
+        {
+            var response = await browser.GetAsync(path);
+
+            Assert.Equal(HttpStatusCode.Found, response.StatusCode);
+            Assert.Contains("/denied", response.Headers.Location!.OriginalString);
+        }
+    }
+
+    /// <summary>
+    /// HR can see timesheets, which they could not before.
+    /// </summary>
+    /// <remarks>
+    /// They hold time.view_all and not time.approve. The page asked for
+    /// time.approve, so a permission granted specifically to let HR reconcile
+    /// absence against hours let them see nothing at all.
+    /// </remarks>
+    [Fact]
+    public async Task Hr_can_see_timesheets_without_being_able_to_approve_them()
+    {
+        var browser = await SignedInAsync("hr3@jiranisokotech.co.ke", Roles.HumanResources);
+
+        var response = await browser.GetAsync("/time/approvals");
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("Timesheets", html);
+
+        // Seen, not signed off. The approve button belongs to time.approve.
+        Assert.DoesNotContain("Approve</button>", html);
+    }
+
     private async Task<HttpClient> SignedInAsync(string email, string role)
     {
         using (var scope = factory.Services.CreateScope())
