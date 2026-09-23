@@ -21,13 +21,25 @@
 .idea/
 *.swp
 
-# Messages the file mailer writes in development. Correspondence, and not
-# something to commit.
-mail/
-
-# Candidate CVs written by the file store. Documents belonging to people
-# outside this firm, and not something to commit.
-cvs/
+# Messages the file mailer writes in development, and CVs the file store
+# writes. Correspondence and other people's documents, and not something to
+# commit.
+#
+# Anchored with a leading slash, and that is not tidiness. Written bare as
+# "mail/" the rule matches a directory of that name ANYWHERE in the tree — and
+# because git on Windows has core.ignoreCase set, it matched src/.../Mail/ as
+# well. The entire mail feature, source and tests, was therefore invisible to
+# git for weeks while commits went in that claimed to add it. A clean clone did
+# not compile.
+#
+# These paths are where the File transports actually write, relative to the
+# content root. Anything else called Mail is source.
+/mail/
+/src/JiranisokoTech.Web/mail/
+/cvs/
+/src/JiranisokoTech.Web/cvs/
+/documents/
+/src/JiranisokoTech.Web/documents/
 
 # Worktrees the agent tooling creates. Not part of the project.
 .claude/worktrees/
