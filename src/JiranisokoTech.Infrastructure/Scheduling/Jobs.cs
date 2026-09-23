@@ -1,6 +1,7 @@
 using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Application.Mail;
 using JiranisokoTech.Domain.Contracts;
+using JiranisokoTech.Domain.Renewals;
 using JiranisokoTech.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -41,7 +42,8 @@ public sealed class WarnAboutLapsingQualifications(
     public async Task<string> RunAsync(CancellationToken cancellationToken = default)
     {
         var today = clock.Today;
-        var soon = today.AddMonths(2);
+        var ladder = ReminderLadder.For(ReminderKind.QualificationLapsing);
+        var furthest = today.AddDays(ladder.FirstDaysBefore);
 
         var lapsing = await database.Employees
             .AsNoTracking()
@@ -49,6 +51,7 @@ public sealed class WarnAboutLapsingQualifications(
                 employee => employee.Certifications,
                 (employee, held) => new
                 {
+                    employee.Id,
                     employee.FullName,
                     held.Name,
                     held.Issuer,
@@ -56,13 +59,48 @@ public sealed class WarnAboutLapsingQualifications(
                 })
             .Where(held => held.ExpiresOn != null
                 && held.ExpiresOn >= today
-                && held.ExpiresOn <= soon)
+                && held.ExpiresOn <= furthest)
             .OrderBy(held => held.ExpiresOn)
             .ToListAsync(cancellationToken);
 
-        if (lapsing.Count == 0)
+        /*
+         * Narrowed to the ones at a rung of the ladder that has not been sent yet.
+         *
+         * This job used to mail every department head about everything lapsing within two
+         * months, every single morning — about sixty identical emails per qualification. Its
+         * own interface says a job must be safe to run twice and that running twice finds
+         * nothing the second time; this is what makes that true.
+         */
+        var due = new List<(Guid Holder, string Subject, DateOnly On, ReminderStage Stage)>();
+
+        foreach (var held in lapsing)
         {
-            return "Nothing lapses in the next two months.";
+            if (ladder.StageDueOn(today, held.ExpiresOn!.Value) is not { } stage)
+            {
+                continue;
+            }
+
+            var subject = $"{held.Name} ({held.Issuer}) — {held.FullName}";
+
+            if (await Reminders.AlreadyToldAsync(
+                database,
+                ReminderKind.QualificationLapsing,
+                held.Id,
+                held.ExpiresOn.Value,
+                stage,
+                cancellationToken))
+            {
+                continue;
+            }
+
+            due.Add((held.Id, subject, held.ExpiresOn.Value, stage));
+        }
+
+        if (due.Count == 0)
+        {
+            return lapsing.Count == 0
+                ? "Nothing lapses in the next two months."
+                : $"{lapsing.Count} lapsing; everybody who needs telling has been told.";
         }
 
         /*
@@ -78,9 +116,7 @@ public sealed class WarnAboutLapsingQualifications(
             .Select(employee => new { employee.FullName, employee.Details.PersonalEmail })
             .ToListAsync(cancellationToken);
 
-        var lines = lapsing.Select(held =>
-            $"  {held.Name} ({held.Issuer}) — {held.FullName}, "
-            + $"lapses {held.ExpiresOn:d MMMM yyyy}");
+        var lines = due.Select(one => $"  {one.Subject}, lapses {one.On:d MMMM yyyy}");
 
         var told = 0;
 
@@ -94,9 +130,32 @@ public sealed class WarnAboutLapsingQualifications(
             told++;
         }
 
-        return told == 0
-            ? $"{lapsing.Count} lapsing and nobody with an address to tell."
-            : $"{lapsing.Count} lapsing; told {told}.";
+        if (told == 0)
+        {
+            /*
+             * Nothing is written when nobody was told, and that is the important half. A
+             * reminder row recorded against an email that never went out would silence the
+             * notice for good — so a firm with no department head configured would be warned
+             * about nothing, for ever, with a job reporting success every morning.
+             */
+            return $"{due.Count} at a reminder stage and nobody with an address to tell.";
+        }
+
+        foreach (var one in due)
+        {
+            database.Reminders.Add(Reminder.Issued(
+                ReminderKind.QualificationLapsing,
+                one.Holder,
+                one.Subject,
+                one.Stage,
+                one.On,
+                told,
+                clock.Now));
+        }
+
+        await database.SaveChangesAsync(cancellationToken);
+
+        return $"{due.Count} at a reminder stage; told {told}.";
     }
 }
 
@@ -124,21 +183,62 @@ public sealed class WarnAboutExpiringContracts(
     public async Task<string> RunAsync(CancellationToken cancellationToken = default)
     {
         var today = clock.Today;
-        var soon = today.AddDays(45);
+        var ladder = ReminderLadder.For(ReminderKind.ContractRenewal);
+        var furthest = today.AddDays(ladder.FirstDaysBefore);
 
         var expiring = await database.Contracts
             .AsNoTracking()
             .Where(contract => contract.State == ContractState.Active
                 && contract.EndsOn != null
                 && contract.EndsOn >= today
-                && contract.EndsOn <= soon)
+                && contract.EndsOn <= furthest)
             .OrderBy(contract => contract.EndsOn)
-            .Select(contract => new { contract.Reference, contract.Title, contract.EndsOn })
+            .Select(contract => new
+            {
+                contract.Id,
+                contract.Reference,
+                contract.Title,
+                contract.EndsOn,
+            })
             .ToListAsync(cancellationToken);
 
-        if (expiring.Count == 0)
+        /*
+         * Only the ones standing at a rung nobody has been told about.
+         *
+         * This job mailed every department head about every contract ending within
+         * forty-five days, every morning — forty-five identical emails about one contract,
+         * which is how a reminder becomes a filter rule. Ninety, forty-five and fourteen days
+         * out is three, and the ledger is what keeps it at three.
+         */
+        var due = new List<(Guid Id, string Subject, DateOnly On, ReminderStage Stage)>();
+
+        foreach (var contract in expiring)
         {
-            return "No contract runs out in the next six weeks.";
+            if (ladder.StageDueOn(today, contract.EndsOn!.Value) is not { } stage)
+            {
+                continue;
+            }
+
+            if (await Reminders.AlreadyToldAsync(
+                database,
+                ReminderKind.ContractRenewal,
+                contract.Id,
+                contract.EndsOn.Value,
+                stage,
+                cancellationToken))
+            {
+                continue;
+            }
+
+            due.Add((contract.Id, $"{contract.Reference} — {contract.Title}",
+                contract.EndsOn.Value, stage));
+        }
+
+        if (due.Count == 0)
+        {
+            return expiring.Count == 0
+                ? "No contract runs out in the next three months."
+                : $"{expiring.Count} running out; everybody who needs telling has been told.";
         }
 
         var recipients = await database.Employees
@@ -148,8 +248,7 @@ public sealed class WarnAboutExpiringContracts(
             .Select(employee => new { employee.FullName, employee.Details.PersonalEmail })
             .ToListAsync(cancellationToken);
 
-        var lines = expiring.Select(contract =>
-            $"  {contract.Reference} — {contract.Title}, ends {contract.EndsOn:d MMMM yyyy}");
+        var lines = due.Select(one => $"  {one.Subject}, ends {one.On:d MMMM yyyy}");
 
         var told = 0;
 
@@ -163,10 +262,56 @@ public sealed class WarnAboutExpiringContracts(
             told++;
         }
 
-        return told == 0
-            ? $"{expiring.Count} running out and nobody with an address to tell."
-            : $"{expiring.Count} running out; told {told}.";
+        if (told == 0)
+        {
+            // Nothing recorded when nothing was sent — see the note in the job above.
+            return $"{due.Count} at a reminder stage and nobody with an address to tell.";
+        }
+
+        foreach (var one in due)
+        {
+            database.Reminders.Add(Reminder.Issued(
+                ReminderKind.ContractRenewal,
+                one.Id,
+                one.Subject,
+                one.Stage,
+                one.On,
+                told,
+                clock.Now));
+        }
+
+        await database.SaveChangesAsync(cancellationToken);
+
+        return $"{due.Count} at a reminder stage; told {told}.";
     }
+}
+
+/// <summary>
+/// Reading the ledger of notices already given.
+/// </summary>
+/// <remarks>
+/// One helper rather than a method on each job, because three jobs ask the same question and
+/// the answer has to be the same in all three — a job that phrased the check differently
+/// would be the one that sent a second notice, and the symptom would be indistinguishable
+/// from the fault this whole ledger was added to fix.
+/// </remarks>
+internal static class Reminders
+{
+    public static Task<bool> AlreadyToldAsync(
+        AppDbContext database,
+        ReminderKind kind,
+        Guid subjectId,
+        DateOnly deadlineOn,
+        ReminderStage stage,
+        CancellationToken cancellationToken) =>
+        database.Reminders
+            .AsNoTracking()
+            .AnyAsync(
+                one => one.Kind == kind
+                    && one.SubjectId == subjectId
+                    && one.DeadlineOn == deadlineOn
+                    && one.Stage == stage,
+                cancellationToken);
 }
 
 /// <summary>

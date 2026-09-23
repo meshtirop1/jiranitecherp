@@ -15,7 +15,7 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 23 September 2026 · 986 tests · verified against PostgreSQL in
+Last updated: 24 September 2026 · 1009 tests · verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
 container, a lost opportunity surviving its client record being deleted, the
 builds and deployments tables applying to a real Postgres, and
@@ -43,7 +43,7 @@ reports on it again — and the build and deployment half does not. What is buil
 is an ERP that a software company could run its business on, plus the beginning
 of the part that makes it developer-native.
 
-By section: **31 done, 9 partial, 58 not started, 1 excluded by agreement.**
+By section: **32 done, 8 partial, 58 not started, 1 excluded by agreement.**
 
 That count was recomputed from the tables below rather than adjusted, because the
 figure previously here did not add up to anything the tables said and had been
@@ -178,7 +178,7 @@ This block is the brief's stated centre of gravity and none of it exists.
 | ☐ | 59 | Notification rules | |
 | ☐ | 33 | Calendar | |
 | ✅ | 42 | Background jobs | A scheduler with a run history, three jobs registered in code, and the outbox plus two webhook queues beside it |
-| ☐ | 42 | Scheduled jobs | Nothing runs on a timetable — no renewal reminders, no SSL expiry, no overdue chasing |
+| ✅ | 42 | Scheduled jobs | The scheduler runs the qualification and contract reminders on a ladder — 60/30/7 and 90/45/14 days out — against a ledger of notices already given. **This closed a live fault:** both jobs asked "what expires within N days" and mailed every department head every morning, so one contract produced forty-five identical emails, in flat contradiction of IRecurringJob's own stated contract that a job must be safe to run twice. Overdue-invoice chasing is written as a ladder (-7/-21/-45) but has no job yet; SSL and domain expiry need a server inventory, which is §14 |
 | ☐ | 43 | Caching | Redis runs and nothing uses it |
 
 ## AI — phase 8 — **not started**

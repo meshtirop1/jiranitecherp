@@ -14,6 +14,7 @@ using JiranisokoTech.Domain.People;
 using JiranisokoTech.Domain.Settings;
 using JiranisokoTech.Domain.Recruitment;
 using JiranisokoTech.Domain.Engineering;
+using JiranisokoTech.Domain.Renewals;
 using JiranisokoTech.Domain.Integrations;
 using JiranisokoTech.Domain.Work;
 using JiranisokoTech.Infrastructure.Identity;
@@ -57,6 +58,18 @@ public class AppDbContext(
     public DbSet<ApprovalRequest> Approvals => Set<ApprovalRequest>();
 
     public DbSet<Client> Clients => Set<Client>();
+
+    /// <summary>
+    /// Notices already given about approaching deadlines.
+    /// </summary>
+    /// <remarks>
+    /// Section 42. The scheduler and its run history existed and two reminder jobs were
+    /// registered, but nothing recorded that a notice had gone out — so both jobs re-sent the
+    /// same warning every morning until the deadline passed, in flat contradiction of the
+    /// contract IRecurringJob states in as many words. This is the row that makes the second
+    /// run of the day find something.
+    /// </remarks>
+    public DbSet<Reminder> Reminders => Set<Reminder>();
 
     /// <summary>
     /// Builds of commits, as the hosts reported them.
