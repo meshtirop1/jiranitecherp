@@ -735,6 +735,16 @@ code.key {
     white-space: nowrap;
 }
 
+/* The work item's number, shown beside its title. Monospace and quieter than
+   the title, because it is a thing to be copied rather than read: it goes into
+   a branch name, and a proportional font makes a digit sequence harder to
+   transcribe correctly than a monospaced one does. */
+.reference {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 500;
+    color: #6c757d;
+}
+
 /* A form or a block of related controls, lifted off the page. */
 .panel {
     padding: 1.25rem;

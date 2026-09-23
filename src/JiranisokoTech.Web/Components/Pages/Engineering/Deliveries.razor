@@ -1,0 +1,175 @@
+@page "/repositories/deliveries"
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Engineering
+@using JiranisokoTech.Domain.Engineering
+@using JiranisokoTech.Infrastructure.Engineering
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ReposDeliveries)]
+@inject EngineeringService Repos
+@inject EngineeringQueries Queries
+@inject NavigationManager Navigation
+
+<PageTitle>Deliveries — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/repositories">Repositories</a></nav>
+
+<div class="page-head">
+    <h1>Deliveries</h1>
+</div>
+
+<p class="instructions">
+    Everything the code hosts have sent, and what was made of it. A delivery is
+    written down before it is understood, so nothing here was lost to a bug in
+    reading it — anything that failed can be put back once the cause is fixed.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Failing > 0)
+{
+    <p class="refusal" role="alert">
+        @Failing @(Failing == 1 ? "delivery has" : "deliveries have") given up after
+        @WebhookDelivery.MaximumAttempts attempts. Until they are replayed, what
+        the board says was built is incomplete.
+    </p>
+}
+
+<nav class="filters">
+    <a class="pill @(Status is null ? "pill--active" : null)"
+       href="/repositories/deliveries">Everything</a>
+
+    @foreach (var state in Enum.GetValues<DeliveryStatus>())
+    {
+        <a class="pill @(Status == state ? "pill--active" : null)"
+           href="@($"/repositories/deliveries?status={state}")">@Words.For(state)</a>
+    }
+</nav>
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">
+        @(Status is null
+            ? "Nothing has been delivered yet. If a repository is connected, the host's "
+              + "own test delivery will appear here."
+            : "No deliveries in that state.")
+    </p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Webhook deliveries</caption>
+        <thead>
+            <tr>
+                <th scope="col">Received</th>
+                <th scope="col">Event</th>
+                <th scope="col">Repository</th>
+                <th scope="col">State</th>
+                <th scope="col">Why</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Rows)
+            {
+                <tr>
+                    <td>@row.ReceivedAt.ToString("d MMM HH:mm:ss")</td>
+                    <td><code>@row.Event</code></td>
+                    <td>@(row.Repository ?? "—")</td>
+                    <td>
+                        <span class="pill @PillFor(row.Status)">@Words.For(row.Status)</span>
+
+                        @if (row.Attempts > 0)
+                        {
+                            <span class="subtle">
+                                @row.Attempts of @WebhookDelivery.MaximumAttempts
+                            </span>
+                        }
+                    </td>
+                    <td>
+                        @if (row.Error is { Length: > 0 } why)
+                        {
+                            <span class="subtle">@why</span>
+                        }
+
+                        @if (row.Status == DeliveryStatus.DeadLettered)
+                        {
+                            @*
+                                The button the stored body exists for. Somebody
+                                fixes the cause, replays, and the history fills
+                                itself in rather than keeping a hole for however
+                                long the fault lasted.
+                            *@
+                            <EditForm Model="Nothing" method="post"
+                                      FormName="@($"replay-{row.Id}")"
+                                      OnValidSubmit="() => Replay(row.Id)" class="inline">
+                                <button type="submit">Try it again</button>
+                            </EditForm>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? Filter { get; set; }
+
+    /// <summary>
+    /// A model for the replay forms, which submit no fields.
+    /// </summary>
+    /// <remarks>
+    /// These pages are statically rendered, so a button outside a form does
+    /// nothing at all — and EditForm insists on a model even when the only thing
+    /// being said is that the button was pressed.
+    /// </remarks>
+    private object Nothing { get; } = new();
+
+    private List<DeliveryRow> Rows { get; set; } = [];
+
+    private int Failing { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private DeliveryStatus? Status =>
+        Enum.TryParse<DeliveryStatus>(Filter, ignoreCase: true, out var status) ? status : null;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Rows = await Queries.DeliveriesAsync(Status);
+        Failing = await Queries.DeadLetteredAsync();
+    }
+
+    private async Task Replay(Guid id)
+    {
+        Refusal = null;
+
+        try
+        {
+            await Repos.ReplayAsync(id);
+
+            // Reloaded rather than re-rendered, so the row shows as waiting
+            // again instead of leaving the button that has already been pressed.
+            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+        }
+        catch (InvalidOperationException exception)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string PillFor(DeliveryStatus status) => status switch
+    {
+        DeliveryStatus.Handled => "pill--done",
+        DeliveryStatus.Ignored => "pill--quiet",
+        DeliveryStatus.DeadLettered => "pill--danger",
+        DeliveryStatus.Failed => "pill--danger",
+        _ => "pill--quiet",
+    };
+}

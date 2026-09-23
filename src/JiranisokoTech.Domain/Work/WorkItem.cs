@@ -73,8 +73,13 @@ public sealed class WorkItem : Entity, IAuditable
         Title = string.Empty;
     }
 
-    private WorkItem(string title, Guid raisedById, Guid? projectId, Priority priority)
+    private WorkItem(int number, string title, Guid raisedById, Guid? projectId, Priority priority)
     {
+        Number = number > 0
+            ? number
+            : throw new ArgumentOutOfRangeException(
+                nameof(number), number, "Work is numbered from one.");
+
         Title = Require(title, nameof(title));
         RaisedById = raisedById;
         ProjectId = projectId;
@@ -85,11 +90,37 @@ public sealed class WorkItem : Entity, IAuditable
     }
 
     public static WorkItem Raise(
+        int number,
         string title,
         Guid raisedById,
         Guid? projectId = null,
         Priority priority = Priority.Normal) =>
-        new(title, raisedById, projectId, priority);
+        new(number, title, raisedById, projectId, priority);
+
+    /// <summary>
+    /// A short number somebody can type.
+    /// </summary>
+    /// <remarks>
+    /// Identity here is a GUIDv7 and always will be, because it can be
+    /// generated before a row is saved. But nobody puts
+    /// 0198f3a2-1c4d-7e8b-9a0f-2c3d4e5f6a7b in a branch name, and that is
+    /// exactly what this system needs somebody to do: the only way a commit,
+    /// a branch or a pull request can be tied back to the work it belongs to
+    /// is if a person can reasonably write the reference while doing something
+    /// else.
+    ///
+    /// So: sequential, short, and never reused. `feature/412-payment-api`,
+    /// `Fixes #412`, or a pull request titled with it are all things a
+    /// developer will actually type, and each of them is enough.
+    ///
+    /// Allocated by the service rather than the aggregate, for the same reason
+    /// an invoice number is: knowing what the last one was is a question for
+    /// the database.
+    /// </remarks>
+    public int Number { get; private init; }
+
+    /// <summary>How it is written down and spoken about.</summary>
+    public string Reference => $"#{Number}";
 
     public string Title { get; private set; }
 

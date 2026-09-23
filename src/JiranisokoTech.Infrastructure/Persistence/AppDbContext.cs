@@ -13,6 +13,7 @@ using JiranisokoTech.Domain.Common;
 using JiranisokoTech.Domain.People;
 using JiranisokoTech.Domain.Settings;
 using JiranisokoTech.Domain.Recruitment;
+using JiranisokoTech.Domain.Engineering;
 using JiranisokoTech.Domain.Work;
 using JiranisokoTech.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -75,6 +76,24 @@ public class AppDbContext(
     public DbSet<Project> Projects => Set<Project>();
 
     public DbSet<WorkItem> WorkItems => Set<WorkItem>();
+
+    public DbSet<Domain.Engineering.Repository> Repositories =>
+        Set<Domain.Engineering.Repository>();
+
+    /// <summary>
+    /// Everything a Git host has ever sent, verbatim.
+    /// </summary>
+    /// <remarks>
+    /// Kept rather than pruned, and the reason is not sentiment. The unique
+    /// index on the provider's delivery identifier is the only thing standing
+    /// between this endpoint and a captured request being posted back later, and
+    /// it protects exactly the deliveries still in this table.
+    /// </remarks>
+    public DbSet<WebhookDelivery> Deliveries => Set<WebhookDelivery>();
+
+    public DbSet<PullRequest> PullRequests => Set<PullRequest>();
+
+    public DbSet<Commit> Commits => Set<Commit>();
 
     /// <summary>
     /// The firm's own details. One row, and the key is a constant.

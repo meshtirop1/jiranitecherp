@@ -9,6 +9,9 @@ using JiranisokoTech.Application.Business;
 using JiranisokoTech.Application.Mail;
 using JiranisokoTech.Application.Recruitment;
 using JiranisokoTech.Application.People;
+using JiranisokoTech.Application.Engineering;
+using JiranisokoTech.Domain.Engineering;
+using JiranisokoTech.Infrastructure.Engineering;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Infrastructure.Messaging;
 using JiranisokoTech.Infrastructure.Approvals;
@@ -163,6 +166,28 @@ public static class ServiceCollectionExtensions
         // Reactions between modules. People knows nothing about work items and
         // must not; the event is what carries a departure across to the board.
         services.AddScoped<IDomainEventHandler<EmployeeLeft>, ReleaseWorkWhenSomebodyLeaves>();
+
+        /*
+         * The Git integration. One adapter per provider, registered as a set so
+         * that adding GitLab is one more line here and nothing else — the inbox
+         * and the dispatcher pick the right one out of the collection by asking
+         * each what provider it speaks for.
+         */
+        services.Configure<GitOptions>(configuration.GetSection(GitOptions.Section));
+        services.AddSingleton<IWebhookSecrets, WebhookSecrets>();
+        services.AddSingleton<IGitProvider, GitHubProvider>();
+        services.AddScoped<IEngineeringRepository, EngineeringRepository>();
+        services.AddScoped<EngineeringService>();
+        services.AddScoped<EngineeringQueries>();
+        services.AddScoped<WebhookInbox>();
+        services.AddScoped<DeliveryDispatcher>();
+        services.AddHostedService<DeliveryProcessor>();
+
+        // Merging a branch is how an engineer says the work is done, and the
+        // whole point of watching the repositories is that they do not then
+        // have to say it again on a board.
+        services.AddScoped<IDomainEventHandler<PullRequestMerged>,
+            SubmitWorkWhenPullRequestMerges>();
 
         return services;
     }

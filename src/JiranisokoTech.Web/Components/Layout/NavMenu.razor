@@ -57,6 +57,18 @@
                 </AuthorizeView>
 
                 @*
+                    Next to the board deliberately. The repositories are where
+                    the work on that board actually happens, and what arrives
+                    from them is the evidence the board is telling the truth.
+                *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ReposView)"
+                               Context="repositories">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="repositories">Repositories</NavLink>
+                    </div>
+                </AuthorizeView>
+
+                @*
                     The three self-service links, first among the business ones
                     because they are what most people here open this system for.
                     Each sits behind the permission every working role holds, so

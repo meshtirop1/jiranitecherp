@@ -133,7 +133,16 @@ public sealed class WorkService(IWorkRepository work, IPeopleRepository people, 
             }
         }
 
-        var item = WorkItem.Raise(title, raisedById, projectId, priority);
+        /*
+         * The next number, taken the same way an invoice number is: read the
+         * last one and add one. Two people raising work in the same instant
+         * would collide on the unique index rather than quietly share a
+         * number, which is the right way round — a duplicate reference would
+         * send a developer's commits to somebody else's task.
+         */
+        var number = await work.LastNumberAsync(cancellationToken) + 1;
+
+        var item = WorkItem.Raise(number, title, raisedById, projectId, priority);
 
         if (assigneeId is { } assignee)
         {

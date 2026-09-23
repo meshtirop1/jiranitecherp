@@ -16,7 +16,7 @@ public class WorkItemTests
     private static readonly DateTimeOffset Now = new(2026, 10, 5, 9, 0, 0, TimeSpan.Zero);
 
     private static WorkItem Raised(string title = "Ship the delivery note printer") =>
-        WorkItem.Raise(title, Guid.CreateVersion7());
+        WorkItem.Raise(1, title, Guid.CreateVersion7());
 
     private static WorkItem At(WorkItemStatus status)
     {
@@ -52,7 +52,7 @@ public class WorkItemTests
     [Fact]
     public void Work_starts_on_the_list_and_nowhere_else()
     {
-        var item = WorkItem.Raise("  Ship it  ", Guid.CreateVersion7());
+        var item = WorkItem.Raise(1, "  Ship it  ", Guid.CreateVersion7());
 
         Assert.Equal("Ship it", item.Title);
         Assert.Equal(WorkItemStatus.Todo, item.Status);
@@ -65,7 +65,7 @@ public class WorkItemTests
     [Fact]
     public void A_title_is_required()
     {
-        Assert.Throws<ArgumentException>(() => WorkItem.Raise("   ", Guid.CreateVersion7()));
+        Assert.Throws<ArgumentException>(() => WorkItem.Raise(1, "   ", Guid.CreateVersion7()));
     }
 
     [Theory]

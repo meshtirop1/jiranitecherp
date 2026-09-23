@@ -15,25 +15,32 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 23 September 2026 · 652 tests · verified against PostgreSQL in
-Docker.
+Last updated: 23 September 2026 · 734 tests · verified against PostgreSQL in
+Docker, including the webhook endpoint answering a signed delivery inside the
+container.
 
 ---
 
 ## The honest headline
 
 The foundation and roughly half the core business modules are built and solid.
-**The engineering half of the brief is not built at all** — no Git integration,
-no CI/CD, no deployments, no infrastructure, no incidents, no assets.
+**The engineering half of the brief has started.** Git integration is built and
+verified against a real GitHub payload shape: repositories, commits, pull
+requests and reviews arrive on their own, a merged pull request moves the work it
+names to review, and the delivery inbox verifies signatures, refuses replays and
+dead-letters what it cannot handle. Still absent: CI/CD, deployments,
+infrastructure, incidents and assets.
 
 That matters more than the count suggests, because the brief's central
 philosophy is that *developers should spend as little time as possible entering
 ERP information manually* and that the system should collect it automatically
-from repositories, pull requests, CI and deployments. None of that collection
-exists. What is built is an ERP that a software company could run its business
-on; it is not yet the "software company operating system" the brief describes.
+from repositories, pull requests, CI and deployments. The repository half of that
+collection now exists — an engineer who names a branch after their work never
+reports on it again — and the build and deployment half does not. What is built
+is an ERP that a software company could run its business on, plus the beginning
+of the part that makes it developer-native.
 
-By section: **32 done, 21 partial, 45 not started, 1 excluded by agreement.**
+By section: **34 done, 22 partial, 42 not started, 1 excluded by agreement.**
 
 ---
 
@@ -96,15 +103,15 @@ By section: **32 done, 21 partial, 45 not started, 1 excluded by agreement.**
 
 | | § | Item |
 | --- | --- | --- |
-| ☐ | 12 | Git integration — GitHub, GitLab, Bitbucket, Azure DevOps |
-| ☐ | 12 | Repositories, branches, commits, pull requests, reviews |
-| ☐ | 12 | Task ↔ branch ↔ commit ↔ PR ↔ build ↔ deployment mapping |
+| ◐ | 12 | Git integration — GitHub built and verified. GitLab, Bitbucket and Azure DevOps are one adapter each, not yet written |
+| ✅ | 12 | Repositories, branches, commits, pull requests, reviews |
+| ◐ | 12 | Task ↔ branch ↔ commit ↔ PR mapping. Build and deployment are the missing links, and need section 13 first |
 | ☐ | 13 | CI/CD — builds, pipelines, tests, artifacts |
 | ☐ | 13 | Environments — development, staging, production |
 | ☐ | 67 | Releases, version numbers, changelog, rollback |
 | ☐ | 68 | Feature flags |
-| ☐ | 40 | Webhooks, incoming and outgoing, signed and idempotent |
-| ☐ | 75 | Webhook security — signature verification, replay protection, dead-letter |
+| ◐ | 40 | Webhooks in, signed and idempotent. Nothing goes out yet |
+| ✅ | 75 | Webhook security — signature verification, replay protection, dead-letter, replay |
 | ☐ | 76 | IDE integration readiness |
 
 This block is the brief's stated centre of gravity and none of it exists.
@@ -226,7 +233,11 @@ revenue → cost → profitability.
 2. ~~The other thirteen unreachable service methods.~~ Done, and
    `ReachabilityTests` now fails the build when a service method has no caller,
    so the class cannot come back quietly.
-3. **Git integration.** The brief's centre. Nothing else changes what this
+3. ~~**Git integration.**~~ Done for GitHub. What remains of the brief's centre
+   is CI/CD and deployments: a merged pull request now moves work to review, but
+   nothing yet knows whether it built, whether the tests passed, or whether it
+   reached production — so releasing work is still a claim rather than a record.
+   Nothing else changes what this
    system *is* as much as repositories, pull requests and deployments arriving
    on their own.
 4. **Scheduled jobs.** Several features already written are inert without them —

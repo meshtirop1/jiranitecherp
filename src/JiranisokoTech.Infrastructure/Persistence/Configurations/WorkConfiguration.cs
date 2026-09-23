@@ -48,6 +48,11 @@ public sealed class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
         builder.Property(item => item.Priority).HasConversion<int>().IsRequired();
 
         builder.Ignore(item => item.IsOpen);
+        builder.Ignore(item => item.Reference);
+
+        // Unique, and indexed because every incoming commit and pull request is
+        // matched against it.
+        builder.HasIndex(item => item.Number).IsUnique();
 
         /*
          * Work outlives the project it sat under being deleted, and outlives the

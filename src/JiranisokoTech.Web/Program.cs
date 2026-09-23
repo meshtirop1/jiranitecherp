@@ -93,6 +93,7 @@ builder.Services.AddRateLimiter(options =>
 {
     options.AddCareersLimit();
     options.AddApiLimits();
+    options.AddWebhookLimits();
 });
 
 builder.WebHost.ConfigureKestrel(kestrel =>
@@ -119,6 +120,21 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
+/*
+ * A friendly page for a status code that has no body of its own.
+ *
+ * Re-execution replays the request against /not-found with its method intact,
+ * and on a POST that means the antiforgery middleware runs again against a
+ * Blazor endpoint expecting a token the caller never had — so an empty-bodied
+ * refusal from a POST endpoint came back as 400 whatever it had actually been.
+ * The webhook endpoints therefore answer with a body, which is what keeps them
+ * out of here; see WebhookEndpoints.
+ *
+ * Scoping this with UseWhen was tried first and is worse than it looks: the
+ * branch it builds changed how authorization picked an authentication scheme,
+ * and the public API started redirecting unauthenticated callers to the sign-in
+ * page instead of refusing them with a 401.
+ */
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 
 /*
@@ -207,6 +223,13 @@ app.MapReportEndpoints();
 
 // What another system may read from this one.
 app.MapPublicApi();
+
+/*
+ * Where the Git hosts post. Anonymous because a webhook has no account, and
+ * safe to be anonymous because nothing is recorded until the body has been
+ * proved to carry a signature made with the shared secret.
+ */
+app.MapWebhookEndpoints();
 
 /*
  * Anonymous, because a stylesheet has no account.

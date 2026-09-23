@@ -91,10 +91,33 @@ Each of these cost real time. They are written down so they cost it once.
 - **Owned EF collections** must expose a copy from their navigation property.
   Handing EF the backing list makes it treat added rows as updates, and nothing
   is saved and nothing complains.
+- **A POST endpoint must never answer with a bare status code.**
+  `UseStatusCodePagesWithReExecute` replays any failing response that has no
+  body, keeping the request's method — and on a POST that replay hits a Blazor
+  endpoint wanting an antiforgery token the caller never had, so it comes back
+  as **400 whatever it actually was**. The webhook endpoint's 401, 413 and 503
+  all arrived at GitHub as 400. That is not cosmetic: a provider retries a 5xx
+  and gives up permanently on a 4xx, so a missing secret was silently discarding
+  deliveries instead of asking to be tried again. Return a body.
+  `UseWhen` to scope the middleware is the wrong fix and was tried — the branch
+  it builds changed how authorization picks an authentication scheme, and the
+  public API started redirecting unauthenticated callers to the sign-in page.
+- **A test that asserts a sentence of Razor prose asserts its indentation.**
+  Razor keeps the source's line breaks, so any assertion spanning a wrapped line
+  fails while the screen is correct. Match a fragment that sits on one line.
+- **Page tests in one class share one database** through the class fixture, so
+  "nothing has been recorded yet" is true only for whichever test runs first.
+  Assert against a state no other test in the class produces.
 
 ## What is verified before saying something works
 
-Running the application, not only testing it. Four faults reached this codebase
+Running the application, not only testing it. Five faults reached this codebase
 that every test passed over: an unstyled sign-in page, a rate limit on the wrong
-verb, a mobile layout overflowing, and a content security policy that blocked
-the framework's own script. Each was found by opening a page and looking.
+verb, a mobile layout overflowing, a content security policy that blocked the
+framework's own script, and a webhook endpoint whose refusals all arrived as 400.
+Each was found by opening a page, or posting to an endpoint, and looking at what
+came back.
+
+When the fault is one a test *could* have caught once it is understood, write
+that test and then break the fix deliberately to watch it fail. A regression test
+that has never failed is a guess.

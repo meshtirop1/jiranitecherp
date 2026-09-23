@@ -168,6 +168,31 @@ public static class Permissions
     /// </remarks>
     public const string TasksDeploy = "tasks.deploy";
 
+    // --- the code repositories ---------------------------------------------
+
+    /// <summary>See which repositories are watched, and what came out of them.</summary>
+    public const string ReposView = "repos.view";
+
+    /// <summary>Connect a repository, move it to a project, disconnect it.</summary>
+    /// <remarks>
+    /// Separate from repos.view because connecting one means holding the secret
+    /// that signs its deliveries, and because a repository pointed at the wrong
+    /// project silently files everybody's work under the wrong name.
+    /// </remarks>
+    public const string ReposManage = "repos.manage";
+
+    /// <summary>
+    /// Read the delivery log, and replay what failed.
+    /// </summary>
+    /// <remarks>
+    /// Its own permission, and the narrowest of the three, because a delivery
+    /// body is the richest thing this system stores about a repository: branch
+    /// names, commit messages, the contents of a private codebase's history.
+    /// Somebody who may see that a repository exists should not thereby be able
+    /// to read everything that has ever happened inside it.
+    /// </remarks>
+    public const string ReposDeliveries = "repos.deliveries";
+
     // --- approvals and reporting -------------------------------------------
     public const string ApprovalsDecide = "approvals.decide";
     public const string ReportsView = "reports.view";
@@ -197,6 +222,8 @@ public static class Permissions
         ProjectsViewAll, ProjectsViewMember, ProjectsManage,
         TasksViewAll, TasksViewOwn, TasksCreate, TasksAssign, TasksUpdateOwn, TasksSubmit,
         TasksReview, TasksDeploy,
+
+        ReposView, ReposManage, ReposDeliveries,
 
         ApprovalsDecide, ReportsView,
     ];
@@ -280,6 +307,12 @@ public static class Roles
                 Permissions.TasksViewAll, Permissions.TasksViewOwn, Permissions.TasksCreate,
                 Permissions.TasksAssign, Permissions.TasksReview, Permissions.TasksDeploy,
 
+                // A head releases what the team finishes, and the evidence that
+                // it is finished is a merged pull request. Seeing the board
+                // without seeing that is being asked to sign for work on
+                // somebody's word.
+                Permissions.ReposView,
+
                 Permissions.ApprovalsDecide,
                 Permissions.RequisitionsCreate, Permissions.RequisitionsView,
                 Permissions.CandidatesView, Permissions.InterviewsSchedule,
@@ -306,6 +339,7 @@ public static class Roles
                 Permissions.ProjectsViewAll, Permissions.ProjectsManage,
                 Permissions.TasksViewAll, Permissions.TasksViewOwn, Permissions.TasksCreate,
                 Permissions.TasksAssign, Permissions.TasksReview,
+                Permissions.ReposView,
                 Permissions.ApprovalsDecide,
 
                 // Everybody who works here logs hours, asks for leave and
@@ -338,6 +372,13 @@ public static class Roles
                 // main users, and a board they cannot look at is not one.
                 Permissions.TasksViewOwn,
                 Permissions.TasksUpdateOwn, Permissions.TasksSubmit,
+
+                // The repositories are where an engineer's work actually
+                // happens, and the whole point of watching them is that the
+                // engineer does not have to report what they did. Withholding
+                // the view would mean the one group whose work is being
+                // recorded is the one group that cannot check the record.
+                Permissions.ReposView,
 
                 // Everybody who works here logs hours, asks for leave and
                 // claims money back. These are not privileges; a role without

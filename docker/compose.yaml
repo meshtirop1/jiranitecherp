@@ -45,6 +45,11 @@ services:
       # something to lose on a Tuesday.
       Documents__Directory: /documents
       Cvs__Directory: /cvs
+      # The secret a Git host signs its webhook deliveries with. Left unset the
+      # application starts normally and answers every delivery with 503, which
+      # tells the host to try again later rather than to give up — so setting
+      # this afterwards does not cost the deliveries that arrived in between.
+      Git__Providers__GitHub__Secret: ${GITHUB_WEBHOOK_SECRET:-}
       # The networks a proxy may send X-Forwarded-For from, if there is one.
       # Left unset the application reads the address it can see, which behind a
       # proxy is the proxy — see ReverseProxy.cs for why that is not simply

@@ -5,6 +5,8 @@
 @using JiranisokoTech.Domain.People
 @using JiranisokoTech.Domain.Work
 @using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Domain.Engineering
+@using JiranisokoTech.Infrastructure.Engineering
 @using JiranisokoTech.Infrastructure.Work
 @using System.Security.Claims
 @using JiranisokoTech.Web.Authorization
@@ -13,6 +15,7 @@
 @inject WorkQueries Queries
 @inject PeopleQueries People
 @inject WorkService Service
+@inject EngineeringQueries Engineering
 
 <PageTitle>@(Row?.Title ?? "Work") — Jiranisoko Delivery</PageTitle>
 
@@ -34,7 +37,12 @@ else if (Row is null)
 else
 {
     <div class="page-head">
-        <h1>@Row.Title</h1>
+        @*
+            The reference before the title, because it is the part somebody has
+            to carry into a branch name and the title is the part they already
+            know. A number nobody can see is a link nobody makes.
+        *@
+        <h1><span class="reference">@Row.Reference</span> @Row.Title</h1>
         <span class="pill">@Name(Row.Status)</span>
     </div>
 
@@ -127,11 +135,113 @@ else
         </EditForm>
     </AuthorizeView>
 
+    @*
+        What the repositories say was done. The whole point of watching them:
+        nobody wrote any of this, and the reference in a branch name is the only
+        thing that put it here.
+    *@
+    <AuthorizeView Policy="@ReposPolicy" Context="permitted">
+        <h2>What was built</h2>
+
+        @if (Evidence.IsEmpty)
+        {
+            <p class="empty">
+                Nothing has arrived from a repository against
+                <code>@Row.Reference</code>. Naming a branch
+                <code>@($"feature/{Row.Number}-something")</code>, or writing
+                <code>@Row.Reference</code> in a commit message, is what ties the
+                two together.
+            </p>
+        }
+        else
+        {
+            @if (Evidence.PullRequests.Count > 0)
+            {
+                <table class="grid">
+                    <caption class="visually-hidden">Pull requests</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Pull request</th>
+                            <th scope="col">Branch</th>
+                            <th scope="col">By</th>
+                            <th scope="col">Reviews</th>
+                            <th scope="col">State</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var pull in Evidence.PullRequests)
+                        {
+                            <tr>
+                                <td>
+                                    <strong>#@pull.Number</strong> @pull.Title
+                                    <span class="subtle">@pull.Repository</span>
+                                </td>
+                                <td><code>@pull.Branch</code></td>
+                                <td>@pull.Author</td>
+                                <td>
+                                    @if (pull.Reviews == 0)
+                                    {
+                                        <span class="subtle">None yet</span>
+                                    }
+                                    else if (pull.IsApproved)
+                                    {
+                                        <span class="pill pill--done">Approved</span>
+                                    }
+                                    else
+                                    {
+                                        @* Changes asked for, or comments only.
+                                           Either way it is not approved, and
+                                           saying so is the useful half. *@
+                                        <span class="pill pill--danger">Not approved</span>
+                                    }
+                                </td>
+                                <td>
+                                    <span class="pill @(pull.State == PullRequestState.Merged
+                                        ? "pill--done" : "pill--quiet")">
+                                        @Words.For(pull.State)
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            @if (Evidence.Commits.Count > 0)
+            {
+                <table class="grid">
+                    <caption class="visually-hidden">Commits</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Commit</th>
+                            <th scope="col">Branch</th>
+                            <th scope="col">By</th>
+                            <th scope="col">When</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var commit in Evidence.Commits)
+                        {
+                            <tr>
+                                <td><code>@commit.Short</code> @commit.Message</td>
+                                <td><code>@commit.Branch</code></td>
+                                <td>@commit.Author</td>
+                                <td>@commit.At.ToString("d MMM yyyy HH:mm")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        }
+    </AuthorizeView>
+
     <p><a href="/work">Back to the board</a></p>
 }
 
 @code {
     private const string AssignPolicy = PermissionClaim.PolicyPrefix + Permissions.TasksAssign;
+
+    private const string ReposPolicy = PermissionClaim.PolicyPrefix + Permissions.ReposView;
 
     [Parameter]
     public Guid Id { get; set; }
@@ -168,6 +278,8 @@ else
     private string? Refusal { get; set; }
 
     private string? Done { get; set; }
+
+    private WorkEvidence Evidence { get; set; } = new([], []);
 
     private bool _loaded;
 
@@ -208,6 +320,11 @@ else
         // Only people who can actually take it are offered, which is the same
         // rule the service enforces.
         Staff = await People.RosterAsync(status: EmploymentStatus.Active);
+
+        if (Row is not null && MayRead)
+        {
+            Evidence = await Engineering.EvidenceForAsync(Row.Id);
+        }
 
         if (!_loaded && Row is not null)
         {

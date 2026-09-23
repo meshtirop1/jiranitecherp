@@ -1,0 +1,404 @@
+@page "/repositories"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Engineering
+@using JiranisokoTech.Domain.Engineering
+@using JiranisokoTech.Infrastructure.Engineering
+@using JiranisokoTech.Infrastructure.Work
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ReposView)]
+@inject EngineeringService Repos
+@inject EngineeringQueries Queries
+@inject WorkQueries Work
+@inject NavigationManager Navigation
+
+<PageTitle>Repositories — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Repositories</h1>
+
+    <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ReposDeliveries)">
+        <Authorized>
+            <nav class="actions actions--page">
+                <a class="button button--quiet" href="/repositories/deliveries">
+                    Deliveries@(Failing > 0 ? $" ({Failing} failed)" : "")
+                </a>
+            </nav>
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+<p class="instructions">
+    What the code hosts tell this system. Commits, pull requests and reviews
+    arrive here on their own, which is why nobody has to write a status update
+    to say the work was done.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ReposManage)"
+               Context="permitted">
+    <Authorized>
+        <EditForm Model="Input" method="post" OnValidSubmit="Connect" FormName="connect"
+                  class="panel stack">
+            <DataAnnotationsValidator />
+
+            <h2>Connect a repository</h2>
+
+            <div class="fields">
+                <label>
+                    <span>Owner</span>
+                    <InputText @bind-Value="Input.Owner" placeholder="jiranisokotech" />
+                    <ValidationMessage For="() => Input.Owner" />
+                </label>
+
+                <label>
+                    <span>Repository</span>
+                    <InputText @bind-Value="Input.Name" placeholder="erp" />
+                    <ValidationMessage For="() => Input.Name" />
+                </label>
+
+                <label>
+                    <span>Project</span>
+                    @*
+                        Optional, and a shared library legitimately has none. A
+                        repository forced under a project it does not belong to
+                        files everybody's work under the wrong name.
+                    *@
+                    <InputSelect @bind-Value="Input.ProjectId">
+                        <option value="">The firm's, not one project's</option>
+                        @foreach (var project in Projects)
+                        {
+                            <option value="@project.Id">@project.Name</option>
+                        }
+                    </InputSelect>
+                </label>
+            </div>
+
+            <label>
+                <span>The webhook secret</span>
+                <InputText type="password" @bind-Value="Input.Secret" autocomplete="off" />
+                <ValidationMessage For="() => Input.Secret" />
+                <span class="subtle">
+                    The same value the host is configured with. It is checked
+                    against this application's own configuration and then thrown
+                    away — only a hash of it is kept, so a repository cannot be
+                    connected with a secret that would leave it deaf.
+                </span>
+            </label>
+
+            <button type="submit">Connect it</button>
+        </EditForm>
+
+        <section class="panel stack">
+            <h3>Setting one up at GitHub</h3>
+
+            <p class="subtle">
+                In the repository, under Settings then Webhooks, add one pointing
+                at <code>@Address</code>, content type
+                <code>application/json</code>, with the same secret as above.
+                Send it the push, pull request and pull request review events;
+                everything else is received and ignored, so sending all of them
+                costs only noise on the deliveries screen.
+            </p>
+        </section>
+    </Authorized>
+</AuthorizeView>
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">
+        No repositories are connected, so nothing is being recorded yet.
+    </p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Connected repositories</caption>
+        <thead>
+            <tr>
+                <th scope="col">Repository</th>
+                <th scope="col">Project</th>
+                <th scope="col">Commits</th>
+                <th scope="col">Open</th>
+                <th scope="col">Last heard from</th>
+                <th scope="col">State</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Rows)
+            {
+                <tr class="@(row.IsWatched ? null : "row--closed")">
+                    <td>
+                        <strong>@row.FullName</strong>
+                        <span class="subtle">@row.Provider</span>
+                    </td>
+                    <td>
+                        <AuthorizeView
+                            Policy="@(PermissionClaim.PolicyPrefix + Permissions.ReposManage)"
+                            Context="permitted">
+                            <Authorized>
+                                @*
+                                    Changed here rather than by disconnecting and
+                                    connecting again, which is the only other way
+                                    and would mean retyping the secret to correct
+                                    a dropdown.
+
+                                    A plain select rather than InputSelect: one
+                                    shared form model serves every row, so a
+                                    bound value would show the same project on
+                                    all of them. The name matches the model
+                                    property, which is what makes the posted
+                                    value bind.
+                                *@
+                                <EditForm Model="Moving" method="post"
+                                          FormName="@($"move-{row.Id}")"
+                                          OnValidSubmit="() => Move(row.Id)" class="inline">
+                                    <select name="Moving.ProjectId" aria-label="Project">
+                                        <option value="" selected="@(row.Project is null)">
+                                            The firm's
+                                        </option>
+                                        @foreach (var project in Projects)
+                                        {
+                                            <option value="@project.Id"
+                                                    selected="@(project.Name == row.Project)">
+                                                @project.Name
+                                            </option>
+                                        }
+                                    </select>
+                                    <button type="submit" class="button--quiet">Move</button>
+                                </EditForm>
+                            </Authorized>
+                            <NotAuthorized>@(row.Project ?? "—")</NotAuthorized>
+                        </AuthorizeView>
+                    </td>
+                    <td class="number">@row.Commits</td>
+                    <td class="number">@row.OpenPullRequests</td>
+                    <td>
+                        @*
+                            The most useful cell here. "Connected" and "last
+                            heard from three weeks ago" are different states, and
+                            only the second tells anybody to go and look at the
+                            webhook.
+                        *@
+                        @if (row.LastDeliveryAt is { } heard)
+                        {
+                            @heard.ToString("d MMM yyyy HH:mm")
+                        }
+                        else
+                        {
+                            <span class="pill pill--danger">Nothing yet</span>
+                        }
+                    </td>
+                    <td>
+                        @if (!row.IsWatched)
+                        {
+                            <span class="pill pill--quiet">Disconnected</span>
+                        }
+                        else
+                        {
+                            @if (Current.Contains(row.Id))
+                            {
+                                <span class="pill pill--done">Watched</span>
+                            }
+                            else
+                            {
+                                @*
+                                    The tripwire the stored hash exists for.
+                                    Somebody rotated the secret at the host and
+                                    not here, or the other way round, and every
+                                    delivery is now being refused — which
+                                    otherwise looks exactly like a host that has
+                                    gone quiet.
+                                *@
+                                <span class="pill pill--danger">Secret differs</span>
+                            }
+
+                            @if (row.Failing > 0)
+                            {
+                                <span class="pill pill--danger">@row.Failing failed</span>
+                            }
+
+                            <AuthorizeView
+                                Policy="@(PermissionClaim.PolicyPrefix + Permissions.ReposManage)"
+                                Context="permitted">
+                                <Authorized>
+                                    <EditForm Model="Nothing" method="post"
+                                              FormName="@($"disconnect-{row.Id}")"
+                                              OnValidSubmit="() => Disconnect(row.Id)"
+                                              class="inline">
+                                        <button type="submit" class="danger">Disconnect</button>
+                                    </EditForm>
+                                </Authorized>
+                            </AuthorizeView>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private ConnectInput _input = new();
+
+    [SupplyParameterFromForm(FormName = "connect")]
+    private ConnectInput Input
+    {
+        get => _input;
+        set => _input = value ?? new ConnectInput();
+    }
+
+    /// <summary>
+    /// A model for the forms that carry no fields.
+    /// </summary>
+    /// <remarks>
+    /// EditForm needs one even when the only thing being submitted is the fact
+    /// that a button was pressed, and these pages are statically rendered so a
+    /// button without a form does nothing at all.
+    /// </remarks>
+    private object Nothing { get; } = new();
+
+    private MoveInput _moving = new();
+
+    /// <summary>
+    /// One model for every row's move form.
+    /// </summary>
+    /// <remarks>
+    /// Shared deliberately. Only one form is ever submitted, so only one row's
+    /// value arrives — a model per row would mean a property per repository,
+    /// which cannot be written against a list whose length is only known at
+    /// render time.
+    /// </remarks>
+    [SupplyParameterFromForm(FormName = "move")]
+    private MoveInput Moving
+    {
+        get => _moving;
+        set => _moving = value ?? new MoveInput();
+    }
+
+    private List<RepositoryRow> Rows { get; set; } = [];
+
+    private List<ProjectRow> Projects { get; set; } = [];
+
+    private HashSet<Guid> Current { get; set; } = [];
+
+    private int Failing { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string Address => $"{Navigation.BaseUri.TrimEnd('/')}/webhooks/github";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Rows = await Queries.RepositoriesAsync();
+        Projects = await Work.ProjectsAsync();
+        Failing = await Queries.DeadLetteredAsync();
+
+        /*
+         * Whether each repository's stored hash still matches the configured
+         * secret. The hash comes back on the row, so this costs no extra query;
+         * the comparison is asked of the service because the screen must not be
+         * a second place that knows how a secret is fingerprinted — two answers
+         * to that question would eventually differ, and the screen's would be
+         * the one nobody tested.
+         */
+        Current =
+        [
+            .. Rows
+                .Where(row => row.IsWatched
+                    && Repos.SecretIsCurrent(row.Provider, row.SecretHash))
+                .Select(row => row.Id),
+        ];
+    }
+
+    private async Task Connect()
+    {
+        Refusal = null;
+
+        try
+        {
+            await Repos.ConnectAsync(
+                GitProvider.GitHub,
+                Input.Owner,
+                Input.Name,
+                Input.Secret,
+                string.IsNullOrWhiteSpace(Input.ProjectId)
+                    ? null
+                    : Guid.Parse(Input.ProjectId));
+
+            Input = new ConnectInput();
+            await LoadAsync();
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private async Task Disconnect(Guid id)
+    {
+        Refusal = null;
+
+        try
+        {
+            await Repos.DisconnectAsync(id);
+            Navigation.NavigateTo("/repositories", forceLoad: true);
+        }
+        catch (InvalidOperationException exception)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private async Task Move(Guid id)
+    {
+        Refusal = null;
+
+        try
+        {
+            await Repos.MoveToProjectAsync(
+                id,
+                string.IsNullOrWhiteSpace(Moving.ProjectId)
+                    ? null
+                    : Guid.Parse(Moving.ProjectId));
+
+            Navigation.NavigateTo("/repositories", forceLoad: true);
+        }
+        catch (InvalidOperationException exception)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private sealed class MoveInput
+    {
+        public string? ProjectId { get; set; }
+    }
+
+    private sealed class ConnectInput
+    {
+        [Required(ErrorMessage = "The account or organisation the repository sits under.")]
+        [StringLength(200)]
+        public string Owner { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "The repository's name, as the host spells it.")]
+        [StringLength(200)]
+        public string Name { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Without the secret nothing arriving here could be trusted.")]
+        [StringLength(200)]
+        public string Secret { get; set; } = string.Empty;
+
+        public string? ProjectId { get; set; }
+    }
+}

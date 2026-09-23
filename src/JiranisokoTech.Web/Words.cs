@@ -1,5 +1,6 @@
 using JiranisokoTech.Domain.Clients;
 using JiranisokoTech.Domain.Contracts;
+using JiranisokoTech.Domain.Engineering;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Time;
 
@@ -102,6 +103,41 @@ public static class Words
         ContractState.Draft => "Being agreed",
         ContractState.Active => "In force",
         ContractState.Terminated => "Terminated",
+        _ => state.ToString(),
+    };
+
+    /// <summary>
+    /// What became of a delivery, said plainly.
+    /// </summary>
+    /// <remarks>
+    /// "Ignored" and "Dead lettered" are the two that need the plain words most.
+    /// The first is a success that looks like a failure — a star or a fork,
+    /// correctly read and correctly disregarded — and the second is a failure
+    /// that has stopped announcing itself, which is the one somebody has to act
+    /// on.
+    /// </remarks>
+    public static string For(DeliveryStatus status) => status switch
+    {
+        DeliveryStatus.Received => "Waiting",
+        DeliveryStatus.Handled => "Recorded",
+        DeliveryStatus.Ignored => "Nothing for us",
+        DeliveryStatus.Failed => "Failed, will retry",
+        DeliveryStatus.DeadLettered => "Gave up",
+        _ => status.ToString(),
+    };
+
+    /// <summary>Where a pull request got to.</summary>
+    /// <remarks>
+    /// "Closed" is spelt out as closed without merging, because the difference
+    /// between that and merged is the difference between work that shipped and
+    /// work that was abandoned — and a one-word label lets a reader assume the
+    /// generous reading.
+    /// </remarks>
+    public static string For(PullRequestState state) => state switch
+    {
+        PullRequestState.Open => "Open",
+        PullRequestState.Merged => "Merged",
+        PullRequestState.Closed => "Closed without merging",
         _ => state.ToString(),
     };
 

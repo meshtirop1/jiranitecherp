@@ -10,6 +10,16 @@ public sealed class WorkRepository(AppDbContext database) : IWorkRepository
     public Task<WorkItem?> FindAsync(Guid id, CancellationToken cancellationToken = default) =>
         database.WorkItems.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
 
+    public Task<WorkItem?> ByNumberAsync(
+        int number, CancellationToken cancellationToken = default) =>
+        database.WorkItems.FirstOrDefaultAsync(item => item.Number == number, cancellationToken);
+
+    public async Task<int> LastNumberAsync(CancellationToken cancellationToken = default) =>
+        await database.WorkItems
+            .AsNoTracking()
+            .Select(item => (int?)item.Number)
+            .MaxAsync(cancellationToken) ?? 0;
+
     public Task<Project?> FindProjectAsync(Guid id, CancellationToken cancellationToken = default) =>
         database.Projects.FirstOrDefaultAsync(project => project.Id == id, cancellationToken);
 

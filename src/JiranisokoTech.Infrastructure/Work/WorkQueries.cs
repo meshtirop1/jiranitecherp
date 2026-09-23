@@ -44,6 +44,7 @@ public sealed class WorkQueries(AppDbContext database)
             .Select(item => new
             {
                 item.Id,
+                item.Number,
                 item.Title,
                 item.Status,
                 item.Priority,
@@ -65,6 +66,7 @@ public sealed class WorkQueries(AppDbContext database)
 
         return rows.Select(row => new WorkItemRow(
             row.Id,
+            row.Number,
             row.Title,
             row.Status,
             row.Priority,
@@ -165,6 +167,7 @@ public sealed class WorkQueries(AppDbContext database)
 
 public sealed record WorkItemRow(
     Guid Id,
+    int Number,
     string Title,
     WorkItemStatus Status,
     Priority Priority,
@@ -176,6 +179,17 @@ public sealed record WorkItemRow(
     int? EstimateMinutes,
     string? BlockedReason)
 {
+    /// <summary>
+    /// What a developer writes in a branch name.
+    /// </summary>
+    /// <remarks>
+    /// On the row rather than only on the entity because it belongs on the
+    /// screen: the reference is the one thing somebody has to carry from here
+    /// into a branch name for their commits to come back attached to this work,
+    /// and a number they cannot see is a link they will not make.
+    /// </remarks>
+    public string Reference => $"#{Number}";
+
     /// <summary>The estimate as somebody would say it, or nothing.</summary>
     public string? Estimate => EstimateMinutes switch
     {

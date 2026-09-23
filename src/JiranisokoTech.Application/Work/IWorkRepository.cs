@@ -6,6 +6,18 @@ public interface IWorkRepository
 {
     Task<WorkItem?> FindAsync(Guid id, CancellationToken cancellationToken = default);
 
+    /// <summary>The work item somebody wrote in a branch name.</summary>
+    Task<WorkItem?> ByNumberAsync(int number, CancellationToken cancellationToken = default);
+
+    /// <summary>The highest number issued so far, or zero.</summary>
+    /// <remarks>
+    /// Work is numbered so that a person can write the reference in a branch
+    /// name while thinking about something else, which is the only way a commit
+    /// gets tied back to the work it belongs to. Asked of the database because
+    /// that is where the answer is.
+    /// </remarks>
+    Task<int> LastNumberAsync(CancellationToken cancellationToken = default);
+
     Task<Project?> FindProjectAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<bool> CodeTakenAsync(
