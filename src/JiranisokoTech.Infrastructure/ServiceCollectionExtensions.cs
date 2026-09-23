@@ -201,6 +201,18 @@ public static class ServiceCollectionExtensions
             TellTheDeciderSomethingIsWaiting>();
         services.AddScoped<IDomainEventHandler<ApprovalSettled>, TellTheAskerItWasDecided>();
 
+        /*
+         * The letters that leave this firm. Registered alongside the internal
+         * ones because they go through the same outbox and the same mailer;
+         * what makes them different is who reads them, which is a matter for
+         * the letters rather than the plumbing.
+         */
+        services.AddScoped<IDomainEventHandler<ApplicationReceived>,
+            TellTheCandidateWeHaveIt>();
+        services.AddScoped<IDomainEventHandler<ApplicationMoved>,
+            TellTheCandidateTheAnswer>();
+        services.AddScoped<IDomainEventHandler<InterviewScheduled>, InviteTheCandidate>();
+
         return services;
     }
 
