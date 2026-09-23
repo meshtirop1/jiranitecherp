@@ -20,7 +20,7 @@ public class ApprovalServiceTests
     {
         private readonly TestDbContext _context = db.NewContext();
 
-        public PeopleService People => new(new PeopleRepository(_context));
+        public PeopleService People => new(new PeopleRepository(_context), db.Clock);
 
         public ApprovalService Approvals =>
             new(new ApprovalRepository(_context), new PeopleRepository(_context), db.Clock);

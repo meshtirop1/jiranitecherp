@@ -48,6 +48,24 @@ public sealed class PeopleRepository(AppDbContext database) : IPeopleRepository
 
     public void Add(Department department) => database.Departments.Add(department);
 
+    public Task<Offboarding?> OffboardingForAsync(
+        Guid employeeId, CancellationToken cancellationToken = default) =>
+        database.Offboardings.FirstOrDefaultAsync(
+            one => one.EmployeeId == employeeId, cancellationToken);
+
+    public Task<Offboarding?> FindOffboardingAsync(
+        Guid id, CancellationToken cancellationToken = default) =>
+        database.Offboardings.FirstOrDefaultAsync(one => one.Id == id, cancellationToken);
+
+    public Task<List<Offboarding>> UnfinishedOffboardingsAsync(
+        CancellationToken cancellationToken = default) =>
+        database.Offboardings
+            .Where(one => one.CompletedAt == null)
+            .OrderBy(one => one.LeavingOn)
+            .ToListAsync(cancellationToken);
+
+    public void Add(Offboarding offboarding) => database.Offboardings.Add(offboarding);
+
     public Task SaveAsync(CancellationToken cancellationToken = default) =>
         database.SaveChangesAsync(cancellationToken);
 }

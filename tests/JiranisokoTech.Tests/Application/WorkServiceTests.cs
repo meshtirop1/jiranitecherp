@@ -20,7 +20,7 @@ public class WorkServiceTests
     {
         private readonly TestDbContext _context = db.NewContext();
 
-        public PeopleService People => new(new PeopleRepository(_context));
+        public PeopleService People => new(new PeopleRepository(_context), db.Clock);
 
         public WorkService Work =>
             new(new WorkRepository(_context), new PeopleRepository(_context), db.Clock);

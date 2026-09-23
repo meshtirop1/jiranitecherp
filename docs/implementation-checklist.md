@@ -126,11 +126,11 @@ This block is the brief's stated centre of gravity and none of it exists.
 | ✅ | 7 | Applications | Readable, movable, CV downloadable |
 | ✅ | 7 | Interviews and scorecards | Panels, four-point scale, one strong no carries |
 | ✅ | 7 | Candidate correspondence | Acknowledgement, rejection, invitation, offer |
-| ◐ | 7 | Candidate profile | Name, email, phone, CV. No portfolio, GitHub, LinkedIn, skills, experience, education or salary expectation |
+| ✅ | 7 | Candidate profile | Portfolio, GitHub, LinkedIn, experience, education, skills as stated, and a salary expectation behind employees.pay |
 | ☐ | 7 | Technical assessments | |
 | ☐ | 8 | Offer documents, electronic acceptance | A letter is sent; there is no offer object to approve or accept |
 | ☐ | 8 | Onboarding checklist, equipment, account provisioning | |
-| ◐ | 9 | Offboarding | A leaver's work is released. No exit interview, asset return or access removal |
+| ✅ | 9 | Offboarding | Work released, plus a checklist: assets out, sign-in closed with who closed it, exit interview kept narrowly. A departure cannot be closed with access still live |
 
 ## Finance — phase 5
 

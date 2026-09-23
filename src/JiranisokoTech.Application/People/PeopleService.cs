@@ -16,7 +16,7 @@ namespace JiranisokoTech.Application.People;
 /// than one row: a reporting line that would close a loop, a handle already
 /// taken, a head who does not work here.
 /// </remarks>
-public sealed class PeopleService(IPeopleRepository people)
+public sealed class PeopleService(IPeopleRepository people, Abstractions.IClock clock)
 {
     public async Task<Department> OpenDepartmentAsync(
         string name,
@@ -254,10 +254,108 @@ public sealed class PeopleService(IPeopleRepository people)
             department.AppointHead(null);
         }
 
+        /*
+         * The checklist is started here rather than being something somebody remembers to
+         * create. Section 9 released a leaver's work and left the laptop, the building pass
+         * and the sign-in alive indefinitely with nothing anywhere saying so — and the way
+         * that happens is never a decision, it is an omission.
+         *
+         * Reused rather than duplicated if one already exists, because somebody who leaves,
+         * is reinstated and leaves again must not end up with two open checklists: the
+         * laptop then appears on neither.
+         */
+        if (await people.OffboardingForAsync(employeeId, cancellationToken) is { } already)
+        {
+            already.LeavesOn(on);
+        }
+        else
+        {
+            people.Add(Offboarding.Begin(employeeId, on, clock.Now));
+        }
+
         await people.SaveAsync(cancellationToken);
 
         return reports.Count;
     }
+
+    /// <summary>Note that the firm lent somebody something they have to give back.</summary>
+    public async Task LentAsync(
+        Guid employeeId,
+        AssetKind kind,
+        string description,
+        string? identifier,
+        CancellationToken cancellationToken = default)
+    {
+        var offboarding = await RequiredOffboarding(employeeId, cancellationToken);
+
+        offboarding.Lent(kind, description, identifier);
+        await people.SaveAsync(cancellationToken);
+    }
+
+    public async Task ReturnedAsync(
+        Guid employeeId,
+        Guid assetId,
+        DateOnly on,
+        string? condition,
+        CancellationToken cancellationToken = default)
+    {
+        var offboarding = await RequiredOffboarding(employeeId, cancellationToken);
+
+        offboarding.Returned(assetId, on, condition);
+        await people.SaveAsync(cancellationToken);
+    }
+
+    public async Task NotLentAsync(
+        Guid employeeId, Guid assetId, CancellationToken cancellationToken = default)
+    {
+        var offboarding = await RequiredOffboarding(employeeId, cancellationToken);
+
+        offboarding.Forget(assetId);
+        await people.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Record that a leaver's sign-in has been closed.
+    /// </summary>
+    /// <remarks>
+    /// Marked by a person rather than done on the leaving date. People leave on a date and
+    /// then work a handover week, so an account cut off at midnight locks somebody out
+    /// mid-sentence — and a leaving date entered wrongly, which happens, would destroy
+    /// access with nobody having decided anything.
+    /// </remarks>
+    public async Task AccessRemovedAsync(
+        Guid employeeId, Guid byEmployeeId, CancellationToken cancellationToken = default)
+    {
+        var offboarding = await RequiredOffboarding(employeeId, cancellationToken);
+
+        offboarding.AccessRemoved(byEmployeeId, clock.Now);
+        await people.SaveAsync(cancellationToken);
+    }
+
+    public async Task ExitInterviewHeldAsync(
+        Guid employeeId, string? notes, CancellationToken cancellationToken = default)
+    {
+        var offboarding = await RequiredOffboarding(employeeId, cancellationToken);
+
+        offboarding.ExitInterviewHeld(notes, clock.Now);
+        await people.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>Say the departure is dealt with.</summary>
+    public async Task CompleteOffboardingAsync(
+        Guid employeeId, CancellationToken cancellationToken = default)
+    {
+        var offboarding = await RequiredOffboarding(employeeId, cancellationToken);
+
+        offboarding.Complete(clock.Now);
+        await people.SaveAsync(cancellationToken);
+    }
+
+    private async Task<Offboarding> RequiredOffboarding(
+        Guid employeeId, CancellationToken cancellationToken) =>
+        await people.OffboardingForAsync(employeeId, cancellationToken)
+        ?? throw new InvalidOperationException(
+            "Nothing is being offboarded for that person. Record that they have left first.");
 
     public async Task LinkAccountAsync(
         Guid employeeId, Guid accountId, CancellationToken cancellationToken = default)

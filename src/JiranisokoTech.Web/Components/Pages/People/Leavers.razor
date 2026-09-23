@@ -1,0 +1,360 @@
+@page "/people/leavers"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Abstractions
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.People
+@using JiranisokoTech.Domain.People
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.EmployeesManage)]
+@inject IPeopleRepository Staff
+@inject PeopleQueries People
+@inject PeopleService Service
+@inject IClock Clock
+@inject NavigationManager Navigation
+
+<PageTitle>Leavers — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/people">People</a></nav>
+
+<div class="page-head">
+    <h1>Leavers</h1>
+</div>
+
+<p class="instructions">
+    What still has to happen for everybody who has left. Recording a departure takes
+    three seconds; the laptop, the building pass and the sign-in outlive it unless
+    somebody says otherwise, and this is where that is said.
+</p>
+
+<p class="subtle">
+    Nothing here happens on its own. An account is not closed because a date passed:
+    people leave on a date and then work a handover week, and a leaving date entered
+    wrongly would destroy somebody's access with nobody having decided anything.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Done is not null)
+{
+    <p class="done" role="status">@Done</p>
+}
+
+@if (Unfinished.Count == 0)
+{
+    <p class="empty">
+        Nothing outstanding. Everybody who has left has had their access closed and has
+        given back what they were lent.
+    </p>
+}
+else
+{
+    @foreach (var leaving in Unfinished)
+    {
+        <section class="panel stack">
+            <h2>
+                @(Names.GetValueOrDefault(leaving.EmployeeId) ?? "Somebody no longer on file")
+                <span class="subtle">left @leaving.LeavingOn.ToString("d MMMM yyyy")</span>
+            </h2>
+
+            <dl class="facts">
+                <dt>Sign-in</dt>
+                <dd>
+                    @if (leaving.AccessRemovedAt is { } closed)
+                    {
+                        <span class="pill pill--done">
+                            Closed @closed.ToString("d MMM yyyy")
+                        </span>
+                    }
+                    else
+                    {
+                        @*
+                            The one item whose omission is a security finding rather than
+                            an inconvenience, so it is the one shown in red.
+                        *@
+                        <span class="pill pill--danger">Still live</span>
+
+                        <EditForm Model="Nothing" method="post"
+                                  FormName="@($"access-{leaving.Id}")"
+                                  OnValidSubmit="() => CloseAccess(leaving.EmployeeId)"
+                                  class="inline">
+                            <button type="submit">I have closed it</button>
+                        </EditForm>
+                    }
+                </dd>
+
+                <dt>Exit interview</dt>
+                <dd>
+                    @if (leaving.ExitInterviewAt is { } held)
+                    {
+                        <span class="pill pill--done">Held @held.ToString("d MMM yyyy")</span>
+                    }
+                    else
+                    {
+                        @*
+                            Not required to finish an offboarding. Somebody may decline one,
+                            and a system that insisted would get "declined" typed into a
+                            notes field to make a button work.
+                        *@
+                        <span class="pill pill--quiet">Not held</span>
+                    }
+                </dd>
+            </dl>
+
+            @if (leaving.ExitInterviewAt is null)
+            {
+                <EditForm Model="Interview" method="post"
+                          FormName="@($"interview-{leaving.Id}")"
+                          OnValidSubmit="() => RecordInterview(leaving.EmployeeId)"
+                          class="stack">
+                    <label>
+                        <span>What they said</span>
+                        <InputTextArea @bind-Value="Interview.Notes" rows="3" />
+                        <span class="subtle">
+                            Read by whoever keeps the staff records and nobody else, and
+                            kept out of the audit trail. An exit interview is where
+                            somebody says what they could not say while employed.
+                        </span>
+                    </label>
+                    <button type="submit">Record the conversation</button>
+                </EditForm>
+            }
+
+            <h3>What they were lent</h3>
+
+            @if (leaving.Assets.Count == 0)
+            {
+                <p class="empty">Nothing recorded as lent.</p>
+            }
+            else
+            {
+                <table class="grid">
+                    <caption class="visually-hidden">Assets lent to this leaver</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">What</th>
+                            <th scope="col">Identifier</th>
+                            <th scope="col">Back?</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var asset in leaving.Assets)
+                        {
+                            <tr>
+                                <td>
+                                    <strong>@asset.Description</strong>
+                                    <span class="subtle">@asset.Kind</span>
+                                </td>
+                                <td><code>@(asset.Identifier ?? "—")</code></td>
+                                <td>
+                                    @if (asset.ReturnedOn is { } back)
+                                    {
+                                        <span class="pill pill--done">
+                                            @back.ToString("d MMM yyyy")
+                                        </span>
+
+                                        @if (asset.Condition is { } condition)
+                                        {
+                                            <span class="subtle">@condition</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span class="pill pill--danger">Still with them</span>
+
+                                        <EditForm Model="Returning" method="post"
+                                                  FormName="@($"return-{asset.Id}")"
+                                                  OnValidSubmit="() => MarkReturned(leaving.EmployeeId, asset.Id)"
+                                                  class="inline">
+                                            <InputText @bind-Value="Returning.Condition"
+                                                       placeholder="What state it is in" />
+                                            <button type="submit">Got it back</button>
+                                        </EditForm>
+
+                                        <EditForm Model="Nothing" method="post"
+                                                  FormName="@($"never-{asset.Id}")"
+                                                  OnValidSubmit="() => NotLent(leaving.EmployeeId, asset.Id)"
+                                                  class="inline">
+                                            @*
+                                                Because the realistic mistake is adding
+                                                something to the list that was never lent,
+                                                and a checklist with a phantom item on it
+                                                can never be finished.
+                                            *@
+                                            <button type="submit" class="button button--quiet">
+                                                Never lent
+                                            </button>
+                                        </EditForm>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            <EditForm Model="Lending" method="post" FormName="@($"lent-{leaving.Id}")"
+                      OnValidSubmit="() => AddAsset(leaving.EmployeeId)" class="inline">
+                <InputSelect @bind-Value="Lending.Kind">
+                    @foreach (var kind in Enum.GetValues<AssetKind>())
+                    {
+                        <option value="@kind">@kind</option>
+                    }
+                </InputSelect>
+                <InputText @bind-Value="Lending.Description"
+                           placeholder="MacBook Pro 14, 2025" />
+                <InputText @bind-Value="Lending.Identifier" placeholder="Serial or tag" />
+                <button type="submit">Add to the list</button>
+            </EditForm>
+
+            @if (!leaving.HasOutstandingItems)
+            {
+                <EditForm Model="Nothing" method="post" FormName="@($"finish-{leaving.Id}")"
+                          OnValidSubmit="() => Finish(leaving.EmployeeId)" class="inline">
+                    <button type="submit">Everything is dealt with</button>
+                </EditForm>
+            }
+        </section>
+    }
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private object Nothing { get; } = new();
+
+    private LendingInput _lending = new();
+
+    [SupplyParameterFromForm(FormName = "lent")]
+    private LendingInput Lending
+    {
+        get => _lending;
+        set => _lending = value ?? new LendingInput();
+    }
+
+    private ReturnInput _returning = new();
+
+    [SupplyParameterFromForm(FormName = "return")]
+    private ReturnInput Returning
+    {
+        get => _returning;
+        set => _returning = value ?? new ReturnInput();
+    }
+
+    private InterviewInput _interview = new();
+
+    [SupplyParameterFromForm(FormName = "interview")]
+    private InterviewInput Interview
+    {
+        get => _interview;
+        set => _interview = value ?? new InterviewInput();
+    }
+
+    private List<Offboarding> Unfinished { get; set; } = [];
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Unfinished = await Staff.UnfinishedOffboardingsAsync();
+
+        // The whole roster, because a leaver is not on the active one.
+        Names = (await People.RosterAsync())
+            .ToDictionary(person => person.Id, person => person.FullName);
+    }
+
+    private Task AddAsset(Guid employeeId) => TryAsync(() => Service.LentAsync(
+        employeeId,
+        Enum.TryParse<AssetKind>(Lending.Kind, out var kind) ? kind : AssetKind.Other,
+        Lending.Description ?? string.Empty,
+        Lending.Identifier));
+
+    private Task MarkReturned(Guid employeeId, Guid assetId) => TryAsync(
+        () => Service.ReturnedAsync(employeeId, assetId, Clock.Today, Returning.Condition));
+
+    private Task NotLent(Guid employeeId, Guid assetId) => TryAsync(
+        () => Service.NotLentAsync(employeeId, assetId));
+
+    private Task RecordInterview(Guid employeeId) => TryAsync(
+        () => Service.ExitInterviewHeldAsync(employeeId, Interview.Notes));
+
+    private async Task CloseAccess(Guid employeeId)
+    {
+        var user = (await AuthenticationState).User;
+
+        Guid? me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        if (me is null)
+        {
+            /*
+             * Refused rather than recorded as nobody. This is the item an auditor asks
+             * about, and "somebody dealt with it" is not an answer — so it cannot be
+             * marked done by an account with no staff record behind it.
+             */
+            Refusal =
+                "Your sign-in is not linked to a staff record, so this cannot be recorded "
+                + "against anybody. Closing an account is the item an auditor asks who did.";
+
+            return;
+        }
+
+        await TryAsync(() => Service.AccessRemovedAsync(employeeId, me.Value));
+    }
+
+    private Task Finish(Guid employeeId) => TryAsync(
+        () => Service.CompleteOffboardingAsync(employeeId));
+
+    private async Task TryAsync(Func<Task> act)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await act();
+            Navigation.NavigateTo("/people/leavers", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private sealed class LendingInput
+    {
+        public string? Kind { get; set; } = nameof(AssetKind.Laptop);
+
+        [StringLength(300)]
+        public string? Description { get; set; }
+
+        [StringLength(100)]
+        public string? Identifier { get; set; }
+    }
+
+    private sealed class ReturnInput
+    {
+        [StringLength(500)]
+        public string? Condition { get; set; }
+    }
+
+    private sealed class InterviewInput
+    {
+        [StringLength(8000)]
+        public string? Notes { get; set; }
+    }
+}

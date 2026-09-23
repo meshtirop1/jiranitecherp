@@ -24,7 +24,7 @@ public class PeopleServiceTests
     {
         private readonly TestDbContext _context = db.NewContext();
 
-        public PeopleService Service => new(new PeopleRepository(_context));
+        public PeopleService Service => new(new PeopleRepository(_context), db.Clock);
 
         public TestDbContext Context => _context;
 

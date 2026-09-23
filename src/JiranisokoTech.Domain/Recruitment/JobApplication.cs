@@ -258,11 +258,109 @@ public sealed class Candidate : Entity, IAuditable
 
     public DateTimeOffset FirstSeenAt { get; private init; }
 
+    /// <summary>
+    /// What they have shown of their work.
+    /// </summary>
+    /// <remarks>
+    /// A portfolio, a GitHub profile and a LinkedIn page are three separate fields
+    /// rather than one list of links, because an interviewer scanning a candidate wants
+    /// to know which of the three exists — and "no GitHub" is information about a
+    /// developer in a way that "only two links" is not.
+    /// </remarks>
+    public string? Portfolio { get; private set; }
+
+    public string? GitHub { get; private set; }
+
+    public string? LinkedIn { get; private set; }
+
+    /// <summary>
+    /// How long they have been doing this, in years.
+    /// </summary>
+    /// <remarks>
+    /// As the candidate states it, not computed from anything. Working it out from a
+    /// list of dated positions sounds better and produces a number that argues with the
+    /// candidate's own CV about gaps, contract overlaps and time out — and the argument
+    /// is always lost by the system.
+    /// </remarks>
+    public int? YearsOfExperience { get; private set; }
+
+    /// <summary>The highest qualification, in the candidate's own words.</summary>
+    public string? Education { get; private set; }
+
+    /// <summary>
+    /// What they are asking for, as minor units beside a currency.
+    /// </summary>
+    /// <remarks>
+    /// Recorded because a hiring process that discovers the number at the offer stage has
+    /// wasted everybody's four interviews. Behind employees.pay on the screen, like every
+    /// other figure of this kind: an interviewer needs to score a conversation, not to
+    /// know what the candidate wants, and knowing it changes how they score.
+    /// </remarks>
+    public long? ExpectedSalaryMinorUnits { get; private set; }
+
+    public string? ExpectedSalaryCurrency { get; private set; }
+
+    /// <summary>What they are asking for, when both halves are present.</summary>
+    public Common.Money? ExpectedSalary =>
+        ExpectedSalaryMinorUnits is { } minor && ExpectedSalaryCurrency is { Length: 3 } currency
+            ? Common.Money.Of(minor, currency)
+            : null;
+
+    /// <summary>What they say they can do, as free text.</summary>
+    /// <remarks>
+    /// Text rather than the structured skill list a member of staff has, and the
+    /// difference is deliberate. A staff skill is the firm's own assessment, kept up to
+    /// date and searched when a project needs somebody. A candidate's skills are a claim
+    /// on a CV, and storing a claim in the same shape as an assessment would let the two
+    /// be searched together as though they carried the same weight.
+    /// </remarks>
+    public string? Skills { get; private set; }
+
     public void Update(string fullName, string? phone)
     {
         FullName = Require(fullName, nameof(fullName));
         Phone = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim();
     }
+
+    /// <summary>Record what they have shown and what they are asking for.</summary>
+    public void Describe(
+        string? portfolio,
+        string? gitHub,
+        string? linkedIn,
+        int? yearsOfExperience,
+        string? education,
+        string? skills)
+    {
+        if (yearsOfExperience is < 0 or > 70)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(yearsOfExperience),
+                "Between none and seventy years. Anything outside that is a typing mistake, "
+                + "and it would sort this candidate to the top or the bottom of every list.");
+        }
+
+        Portfolio = Trimmed(portfolio);
+        GitHub = Trimmed(gitHub);
+        LinkedIn = Trimmed(linkedIn);
+        YearsOfExperience = yearsOfExperience;
+        Education = Trimmed(education);
+        Skills = Trimmed(skills);
+    }
+
+    public void Expects(Common.Money? salary)
+    {
+        if (salary is { MinorUnits: < 0 })
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(salary), "A salary expectation cannot be less than nothing.");
+        }
+
+        ExpectedSalaryMinorUnits = salary?.MinorUnits;
+        ExpectedSalaryCurrency = salary?.Currency;
+    }
+
+    private static string? Trimmed(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     /// <summary>
     /// A candidate is a person outside the firm, and the trail is read inside
@@ -276,6 +374,15 @@ public sealed class Candidate : Entity, IAuditable
     public static IReadOnlySet<string> AuditExcludes { get; } = new HashSet<string>
     {
         nameof(Phone),
+
+        /*
+         * And what they are asking for. An audit row is read by anybody holding
+         * audit.view, which is a wider set of people than may see the figure on the
+         * candidate's own record — so leaving it in would route around employees.pay by
+         * way of the change history.
+         */
+        nameof(ExpectedSalaryMinorUnits),
+        nameof(ExpectedSalaryCurrency),
     };
 
     private static string Require(string value, string parameter) =>

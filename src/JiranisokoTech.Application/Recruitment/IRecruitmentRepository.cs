@@ -10,6 +10,9 @@ public interface IRecruitmentRepository
 
     Task<JobApplication?> FindApplicationAsync(Guid id, CancellationToken cancellationToken = default);
 
+    Task<Candidate?> FindCandidateAsync(
+        Guid id, CancellationToken cancellationToken = default);
+
     Task<Candidate?> FindCandidateByEmailAsync(
         string email, CancellationToken cancellationToken = default);
 

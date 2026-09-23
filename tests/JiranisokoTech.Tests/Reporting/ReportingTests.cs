@@ -35,7 +35,7 @@ public class ReportingTests
 
         private BusinessRepository Repository => new(_context);
 
-        public PeopleService People => new(new PeopleRepository(_context));
+        public PeopleService People => new(new PeopleRepository(_context), db.Clock);
 
         public WorkService Work =>
             new(new WorkRepository(_context), new PeopleRepository(_context), db.Clock);

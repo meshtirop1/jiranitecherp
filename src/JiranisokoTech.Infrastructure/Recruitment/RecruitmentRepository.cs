@@ -21,6 +21,11 @@ public sealed class RecruitmentRepository(AppDbContext database) : IRecruitmentR
         database.Applications.FirstOrDefaultAsync(
             application => application.Id == id, cancellationToken);
 
+    public Task<Candidate?> FindCandidateAsync(
+        Guid id, CancellationToken cancellationToken = default) =>
+        database.Candidates.FirstOrDefaultAsync(
+            candidate => candidate.Id == id, cancellationToken);
+
     public Task<Candidate?> FindCandidateByEmailAsync(
         string email, CancellationToken cancellationToken = default) =>
         database.Candidates.FirstOrDefaultAsync(

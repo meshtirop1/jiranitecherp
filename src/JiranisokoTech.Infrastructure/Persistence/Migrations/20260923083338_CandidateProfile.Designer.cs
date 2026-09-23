@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using JiranisokoTech.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace JiranisokoTech.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260923083338_CandidateProfile")]
+    partial class CandidateProfile
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1008,8 +1011,7 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<string>("Education")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
+                        .HasColumnType("text");
 
                     b.Property<string>("Email")
                         .IsRequired()
@@ -1017,8 +1019,7 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(255)");
 
                     b.Property<string>("ExpectedSalaryCurrency")
-                        .HasMaxLength(3)
-                        .HasColumnType("character varying(3)");
+                        .HasColumnType("text");
 
                     b.Property<long?>("ExpectedSalaryMinorUnits")
                         .HasColumnType("bigint");
@@ -1032,24 +1033,20 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(200)");
 
                     b.Property<string>("GitHub")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
+                        .HasColumnType("text");
 
                     b.Property<string>("LinkedIn")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
+                        .HasColumnType("text");
 
                     b.Property<string>("Phone")
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)");
 
                     b.Property<string>("Portfolio")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
+                        .HasColumnType("text");
 
                     b.Property<string>("Skills")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
+                        .HasColumnType("text");
 
                     b.Property<int?>("YearsOfExperience")
                         .HasColumnType("integer");

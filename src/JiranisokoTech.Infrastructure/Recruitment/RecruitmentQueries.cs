@@ -203,6 +203,7 @@ public sealed class RecruitmentQueries(AppDbContext database)
 
         return [.. applications.Select(application => new WaitingApplicationRow(
             application.Id,
+            application.CandidateId,
             candidates.GetValueOrDefault(application.CandidateId)?.FullName ?? "A candidate since removed",
             candidates.GetValueOrDefault(application.CandidateId)?.Email ?? string.Empty,
             postings.GetValueOrDefault(application.PostingId) ?? "An advert since removed",
@@ -280,6 +281,15 @@ public sealed record PostingRow(
 /// <summary>An application, with enough around it to act on without opening it.</summary>
 public sealed record WaitingApplicationRow(
     Guid Id,
+
+    /// <summary>
+    /// The candidate, so the list can link to their profile.
+    /// </summary>
+    /// <remarks>
+    /// The row carried a name and an email and no way to reach the record they came from,
+    /// which made the candidate profile a page nothing could link to.
+    /// </remarks>
+    Guid CandidateId,
     string CandidateName,
     string CandidateEmail,
     string PostingTitle,

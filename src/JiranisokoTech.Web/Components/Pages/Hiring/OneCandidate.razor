@@ -1,0 +1,288 @@
+@page "/hiring/candidates/{id:guid}"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Recruitment
+@using JiranisokoTech.Domain.Recruitment
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.CandidatesView)]
+@inject IRecruitmentRepository Recruitment
+@inject RecruitmentService Service
+@inject NavigationManager Navigation
+
+<PageTitle>@(Candidate?.FullName ?? "Candidate") — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/hiring/applications">Applications</a></nav>
+
+@if (Candidate is null)
+{
+    <h1>No such candidate</h1>
+    <p><a href="/hiring/applications">Back to applications</a></p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Candidate.FullName</h1>
+    </div>
+
+    <p class="subtle">@Candidate.Email</p>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    <dl class="facts">
+        <dt>Phone</dt>
+        <dd>@(Candidate.Phone ?? "Not given")</dd>
+
+        <dt>First seen</dt>
+        <dd>@Candidate.FirstSeenAt.ToString("d MMMM yyyy")</dd>
+
+        @*
+            Three separate fields rather than one list of links, because an interviewer
+            scanning a candidate wants to know which of the three exists — and "no
+            GitHub" is information about a developer in a way that "two links" is not.
+        *@
+        <dt>Portfolio</dt>
+        <dd>@Link(Candidate.Portfolio)</dd>
+
+        <dt>GitHub</dt>
+        <dd>@Link(Candidate.GitHub)</dd>
+
+        <dt>LinkedIn</dt>
+        <dd>@Link(Candidate.LinkedIn)</dd>
+
+        <dt>Experience</dt>
+        <dd>
+            @(Candidate.YearsOfExperience is { } years
+                ? $"{years} {(years == 1 ? "year" : "years")}"
+                : "Not stated")
+        </dd>
+
+        <dt>Education</dt>
+        <dd>@(Candidate.Education ?? "Not stated")</dd>
+
+        <dt>Skills, as they describe them</dt>
+        <dd>@(Candidate.Skills ?? "Not stated")</dd>
+    </dl>
+
+    @*
+        What they are asking for, behind the same permission as a salary.
+
+        An interviewer is there to score a conversation, and knowing the number changes
+        how they score it — so candidates.view is not enough to see this. It is recorded
+        early all the same, because a process that discovers the figure at the offer
+        stage has already wasted four interviews.
+    *@
+    <AuthorizeView Policy="@PayPolicy" Context="mayPay">
+        <section class="standing">
+            <h2>What they are asking for</h2>
+
+            <p class="standing__figure">
+                @(Candidate.ExpectedSalary is { } wanted ? wanted.ToString() : "Not stated")
+            </p>
+
+            <EditForm Model="Expectation" method="post" OnValidSubmit="SaveExpectation"
+                      FormName="expectation" class="inline">
+                <DataAnnotationsValidator />
+                <InputNumber @bind-Value="Expectation.Amount" min="0" />
+                <InputText @bind-Value="Expectation.Currency" maxlength="3" placeholder="KES" />
+                <button type="submit">Record it</button>
+                <ValidationMessage For="() => Expectation.Amount" />
+            </EditForm>
+        </section>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@ManagePolicy" Context="mayManage">
+        <EditForm Model="Input" method="post" OnValidSubmit="Save" FormName="describe"
+                  class="panel stack">
+            <DataAnnotationsValidator />
+
+            <h2>Record what they have shown</h2>
+
+            <div class="fields">
+                <label>
+                    <span>Portfolio</span>
+                    <InputText @bind-Value="Input.Portfolio" />
+                </label>
+
+                <label>
+                    <span>GitHub</span>
+                    <InputText @bind-Value="Input.GitHub" />
+                </label>
+
+                <label>
+                    <span>LinkedIn</span>
+                    <InputText @bind-Value="Input.LinkedIn" />
+                </label>
+
+                <label>
+                    <span>Years of experience</span>
+                    <InputNumber @bind-Value="Input.YearsOfExperience" min="0" max="70" />
+                    <ValidationMessage For="() => Input.YearsOfExperience" />
+                </label>
+            </div>
+
+            <label>
+                <span>Education</span>
+                <InputText @bind-Value="Input.Education" />
+            </label>
+
+            <label>
+                <span>Skills, in their words</span>
+                <InputTextArea @bind-Value="Input.Skills" rows="3" />
+                @*
+                    Free text rather than the structured list a member of staff has. A
+                    staff skill is the firm's own assessment, searched when a project
+                    needs somebody; a candidate's is a claim on a CV, and storing the two
+                    in one shape would let them be searched as though they weighed the
+                    same.
+                *@
+                <span class="subtle">
+                    As they described them. Not the same thing as the skills recorded
+                    against a member of staff, which are the firm's own assessment.
+                </span>
+            </label>
+
+            <button type="submit">Save</button>
+        </EditForm>
+    </AuthorizeView>
+
+    <p><a href="/hiring/applications">Back to applications</a></p>
+}
+
+@code {
+    private const string ManagePolicy =
+        PermissionClaim.PolicyPrefix + Permissions.ApplicationsManage;
+
+    private const string PayPolicy = PermissionClaim.PolicyPrefix + Permissions.EmployeesPay;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private DescribeInput _input = new();
+
+    [SupplyParameterFromForm(FormName = "describe")]
+    private DescribeInput Input
+    {
+        get => _input;
+        set => _input = value ?? new DescribeInput();
+    }
+
+    private ExpectationInput _expectation = new();
+
+    [SupplyParameterFromForm(FormName = "expectation")]
+    private ExpectationInput Expectation
+    {
+        get => _expectation;
+        set => _expectation = value ?? new ExpectationInput();
+    }
+
+    private Candidate? Candidate { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private bool _filled;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Candidate = await Recruitment.FindCandidateAsync(Id);
+
+        if (_filled || Candidate is null)
+        {
+            return;
+        }
+
+        _filled = true;
+
+        _input = new DescribeInput
+        {
+            Portfolio = Candidate.Portfolio,
+            GitHub = Candidate.GitHub,
+            LinkedIn = Candidate.LinkedIn,
+            YearsOfExperience = Candidate.YearsOfExperience,
+            Education = Candidate.Education,
+            Skills = Candidate.Skills,
+        };
+
+        _expectation = new ExpectationInput
+        {
+            Amount = Candidate.ExpectedSalaryMinorUnits,
+            Currency = Candidate.ExpectedSalaryCurrency ?? "KES",
+        };
+    }
+
+    private async Task Save() => await TryAsync(() => Service.DescribeCandidateAsync(
+        Id,
+        Input.Portfolio,
+        Input.GitHub,
+        Input.LinkedIn,
+        Input.YearsOfExperience,
+        Input.Education,
+        Input.Skills));
+
+    private async Task SaveExpectation() => await TryAsync(
+        () => Service.CandidateExpectsAsync(Id, Expectation.Amount, Expectation.Currency));
+
+    private async Task TryAsync(Func<Task> act)
+    {
+        Refusal = null;
+
+        try
+        {
+            await act();
+            Navigation.NavigateTo($"/hiring/candidates/{Id}", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException
+                or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    /// <summary>
+    /// A link, or a plain dash.
+    /// </summary>
+    /// <remarks>
+    /// Not made clickable. These are addresses a stranger supplied, and a page that
+    /// turns them into links invites somebody to follow one from inside the firm's own
+    /// application — which is how a hiring screen becomes a way to reach a browser.
+    /// Shown as text, for copying deliberately.
+    /// </remarks>
+    private static string Link(string? address) =>
+        string.IsNullOrWhiteSpace(address) ? "Not given" : address;
+
+    private sealed class DescribeInput
+    {
+        [StringLength(500)]
+        public string? Portfolio { get; set; }
+
+        [StringLength(500)]
+        public string? GitHub { get; set; }
+
+        [StringLength(500)]
+        public string? LinkedIn { get; set; }
+
+        [Range(0, 70, ErrorMessage = "Between none and seventy years.")]
+        public int? YearsOfExperience { get; set; }
+
+        [StringLength(500)]
+        public string? Education { get; set; }
+
+        [StringLength(4000)]
+        public string? Skills { get; set; }
+    }
+
+    private sealed class ExpectationInput
+    {
+        [Range(0, long.MaxValue, ErrorMessage = "It cannot be less than nothing.")]
+        public long? Amount { get; set; }
+
+        [StringLength(3, MinimumLength = 3, ErrorMessage = "Three letters, such as KES.")]
+        public string? Currency { get; set; } = "KES";
+    }
+}

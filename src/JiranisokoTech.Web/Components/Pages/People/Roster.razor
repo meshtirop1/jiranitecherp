@@ -17,6 +17,16 @@
 <div class="page-head">
     <h1>People</h1>
 
+    <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.EmployeesManage)"
+                   Context="mayManage">
+        @*
+            What is outstanding for everybody who has left. Kept off this page rather than
+            shown as a column, because a roster is read to find somebody and a leaver's
+            laptop is read to chase it.
+        *@
+        <p class="subtle"><a href="/people/leavers">Leavers, and what is outstanding</a></p>
+    </AuthorizeView>
+
     <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.EmployeesManage)">
         <a class="button" href="/people/new">Add someone</a>
     </AuthorizeView>

@@ -78,6 +78,18 @@ public sealed class CandidateConfiguration : IEntityTypeConfiguration<Candidate>
         builder.Property(candidate => candidate.Email).HasMaxLength(255).IsRequired();
         builder.Property(candidate => candidate.Phone).HasMaxLength(40);
 
+        builder.Property(candidate => candidate.Portfolio).HasMaxLength(500);
+        builder.Property(candidate => candidate.GitHub).HasMaxLength(500);
+        builder.Property(candidate => candidate.LinkedIn).HasMaxLength(500);
+        builder.Property(candidate => candidate.Education).HasMaxLength(500);
+        builder.Property(candidate => candidate.ExpectedSalaryCurrency).HasMaxLength(3);
+
+        // Longer, because this is where somebody pastes the skills section of a CV.
+        builder.Property(candidate => candidate.Skills).HasMaxLength(4000);
+
+        // Money is what the code works with; the column is a count of minor units.
+        builder.Ignore(candidate => candidate.ExpectedSalary);
+
         // One row per person. Somebody who applies twice is the same person, and
         // a second row makes their history two halves that nobody joins up.
         builder.HasIndex(candidate => candidate.Email).IsUnique();

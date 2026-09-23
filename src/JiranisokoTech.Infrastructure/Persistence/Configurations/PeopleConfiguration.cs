@@ -176,3 +176,49 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
         builder.HasIndex(employee => employee.AccountId).IsUnique();
     }
 }
+
+public sealed class OffboardingConfiguration : IEntityTypeConfiguration<Offboarding>
+{
+    public void Configure(EntityTypeBuilder<Offboarding> builder)
+    {
+        builder.ToTable("offboardings");
+
+        builder.HasKey(one => one.Id);
+
+        builder.Property(one => one.ExitInterviewNotes).HasMaxLength(8000);
+
+        builder.Ignore(one => one.IsComplete);
+        builder.Ignore(one => one.Outstanding);
+        builder.Ignore(one => one.HasOutstandingItems);
+
+        /*
+         * One departure per person. Somebody who leaves, is reinstated and leaves again is
+         * a case this deliberately does not model: the second departure reuses the record,
+         * because two open checklists for one person is how a laptop ends up on neither.
+         */
+        builder.HasIndex(one => one.EmployeeId).IsUnique();
+
+        // The list that makes the feature worth having: what is not finished.
+        builder.HasIndex(one => new { one.CompletedAt, one.LeavingOn });
+
+        builder.HasOne<Employee>()
+            .WithMany()
+            .HasForeignKey(one => one.EmployeeId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.OwnsMany(one => one.Assets, asset =>
+        {
+            asset.ToTable("lent_assets");
+            asset.WithOwner().HasForeignKey("OffboardingId");
+            asset.HasKey(one => one.Id);
+
+            asset.Property(one => one.Kind).HasConversion<int>().IsRequired();
+            asset.Property(one => one.Description).HasMaxLength(300).IsRequired();
+            asset.Property(one => one.Identifier).HasMaxLength(100);
+            asset.Property(one => one.Condition).HasMaxLength(500);
+
+            // What is still out, which is the question this table answers.
+            asset.HasIndex(one => one.ReturnedOn);
+        });
+    }
+}

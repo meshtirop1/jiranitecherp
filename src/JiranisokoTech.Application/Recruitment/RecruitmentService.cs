@@ -189,6 +189,64 @@ public sealed class RecruitmentService(
     }
 
     /// <summary>
+    /// Record what a candidate has shown of their work.
+    /// </summary>
+    /// <remarks>
+    /// Kept as the candidate states it rather than derived from anything. Working out
+    /// years of experience from a list of dated positions sounds better and produces a
+    /// number that argues with the candidate's own CV about gaps, contract overlaps and
+    /// time out — and the system always loses that argument.
+    /// </remarks>
+    public async Task DescribeCandidateAsync(
+        Guid candidateId,
+        string? portfolio,
+        string? gitHub,
+        string? linkedIn,
+        int? yearsOfExperience,
+        string? education,
+        string? skills,
+        CancellationToken cancellationToken = default)
+    {
+        var candidate = await recruitment.FindCandidateAsync(candidateId, cancellationToken)
+            ?? throw new InvalidOperationException("There is no such candidate.");
+
+        candidate.Describe(portfolio, gitHub, linkedIn, yearsOfExperience, education, skills);
+        await recruitment.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Record what a candidate is asking for.
+    /// </summary>
+    /// <remarks>
+    /// Recorded early because a hiring process that discovers the number at the offer
+    /// stage has wasted four interviews. Shown only behind employees.pay, because an
+    /// interviewer is there to score a conversation and knowing the figure changes how
+    /// they score it.
+    /// </remarks>
+    public async Task CandidateExpectsAsync(
+        Guid candidateId,
+        long? minorUnits,
+        string? currency,
+        CancellationToken cancellationToken = default)
+    {
+        if (minorUnits is not null && string.IsNullOrWhiteSpace(currency))
+        {
+            throw new InvalidOperationException(
+                "An expected salary needs a currency. A bare number is not an amount of "
+                + "money.");
+        }
+
+        var candidate = await recruitment.FindCandidateAsync(candidateId, cancellationToken)
+            ?? throw new InvalidOperationException("There is no such candidate.");
+
+        candidate.Expects(minorUnits is { } amount
+            ? Domain.Common.Money.Of(amount, currency!.Trim().ToUpperInvariant())
+            : null);
+
+        await recruitment.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Record an application.
     /// </summary>
     /// <remarks>

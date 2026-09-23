@@ -42,5 +42,24 @@ public interface IPeopleRepository
 
     void Add(Department department);
 
+    /// <summary>The offboarding for somebody, if one was started.</summary>
+    Task<Offboarding?> OffboardingForAsync(
+        Guid employeeId, CancellationToken cancellationToken = default);
+
+    Task<Offboarding?> FindOffboardingAsync(
+        Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Departures that are not finished.
+    /// </summary>
+    /// <remarks>
+    /// The list that makes this feature worth having. A laptop nobody asked for is a
+    /// laptop nobody misses until the audit, and a sign-in left live is a finding.
+    /// </remarks>
+    Task<List<Offboarding>> UnfinishedOffboardingsAsync(
+        CancellationToken cancellationToken = default);
+
+    void Add(Offboarding offboarding);
+
     Task SaveAsync(CancellationToken cancellationToken = default);
 }

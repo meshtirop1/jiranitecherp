@@ -45,6 +45,15 @@ public class AppDbContext(
 
     public DbSet<Employee> Employees => Set<Employee>();
 
+    /// <summary>
+    /// What still has to happen when somebody leaves.
+    /// </summary>
+    /// <remarks>
+    /// A checklist rather than an automation. See Offboarding for why closing an account
+    /// on a recorded date is the wrong default.
+    /// </remarks>
+    public DbSet<Offboarding> Offboardings => Set<Offboarding>();
+
     public DbSet<ApprovalRequest> Approvals => Set<ApprovalRequest>();
 
     public DbSet<Client> Clients => Set<Client>();
