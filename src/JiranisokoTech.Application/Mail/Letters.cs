@@ -45,6 +45,40 @@ public static class Letters
     }
 
     /// <summary>
+    /// Somebody asked for a way back into their own account.
+    /// </summary>
+    /// <remarks>
+    /// Says nothing about who asked or from where. The request arrives from an anonymous
+    /// form, so the only thing this system knows about the asker is an address they typed —
+    /// and printing "requested from 41.90.x.x" in a letter to somebody who did not ask reads
+    /// as an accusation built on a guess.
+    ///
+    /// It does tell them what to do if it was not them, and the advice is to ignore it rather
+    /// than to press anything. A link in a letter to somebody who did not ask for one is a
+    /// link that should stay unpressed, and "tell us" gives them a job they cannot do at
+    /// seven on a Sunday.
+    /// </remarks>
+    public static EmailMessage PasswordReset(string toAddress, string toName, string link)
+    {
+        var text = $"""
+            Hello {toName},
+
+            Somebody asked for a way back into your Jiranisoko Tech account.
+            Choose a new password here:
+
+            {link}
+
+            If that was not you, nothing has happened yet and you do not need to
+            do anything — the link only works once somebody follows it, and your
+            current password still works until then.
+
+            {Signature}
+            """;
+
+        return Compose(toAddress, toName, "A way back into your account", text, link);
+    }
+
+    /// <summary>
     /// The account was used somewhere it has not been used before.
     /// </summary>
     /// <remarks>

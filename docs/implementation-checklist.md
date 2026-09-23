@@ -15,7 +15,7 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 24 September 2026 · 1009 tests · verified against PostgreSQL in
+Last updated: 24 September 2026 · 1014 tests · verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
 container, a lost opportunity surviving its client record being deleted, the
 builds and deployments tables applying to a real Postgres, and
@@ -43,7 +43,7 @@ reports on it again — and the build and deployment half does not. What is buil
 is an ERP that a software company could run its business on, plus the beginning
 of the part that makes it developer-native.
 
-By section: **32 done, 8 partial, 58 not started, 1 excluded by agreement.**
+By section: **33 done, 7 partial, 58 not started, 1 excluded by agreement.**
 
 That count was recomputed from the tables below rather than adjusted, because the
 figure previously here did not add up to anything the tables said and had been
@@ -62,8 +62,8 @@ started, which is what they are.
 | ✅ | 4 | Authentication | Sign-in, throttled, sign-in trail, two-step |
 | ✅ | 4 | MFA / 2FA | TOTP, QR, recovery codes. Offered, not compulsory |
 | ✅ | 4 | Session and device management | Sign out everywhere, plus where the account has been used and an email the first time it is used somewhere new. Called "places" not "devices", because cookie auth gives no way to end one session |
-| ☐ | 4 | Self-service password reset | An administrator must issue a link. There is no forgot-password page |
-| ☐ | 4 | Email verification | |
+| ✅ | 4 | Self-service password reset | An anonymous `/forgot-password` page that reissues the same set-password link an administrator would. Answers an address with an account and one without in identical words, because a form a stranger can post to that answers differently is a way of testing a list of addresses against this firm's staff. Throttled twice: five posts per address per fifteen minutes in memory, and three links per **recipient** per hour written down — the second is the one that survives a restart and the one that stops somebody burying an inbox |
+| ✅ | 4 | Email verification | The link this system already mails **is** the verification: following it sets `EmailConfirmed`, because having a link posted to an address is the only evidence of that address anybody ever has. A second flow mailing a second link to prove the same thing would be ceremony, so there deliberately is not one |
 | ✅ | 4 | Profile | A page about yourself at /my-profile — photo, phone, location, time zone, next of kin, skills, qualifications. Pay and identity numbers deliberately not editable there |
 | ✅ | 5 | RBAC | 7 roles, one matrix, permission-as-claim, deny by default |
 | ✅ | 5 | Permission granularity | Reach adds the missing middle between firm-wide and own-record. Fixed a real leak: projects.view_member let every engineer find every project through search |

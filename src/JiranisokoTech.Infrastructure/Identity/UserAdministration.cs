@@ -2,6 +2,7 @@ using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Application.Authorization;
 using JiranisokoTech.Application.Mail;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Roles = JiranisokoTech.Application.Authorization.Roles;
 
@@ -25,6 +26,7 @@ namespace JiranisokoTech.Infrastructure.Identity;
 public sealed class UserAdministration(
     UserManager<ApplicationUser> users,
     RoleManager<ApplicationRole> roles,
+    Persistence.AppDbContext database,
     IMailer mailer,
     IClock clock,
     ILogger<UserAdministration> logger)
@@ -130,6 +132,112 @@ public sealed class UserAdministration(
         return $"{baseAddress.TrimEnd('/')}/set-password"
             + $"?email={Uri.EscapeDataString(user.Email!)}"
             + $"&token={Uri.EscapeDataString(token)}";
+    }
+
+    /// <summary>
+    /// How many links one address may be sent in an hour.
+    /// </summary>
+    /// <remarks>
+    /// Three. Enough for somebody who deleted the first by accident and cannot find the
+    /// second, and few enough that nobody's inbox can be filled from this form.
+    ///
+    /// Counted against the address the mail would go to, which is the point. The web layer's
+    /// rate limiter counts by the address the request came from — right for a flood from one
+    /// machine, useless against somebody moving between addresses to bury one person — and it
+    /// lives in memory, so a container restart forgives everything. This counts the other way
+    /// round and is written down.
+    /// </remarks>
+    public const int MostLinksAnHour = 3;
+
+    /// <summary>
+    /// Somebody has forgotten their password and wants a way back in.
+    /// </summary>
+    /// <remarks>
+    /// Returns nothing, and that is the security property rather than an oversight. Whatever
+    /// happened — a link sent, no such account, too many asks — the caller has the same
+    /// nothing to show, so the page cannot be used to find out which addresses have accounts
+    /// here. A form that answered differently would be a way of testing a list of email
+    /// addresses against this firm's staff, one submission at a time.
+    ///
+    /// Every outcome is recorded, including the ones that sent nothing. The rows that matched
+    /// no account are the useful ones: a run of them is somebody working through a list, and
+    /// the screen deliberately shows nothing that would tell them apart.
+    ///
+    /// A failure to send mail is swallowed for the same reason. The mail server being down
+    /// must not turn into a different-looking page for an address that exists.
+    /// </remarks>
+    public async Task AskForARecoveryLinkAsync(
+        string email,
+        string baseAddress,
+        string? ipAddress = null,
+        string? userAgent = null,
+        CancellationToken cancellationToken = default)
+    {
+        var typed = (email ?? string.Empty).Trim();
+
+        if (typed.Length == 0)
+        {
+            return;
+        }
+
+        var since = clock.Now.AddHours(-1);
+
+        var alreadySent = await database.Set<RecoveryAsk>()
+            .AsNoTracking()
+            .CountAsync(
+                ask => ask.Email == typed
+                    && ask.At >= since
+                    && ask.Outcome == RecoveryOutcome.LinkSent,
+                cancellationToken);
+
+        var user = await users.FindByEmailAsync(typed);
+
+        var outcome = alreadySent >= MostLinksAnHour
+            ? RecoveryOutcome.Throttled
+            : user is null
+                ? RecoveryOutcome.NoSuchAccount
+                : RecoveryOutcome.LinkSent;
+
+        /*
+         * Written before the mail goes out, and the order matters. A crash between sending
+         * and recording would otherwise leave the throttle believing nothing had been sent,
+         * which is the one direction this must not fail in.
+         */
+        database.Set<RecoveryAsk>().Add(RecoveryAsk.For(
+            user?.Id, typed, outcome, clock.Now, ipAddress, userAgent));
+
+        await database.SaveChangesAsync(cancellationToken);
+
+        if (outcome != RecoveryOutcome.LinkSent)
+        {
+            /*
+             * Logged at information rather than warning. Somebody mistyping their own address
+             * is the ordinary case, and a warning per typo teaches whoever reads the log to
+             * stop reading it — which is how the run of them that is an attack goes unseen.
+             */
+            logger.LogInformation(
+                "A password link was asked for and not sent ({Outcome}).", outcome);
+
+            return;
+        }
+
+        try
+        {
+            var link = await SignInLinkAsync(user!.Id, baseAddress);
+
+            await mailer.SendAsync(
+                Letters.PasswordReset(typed, user.DisplayName, link), cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            /*
+             * Swallowed, and the row above stays. Letting this throw would give a stranger a
+             * page that behaves differently for an address that exists — and the row remaining
+             * means a mail server that is down costs somebody one of their three asks rather
+             * than none, which is the safer of the two ways to be wrong.
+             */
+            logger.LogWarning(exception, "Could not send a password link.");
+        }
     }
 
     /// <summary>

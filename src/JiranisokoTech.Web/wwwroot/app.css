@@ -236,6 +236,20 @@ h1:focus {
     font-size: 0.9rem;
 }
 
+/* Neither a refusal nor a success. The forgotten-password page answers an address
+   with an account and one without in identical words, and .signin__done is green
+   with a green rule down its edge — green at a glance means "sent", so somebody who
+   takes in the colour without reading the sentence walks away certain a link is
+   coming when there may be no account at all, and waits instead of asking an
+   administrator. This says "we have heard you" and nothing more. */
+.signin__said {
+    margin: 0 0 1rem;
+    padding: 0.6rem 0.75rem;
+    border-left: 3px solid var(--line);
+    background: var(--surface-sunken);
+    font-size: 0.92rem;
+}
+
 .signin__note {
     margin-top: 1.5rem;
     font-size: 0.8rem;

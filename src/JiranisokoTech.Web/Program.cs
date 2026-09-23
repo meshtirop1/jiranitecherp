@@ -99,6 +99,7 @@ builder.Services.AddScoped<JiranisokoTech.Web.Reporting.ClientImport>();
 builder.Services.AddRateLimiter(options =>
 {
     options.AddCareersLimit();
+    options.AddRecoveryLimit();
     options.AddApiLimits();
     options.AddWebhookLimits();
 });
