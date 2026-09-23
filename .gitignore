@@ -23,11 +23,22 @@
 
 # Messages the file mailer writes in development. Correspondence, and not
 # something to commit.
-mail/
+#
+# Named by its full path rather than as "mail/", which is what it said, and
+# which cost this repository its entire mail module. An unanchored pattern
+# matches a directory of that name at any depth, git on Windows is configured
+# case-insensitively, and so "mail/" quietly swallowed
+# src/JiranisokoTech.Application/Mail and src/JiranisokoTech.Infrastructure/Mail
+# as well. Eleven source files were written, built, tested and committed
+# against — and none of them was ever in a commit. Nothing said so: the working
+# tree compiled, the suite was green, and `git status` reported clean, because
+# as far as git was concerned there was nothing there. It surfaces only in a
+# fresh clone, as four compiler errors about a namespace that does not exist.
+/src/JiranisokoTech.Web/mail/
 
 # Candidate CVs written by the file store. Documents belonging to people
 # outside this firm, and not something to commit.
-cvs/
+/src/JiranisokoTech.Web/cvs/
 
 # Worktrees the agent tooling creates. Not part of the project.
 .claude/worktrees/
