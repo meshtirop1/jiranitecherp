@@ -122,6 +122,15 @@ else
         ResultKind.WorkItem => count == 1 ? "1 piece of work" : $"{count} pieces of work",
         ResultKind.Invoice => count == 1 ? "1 invoice" : $"{count} invoices",
         ResultKind.Candidate => count == 1 ? "1 candidate" : $"{count} candidates",
-        _ => $"{count}",
+        ResultKind.Document => count == 1 ? "1 document" : $"{count} documents",
+
+        /*
+         * The fallback says "result" rather than only the number, which is what it used to do.
+         * Document was added to ResultKind after this switch was written and searched without
+         * being listed here, so a page with a document hit rendered a bare "3" as a section
+         * heading, between "2 clients" and "1 invoice". The next kind added will do the same
+         * thing; at least it will read as a heading while somebody notices.
+         */
+        _ => count == 1 ? "1 result" : $"{count} results",
     };
 }

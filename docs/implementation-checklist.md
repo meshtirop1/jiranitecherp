@@ -15,7 +15,7 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 24 September 2026 · 1026 tests · verified against PostgreSQL in
+Last updated: 24 September 2026 · 1028 tests · verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
 container, a lost opportunity surviving its client record being deleted, the
 builds and deployments tables applying to a real Postgres, and
@@ -43,7 +43,7 @@ reports on it again — and the build and deployment half does not. What is buil
 is an ERP that a software company could run its business on, plus the beginning
 of the part that makes it developer-native.
 
-By section: **34 done, 6 partial, 58 not started, 1 excluded by agreement.**
+By section: **35 done, 5 partial, 58 not started, 1 excluded by agreement.**
 
 That count was recomputed from the tables below rather than adjusted, because the
 figure previously here did not add up to anything the tables said and had been
@@ -187,7 +187,7 @@ This block is the brief's stated centre of gravity and none of it exists.
 | --- | --- | --- |
 | ☐ | 36 | AI assistant, permission-aware |
 | ☐ | 37 | AI project analysis, labelled as inference not fact |
-| ☐ | 34 | Semantic search |
+| ✅ | 34 | Semantic search | **Declined, on the record, and the reasons are checked rather than asserted.** A vector index ranks before it filters, and this system's search deliberately does not query a group somebody may not see rather than querying and filtering it — `Reach.Only` is a per-request set of arbitrary ids that no vector store pre-filters on, so top-k would reintroduce the leak `Reaches` was built to fix. The suite also runs on SQLite via `EnsureCreated`, where a vector column has nowhere to exist. What was done instead: two **live permission leaks** in the keyword box closed — see below |
 | ☐ | 36 | AI-assisted CV summary, interview questions, drafts |
 
 ## Advanced — phase 9

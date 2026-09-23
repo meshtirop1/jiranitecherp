@@ -75,10 +75,27 @@ public sealed class SearchQueries(AppDbContext database, Reaches reaches)
 
         var found = new List<SearchResult>();
 
-        if (permissions.Contains(Permissions.EmployeesView))
+        /*
+         * Narrowed by the department reach, the same way Roster.razor narrows the staff list
+         * on the screen below this box.
+         *
+         * The fix already existed and this file had not learned it. Reaches.DepartmentsAsync
+         * exists precisely because employees.view had been granted more widely than it could
+         * be narrowed in place — a department head holds it and should see the people of the
+         * departments they run. The roster does that; this block did not, so the same person
+         * on the same screen got two different answers about who works here, and the wider of
+         * the two came from the box they had not asked a question with yet.
+         */
+        var withinDepartments = await reaches.DepartmentsAsync(
+            permissions, employeeId, cancellationToken);
+
+        if (!withinDepartments.IsNothing)
         {
             var people = await database.Employees
                 .AsNoTracking()
+                .Where(person => withinDepartments.IsEverything
+                    || (person.DepartmentId != null
+                        && withinDepartments.Only.Contains(person.DepartmentId.Value)))
                 // Name and job title. An email address would be the obvious
                 // third, and it is not here because it belongs to the account
                 // rather than the staff record — searching it would mean joining
@@ -189,11 +206,28 @@ public sealed class SearchQueries(AppDbContext database, Reaches reaches)
                 $"/documents/{document.Id}")));
         }
 
-        if (permissions.Contains(Permissions.TasksViewAll)
-            || permissions.Contains(Permissions.TasksViewOwn))
+        /*
+         * Narrowed to the work this person may actually open, which it was not.
+         *
+         * tasks.view_own is held by every engineer in the firm, and this block read it as
+         * permission to match every work item title there is. Item.razor decides whether
+         * somebody may read one as tasks.view_all OR being the assignee — so the box handed
+         * out links to a page that then refused them, and handed out the titles on the way.
+         * A work item called "Investigate Achieng's expense claims" discloses what it is
+         * about before anybody clicks, which is the same argument this file's header already
+         * makes about groups somebody may not see not being queried at all.
+         *
+         * Both flags are computed before the guard rather than inside it, so the narrow branch
+         * does not read as unreachable to whoever edits this next.
+         */
+        var everyItem = permissions.Contains(Permissions.TasksViewAll);
+        var onlyOwnItems = !everyItem && permissions.Contains(Permissions.TasksViewOwn);
+
+        if (everyItem || (onlyOwnItems && employeeId is not null))
         {
             var items = await database.WorkItems
                 .AsNoTracking()
+                .Where(item => everyItem || item.AssigneeId == employeeId)
                 .Where(item => item.Title.ToLower().Contains(cleaned))
                 .OrderByDescending(item => item.Priority)
                 .ThenBy(item => item.Title)

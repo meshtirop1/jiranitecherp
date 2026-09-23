@@ -281,4 +281,94 @@ public class SearchTests
 
     private static HashSet<string> HeldBy(string role) =>
         [.. Roles.PermissionsFor(role)];
+
+    /// <summary>
+    /// Somebody who may only read their own work does not find anybody else's.
+    /// </summary>
+    /// <remarks>
+    /// A leak that was live. The work-item group ran for anybody holding tasks.view_own, which
+    /// is every engineer in the firm, and matched every title there is — while Item.razor
+    /// decides whether a person may read one as tasks.view_all OR being the assignee. So the
+    /// box handed out links to pages that then refused them, and, worse, handed out the titles
+    /// on the way: a work item called "Investigate Achieng's expense claims" discloses the
+    /// thing it is about before anybody clicks.
+    ///
+    /// This file's own header says search is the one place where getting a permission wrong
+    /// shows up as somebody being shown something rather than refused it, and that nobody
+    /// reports being shown too much. That is exactly what happened.
+    /// </remarks>
+    [Fact]
+    public async Task Somebody_who_may_read_only_their_own_work_does_not_find_anybody_elses()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var mine = await module.People.HireAsync("Grace Wanjiru", Monday);
+        var theirs = await module.People.HireAsync("Otieno Barasa", Monday);
+
+        // Hired is not started, and work cannot be given to somebody who has not started.
+        await module.People.StartAsync(mine.Id);
+        await module.People.StartAsync(theirs.Id);
+
+        var raised = await module.Work.RaiseAsync("Confidential payroll rebuild", mine.Id);
+        await module.Work.AssignAsync(raised.Id, mine.Id);
+
+        var other = await module.Work.RaiseAsync("Confidential board pack", theirs.Id);
+        await module.Work.AssignAsync(other.Id, theirs.Id);
+
+        var found = await module.Search.FindAsync(
+            "confidential", OnlyOwnWork, employeeId: mine.Id);
+
+        Assert.Contains(found, result => result.Title.Contains("payroll rebuild"));
+        Assert.DoesNotContain(found, result => result.Title.Contains("board pack"));
+    }
+
+    /// <summary>
+    /// A department head does not find people the roster hides from them.
+    /// </summary>
+    /// <remarks>
+    /// The second live leak, and the more surprising one, because the fix already existed and
+    /// this file had not learned it. Reaches.DepartmentsAsync narrows employees.view to the
+    /// departments somebody actually heads, and Roster.razor uses it for exactly that — so a
+    /// head's own staff list is narrowed while the search box above it was not. The same
+    /// person, the same screen, two different answers about who works here.
+    /// </remarks>
+    [Fact]
+    public async Task A_head_does_not_find_people_their_own_roster_hides()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var head = await module.People.HireAsync("Njeri Kamau", Monday);
+        await module.People.HireAsync("Mutiso Kilonzo", Monday);
+
+        var delivery = await module.People.OpenDepartmentAsync("Delivery");
+        await module.People.AppointHeadAsync(delivery.Id, head.Id);
+
+        /*
+         * The head is in the department they run; the other person is in none. A head whose
+         * reach is their own department should find themselves and not the stranger.
+         */
+        await module.People.MoveAsync(head.Id, delivery.Id);
+
+        /*
+         * A term long enough to be searched at all. The first version of this test asked for
+         * "k", which is under ShortestTerm, so FindAsync returned an empty list and the
+         * assertion below passed without exercising anything — a test that cannot fail, which
+         * is worse than no test.
+         */
+        var found = await module.Search.FindAsync(
+            "kilonzo", HeadOfADepartment, employeeId: head.Id);
+
+        Assert.DoesNotContain(
+            found,
+            result => result.Kind == ResultKind.Person
+                && result.Title.Contains("Mutiso"));
+    }
+
+    /// <summary>What an engineer holds: their own work, and nothing wider.</summary>
+    private static readonly HashSet<string> OnlyOwnWork = [Permissions.TasksViewOwn];
+
+    /// <summary>What a department head holds about people: the narrowable one.</summary>
+    private static readonly HashSet<string> HeadOfADepartment = [Permissions.EmployeesView];
 }
