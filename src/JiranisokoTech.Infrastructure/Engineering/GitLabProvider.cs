@@ -94,6 +94,18 @@ public sealed class GitLabProvider : IGitProvider
             "push" => ReadPush(root),
             "merge_request" => ReadMergeRequest(root),
             "tag_push" => new GitEvent.Uninteresting("A tag push, not a branch push."),
+            "pipeline" => ReadPipeline(root),
+            "deployment" => ReadDeployment(root),
+
+            /*
+             * GitLab calls a single job "build", which is the most expensive name collision in
+             * this file. A matrix pipeline of six jobs sends six of these, each with its own
+             * identifier and all with the same commit — so each would be recorded as a
+             * separate build and a work item would show seven builds of one commit, six of
+             * them fragments of the seventh. The pipeline is the thing worth recording.
+             */
+            "build" => new GitEvent.Uninteresting(
+                "A single job inside a pipeline; the pipeline itself is what is recorded."),
             _ => new GitEvent.Uninteresting($"Nothing here acts on a '{eventName}' event."),
         };
     }
@@ -189,5 +201,117 @@ public sealed class GitLabProvider : IGitProvider
             settled == PullRequestAction.Opened
                 ? When(merge, "created_at")
                 : When(merge, "updated_at")));
+    }
+
+    /// <summary>
+    /// A pipeline, reduced to whether it is going and how it went.
+    /// </summary>
+    /// <remarks>
+    /// GitLab's statuses are created, waiting_for_resource, preparing, pending, running,
+    /// success, failed, canceled, skipped and manual. Only five outcomes matter and the one
+    /// worth naming is manual: a pipeline stopped at a gate waiting for a person, which is
+    /// neither running nor finished. Reading it as either would be wrong in a way somebody
+    /// acts on.
+    /// </remarks>
+    private static GitEvent ReadPipeline(JsonElement root)
+    {
+        if (Identifier(root, "object_attributes", "id") is not { Length: > 0 } externalId)
+        {
+            return new GitEvent.Uninteresting("A pipeline event with no identifier.");
+        }
+
+        var attributes = root.GetProperty("object_attributes");
+
+        if (Text(attributes, "sha") is not { Length: > 0 } sha)
+        {
+            return new GitEvent.Uninteresting("A pipeline with no commit to attach it to.");
+        }
+
+        var status = Text(attributes, "status");
+
+        var outcome = status switch
+        {
+            "success" => BuildOutcome.Passed,
+            "canceled" or "cancelled" or "skipped" => BuildOutcome.Cancelled,
+            "manual" or "waiting_for_resource" => BuildOutcome.Blocked,
+            "created" or "preparing" or "pending" or "running" => BuildOutcome.Running,
+
+            /*
+             * Anything unrecognised is a failure rather than a pass, for the same reason
+             * GitHub's reader treats it so: a status GitLab adds later must never be read as
+             * green, because a build reporting success when it did not is the one fault in
+             * this file that costs somebody a release.
+             */
+            _ => BuildOutcome.Failed,
+        };
+
+        var startedAt = When(attributes, "created_at");
+
+        return new GitEvent.Built(new BuildReport(
+            externalId,
+            Text(attributes, "name") is { Length: > 0 } name ? name : "(unnamed pipeline)",
+            sha,
+            Text(attributes, "ref") is { Length: > 0 } reference ? reference : "(no branch)",
+            outcome,
+            startedAt,
+            outcome is BuildOutcome.Running or BuildOutcome.Blocked
+                ? null
+                : When(attributes, "finished_at"),
+            Text(root, "object_attributes", "url")));
+    }
+
+    /// <summary>What reached an environment, as GitLab reports it.</summary>
+    /// <remarks>
+    /// GitLab's deployment statuses are running, success, failed and canceled. A cancelled
+    /// deployment is read as failed rather than given a state of its own: unlike a build,
+    /// where cancelling says nothing about the code, a release that was called off part way
+    /// through has left an environment in a state somebody has to look at.
+    /// </remarks>
+    private static GitEvent ReadDeployment(JsonElement root)
+    {
+        if (Identifier(root, "deployment_id") is not { Length: > 0 } externalId)
+        {
+            return new GitEvent.Uninteresting("A deployment event with no identifier.");
+        }
+
+        if (Text(root, "environment") is not { Length: > 0 } environment
+            || Text(root, "commit_url") is null && Text(root, "short_sha") is null)
+        {
+            return new GitEvent.Uninteresting(
+                "A deployment with no environment or no commit to attach it to.");
+        }
+
+        /*
+         * GitLab sends short_sha and a commit_url rather than the full hash. The short hash
+         * would not match the commits table, whose Sha column is the full one and uniquely
+         * indexed, so the full hash is taken out of the end of the url where it is present.
+         * Falling back to the short one keeps the row rather than dropping it, and an
+         * unattached deployment is better than none.
+         */
+        var sha = Text(root, "commit_url") is { } url && url.LastIndexOf('/') is var cut and > 0
+            ? url[(cut + 1)..]
+            : Text(root, "short_sha") ?? string.Empty;
+
+        if (sha.Length == 0)
+        {
+            return new GitEvent.Uninteresting("A deployment with no commit to attach it to.");
+        }
+
+        var status = Text(root, "status");
+
+        return new GitEvent.Deployed(new DeploymentReport(
+            externalId,
+            environment,
+            sha,
+            Text(root, "ref"),
+            Text(root, "user", "username"),
+            status switch
+            {
+                "success" => DeploymentState.Succeeded,
+                "failed" or "canceled" or "cancelled" => DeploymentState.Failed,
+                _ => DeploymentState.Running,
+            },
+            When(root, "status_changed_at"),
+            Text(root, "deployable_url")));
     }
 }

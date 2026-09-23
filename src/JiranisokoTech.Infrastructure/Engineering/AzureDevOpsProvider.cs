@@ -124,6 +124,20 @@ public sealed class AzureDevOpsProvider : IGitProvider
             "git.pullrequest.created" => Change(root, PullRequestAction.Opened),
             "git.pullrequest.updated" => ReadUpdate(root),
             "git.pullrequest.merged" => Change(root, PullRequestAction.Merged),
+            "build.complete" => ReadBuild(root),
+
+            /*
+             * Declined rather than read, and not for want of trying. An Azure release payload
+             * does not carry the commit at any stable path — it is inside
+             * resource.deployment.release.artifacts, and which key holds it depends on whether
+             * the artifact is a build, a Git ref or a package. A deployment needs the sha,
+             * because the sha is what joins a release to the work it came from, and a
+             * deployment recorded without one would sit on the environments page attached to
+             * nothing. Saying so here is better than a reader that works on one firm's
+             * pipeline and silently records nothing on another's.
+             */
+            "ms.vss-release.deployment-completed-event" => new GitEvent.Uninteresting(
+                "An Azure release, which does not carry the commit at a path this can read."),
             _ => new GitEvent.Uninteresting($"Nothing here acts on a '{eventName}' event."),
         };
     }
@@ -192,5 +206,48 @@ public sealed class AzureDevOpsProvider : IGitProvider
                 PullRequestAction.Merged or PullRequestAction.Closed => When(pull, "closedDate"),
                 _ => DateTimeOffset.UtcNow,
             }));
+    }
+
+    /// <summary>
+    /// A completed pipeline run.
+    /// </summary>
+    /// <remarks>
+    /// Azure sends build.complete only when a run has finished, so there is no running state
+    /// to read — which is why this adapter records a build that is already settled rather than
+    /// one that starts and later ends. A firm that wants the middle would need the newer
+    /// pipelines events, and those are a different payload shape again.
+    /// </remarks>
+    private static GitEvent ReadBuild(JsonElement root)
+    {
+        if (Identifier(root, "resource", "id") is not { Length: > 0 } externalId)
+        {
+            return new GitEvent.Uninteresting("A build event with no run identifier.");
+        }
+
+        var resource = root.GetProperty("resource");
+
+        if (Text(resource, "sourceVersion") is not { Length: > 0 } sha)
+        {
+            return new GitEvent.Uninteresting("A build with no commit to attach it to.");
+        }
+
+        var result = Text(resource, "result");
+
+        return new GitEvent.Built(new BuildReport(
+            externalId,
+            Text(resource, "definition", "name") is { Length: > 0 } name
+                ? name
+                : "(unnamed pipeline)",
+            sha,
+            Branch(Text(resource, "sourceBranch")) ?? "(no branch)",
+            result switch
+            {
+                "succeeded" => BuildOutcome.Passed,
+                "canceled" or "cancelled" => BuildOutcome.Cancelled,
+                _ => BuildOutcome.Failed,
+            },
+            When(resource, "startTime"),
+            When(resource, "finishTime"),
+            Text(resource, "_links", "web", "href")));
     }
 }

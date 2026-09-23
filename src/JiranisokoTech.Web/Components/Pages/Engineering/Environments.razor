@@ -1,0 +1,125 @@
+@page "/repositories/environments"
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Domain.Engineering
+@using JiranisokoTech.Infrastructure.Engineering
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ReposView)]
+@inject EngineeringQueries Queries
+
+@*
+    What is running where.
+
+    Section 13 asked for environments, and until now the record of what had reached production
+    existed only inside whichever task the work happened to be attached to — so "what is live"
+    could only be answered by opening work items one at a time and hoping none had been missed.
+
+    Read-only, and deliberately. Nothing on this page starts, stops or promotes a release: the
+    hosts run the pipelines and report back, and this is the record of what they said. A button
+    here that fired nothing would be a form that looks like an approval and is not, which is
+    worse than no button — see the note on Deployment about why a recorded approval with
+    nothing behind it is the wrong thing to build.
+*@
+
+<PageTitle>Environments — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/repositories">Repositories</a></nav>
+
+<div class="page-head">
+    <h1>Environments</h1>
+    <p class="subtle">@Summary</p>
+</div>
+
+@if (Live.All(one => one.IsEmpty))
+{
+    <p class="empty">
+        Nothing has been recorded as deployed yet. A host that sends deployment events — a
+        GitHub <code>deployment_status</code>, or a GitLab <code>deployment</code> — fills this
+        page on its own; nothing here has to be typed.
+    </p>
+}
+else
+{
+    <div class="environments">
+        @foreach (var where in Live.Where(one => !one.IsEmpty))
+        {
+            <section class="environment">
+                <h2 class="environment__heading">
+                    @Words.For(where.Environment)
+                    @if (where.Total > where.Latest.Count)
+                    {
+                        @*
+                            Said, rather than the list quietly being a page of a longer one. A
+                            reader who cannot reconcile a count with the rows beneath it reads
+                            the difference as a fault in the rows.
+                        *@
+                        <span class="subtle">
+                            last @where.Latest.Count of @where.Total.ToString("N0")
+                        </span>
+                    }
+                </h2>
+
+                @foreach (var one in where.Latest)
+                {
+                    <div class="environment__line">
+                        <code>@one.Short</code>
+
+                        @if (one.NameAddsSomething)
+                        {
+                            <span class="pill pill--quiet">@one.EnvironmentName</span>
+                        }
+
+                        <span class="subtle">@one.At.ToLocalTime().ToString("d MMM HH:mm")</span>
+
+                        @if (one.Branch is { } branch)
+                        {
+                            <span class="subtle">@branch</span>
+                        }
+
+                        @if (one.DeployedBy is { } who)
+                        {
+                            <span class="subtle">@who</span>
+                        }
+
+                        @if (one.Url is { } url)
+                        {
+                            <a href="@url">Look</a>
+                        }
+                    </div>
+                }
+            </section>
+        }
+    </div>
+}
+
+@code {
+    private List<LiveIn> Live { get; set; } = [];
+
+    /// <summary>
+    /// What the page adds up to, said in words.
+    /// </summary>
+    /// <remarks>
+    /// Production first and named on its own, because it is the one anybody opening this page
+    /// in a hurry is asking about. A count of every environment together would answer a
+    /// question nobody has.
+    /// </remarks>
+    private string Summary
+    {
+        get
+        {
+            var production = Live
+                .FirstOrDefault(one => one.Environment == DeploymentEnvironment.Production);
+
+            if (production is null || production.IsEmpty)
+            {
+                return "What the hosts have reported reaching each environment.";
+            }
+
+            var last = production.Latest[0];
+
+            return $"Production last changed {last.At.ToLocalTime():d MMM yyyy} "
+                + $"({last.Short}).";
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => Live = await Queries.EnvironmentsAsync();
+}

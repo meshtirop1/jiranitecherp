@@ -8,6 +8,16 @@ namespace JiranisokoTech.Infrastructure.Engineering;
 public sealed class EngineeringQueries(AppDbContext database)
 {
     /// <summary>
+    /// How many releases to each environment the environments page shows.
+    /// </summary>
+    /// <remarks>
+    /// Eight, which is enough to see a pattern — three failed attempts on Tuesday and a
+    /// success on Wednesday reads as a bad afternoon rather than as one deployment — and
+    /// short enough that four of these boxes fit on a screen without scrolling.
+    /// </remarks>
+    private const int PerEnvironment = 8;
+
+    /// <summary>
     /// Every repository, with enough beside it to tell whether it is working.
     /// </summary>
     /// <remarks>
@@ -487,6 +497,63 @@ public sealed class EngineeringQueries(AppDbContext database)
             Deployments = deployments,
         };
     }
+
+    /// <summary>
+    /// What is running where.
+    /// </summary>
+    /// <remarks>
+    /// Section 13 asked for environments and this is the page that answers it. Until now the
+    /// record of what had reached production existed only inside whichever task the work
+    /// happened to be attached to, so the question "what is live" could only be answered by
+    /// opening work items one at a time and hoping none had been missed.
+    ///
+    /// Bounded per environment rather than read whole. This page is opened during a release,
+    /// and deployments grows by a row per release for ever; what is lost is a repository whose
+    /// last release to an environment was more than <see cref="PerEnvironment"/> releases to
+    /// that same environment ago, which for a firm this size is years. The total is kept
+    /// beside the list so the page can say what it is not showing rather than implying the
+    /// list is everything.
+    ///
+    /// Only the ones that landed. A failed deploy is not what is running, and a page about
+    /// what is live that counted attempts would be answering a different question in the same
+    /// words.
+    /// </remarks>
+    public async Task<List<LiveIn>> EnvironmentsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var totals = await database.Deployments
+            .AsNoTracking()
+            .Where(one => one.State == DeploymentState.Succeeded)
+            .GroupBy(one => one.Environment)
+            .Select(group => new { Environment = group.Key, Count = group.Count() })
+            .ToDictionaryAsync(row => row.Environment, row => row.Count, cancellationToken);
+
+        var live = new List<LiveIn>();
+
+        foreach (var environment in Enum.GetValues<DeploymentEnvironment>())
+        {
+            var latest = await database.Deployments
+                .AsNoTracking()
+                .Where(one => one.Environment == environment
+                    && one.State == DeploymentState.Succeeded)
+                .OrderByDescending(one => one.At)
+                .Take(PerEnvironment)
+                .Select(one => new DeploymentRow(
+                    one.Environment,
+                    one.EnvironmentName,
+                    one.Sha,
+                    one.Branch,
+                    one.DeployedBy,
+                    one.State,
+                    one.At,
+                    one.Url))
+                .ToListAsync(cancellationToken);
+
+            live.Add(new LiveIn(environment, latest, totals.GetValueOrDefault(environment)));
+        }
+
+        return live;
+    }
 }
 
 public sealed record RepositoryRow(
@@ -545,6 +612,15 @@ public sealed record PullRequestRow(
     DateTimeOffset OpenedAt,
     int Reviews,
     bool IsApproved);
+
+/// <summary>What is running in one environment, and how it got there.</summary>
+public sealed record LiveIn(
+    DeploymentEnvironment Environment,
+    IReadOnlyList<DeploymentRow> Latest,
+    int Total)
+{
+    public bool IsEmpty => Latest.Count == 0;
+}
 
 /// <summary>One build, as a screen shows it.</summary>
 /// <remarks>

@@ -17,6 +17,13 @@
 <div class="page-head">
     <h1>Repositories</h1>
 
+    @* Beside the deliveries button and under the page's own permission: what is
+
+       running where is the same grain as what arrived. *@
+
+    <p class="subtle"><a href="/repositories/environments">What is running where</a></p>
+
+
     <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ReposDeliveries)">
         <Authorized>
             <nav class="actions actions--page">

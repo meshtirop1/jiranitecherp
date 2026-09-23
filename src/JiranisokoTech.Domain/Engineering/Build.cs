@@ -23,6 +23,18 @@ public enum BuildOutcome
     Passed = 2,
     Failed = 3,
     Cancelled = 4,
+
+    /// <summary>
+    /// Stopped, waiting for a person to say yes.
+    /// </summary>
+    /// <remarks>
+    /// GitLab's manual pipelines and Azure's pending-approval gates both stop and wait. Read
+    /// as Running they would show as building for three days; read as Failed they would put a
+    /// red mark against code nobody has found fault with. Neither is true, and the difference
+    /// matters because the action is different: a failure wants fixing and this wants
+    /// somebody pressing a button.
+    /// </remarks>
+    Blocked = 5,
 }
 
 /// <summary>
@@ -77,7 +89,7 @@ public sealed class Build : Entity, IAuditable
         WorkItemId = workItemId;
         Outcome = outcome;
         StartedAt = startedAt;
-        FinishedAt = outcome == BuildOutcome.Running ? null : finishedAt ?? startedAt;
+        FinishedAt = Settled(outcome) ? finishedAt ?? startedAt : null;
         Url = Trimmed(url);
 
         Raise(new BuildRecorded(Id, repositoryId, Sha, Branch, workItemId, outcome, startedAt));
@@ -176,16 +188,23 @@ public sealed class Build : Entity, IAuditable
     /// </remarks>
     public void Ended(BuildOutcome outcome, DateTimeOffset at, string? url = null)
     {
-        if (!IsRunning)
+        /*
+         * Settled rather than IsRunning, and the distinction is the whole reason Blocked
+         * exists. A pipeline waiting at a manual gate is not running and has not ended, so a
+         * guard on IsRunning would refuse the delivery that arrives when somebody finally
+         * presses the button — leaving the build showing "waiting on somebody" for ever, with
+         * nothing further coming to correct it.
+         */
+        if (Settled(Outcome))
         {
             return;
         }
 
         Outcome = outcome;
-        FinishedAt = outcome == BuildOutcome.Running ? null : at;
+        FinishedAt = Settled(outcome) ? at : null;
         Url = Trimmed(url) ?? Url;
 
-        if (outcome != BuildOutcome.Running)
+        if (Settled(outcome))
         {
             Raise(new BuildFinished(Id, RepositoryId, Sha, Branch, WorkItemId, outcome, at));
         }
@@ -214,6 +233,18 @@ public sealed class Build : Entity, IAuditable
     /// </remarks>
     private static string Hash(string value, string parameter) =>
         Required(value, parameter).ToLowerInvariant();
+
+    /// <summary>
+    /// Whether this outcome is the end of the run.
+    /// </summary>
+    /// <remarks>
+    /// Not the same question as whether it is <see cref="BuildOutcome.Running"/>. A pipeline
+    /// stopped at a manual gate has neither finished nor is it doing anything, and treating
+    /// the two as one question is how a blocked build either gets a finish time it never
+    /// reached or becomes unsettleable.
+    /// </remarks>
+    private static bool Settled(BuildOutcome outcome) =>
+        outcome is not (BuildOutcome.Running or BuildOutcome.Blocked);
 
     private static string Required(string value, string parameter) =>
         string.IsNullOrWhiteSpace(value)

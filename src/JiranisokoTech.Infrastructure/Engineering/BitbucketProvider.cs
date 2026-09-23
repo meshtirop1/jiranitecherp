@@ -63,6 +63,8 @@ public sealed class BitbucketProvider : IGitProvider
         return eventName switch
         {
             "repo:push" => ReadPush(root),
+            "repo:commit_status_updated" => ReadStatus(root),
+            "repo:commit_status_created" => ReadStatus(root),
 
             "pullrequest:created" => Change(root, PullRequestAction.Opened),
             "pullrequest:updated" => Change(root, PullRequestAction.Updated),
@@ -154,5 +156,61 @@ public sealed class BitbucketProvider : IGitProvider
 
         return new GitEvent.Reviewed(
             number, $"bitbucket:{number}:{reviewer}:{verdict}", reviewer, verdict);
+    }
+
+    /// <summary>
+    /// A build status on a commit.
+    /// </summary>
+    /// <remarks>
+    /// Bitbucket has no pipeline event in the same family as GitHub's workflow_run — what it
+    /// sends is a status posted against a commit, which is what Pipelines and every
+    /// third-party CI both use. That makes this the one adapter where a build arrives through
+    /// the same door whatever ran it.
+    ///
+    /// Bitbucket also sends no deployment event of any kind, so nothing here reads one. That
+    /// is recorded in the checklist rather than left as a silent gap.
+    /// </remarks>
+    private static GitEvent ReadStatus(JsonElement root)
+    {
+        var status = root.TryGetProperty("commit_status", out var found)
+            ? found
+            : default;
+
+        if (status.ValueKind != JsonValueKind.Object)
+        {
+            return new GitEvent.Uninteresting("A status event with no status in it.");
+        }
+
+        if (Text(status, "key") is not { Length: > 0 } key
+            || Text(status, "commit", "hash") is not { Length: > 0 } sha)
+        {
+            return new GitEvent.Uninteresting("A build status with nothing to attach it to.");
+        }
+
+        /*
+         * The key and the hash together, and the hash is what makes it work. A status key is
+         * the pipeline's name and is reused on every commit it ever runs against, so keying
+         * on it alone would make one row that every build in the repository overwrote — and
+         * the panel would show one perpetually-changing build instead of a history.
+         */
+        var externalId = $"{key}:{sha}";
+
+        var state = Text(status, "state");
+
+        return new GitEvent.Built(new BuildReport(
+            externalId,
+            Text(status, "name") is { Length: > 0 } name ? name : key,
+            sha,
+            Text(status, "refname") is { Length: > 0 } reference ? reference : "(no branch)",
+            state switch
+            {
+                "SUCCESSFUL" => BuildOutcome.Passed,
+                "STOPPED" => BuildOutcome.Cancelled,
+                "INPROGRESS" => BuildOutcome.Running,
+                _ => BuildOutcome.Failed,
+            },
+            When(status, "created_on"),
+            state is "INPROGRESS" ? null : When(status, "updated_on"),
+            Text(status, "url")));
     }
 }

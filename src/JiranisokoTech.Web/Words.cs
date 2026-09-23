@@ -178,6 +178,13 @@ public static class Words
         BuildOutcome.Passed => "Passed",
         BuildOutcome.Failed => "Failed",
         BuildOutcome.Cancelled => "Cancelled",
+
+        /*
+         * Not "Blocked", which reads as a statement about the code. The pipeline has stopped
+         * at a gate and is waiting for a person, and saying so is also saying what to do
+         * about it.
+         */
+        BuildOutcome.Blocked => "Waiting on somebody",
         _ => outcome.ToString(),
     };
 

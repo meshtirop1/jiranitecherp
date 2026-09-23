@@ -599,6 +599,13 @@ else
 
         // Its own colour, not the waiting one. A build that is running is not queued.
         BuildOutcome.Running => "pill--running",
+
+        /*
+         * Amber rather than the quiet grey a cancelled build gets. A cancelled build asks
+         * nothing of anybody; a blocked one is waiting for a person to open a gate, and drawn
+         * the same colour the second one is invisible on a page somebody is scanning.
+         */
+        BuildOutcome.Blocked => "pill--wait",
         _ => "pill--quiet",
     };
 

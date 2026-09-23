@@ -923,6 +923,50 @@ code.key {
 .pill--danger { background: #fdf2f2; color: #8a1b1b; }
 .pill--wait { background: #fff4e5; color: #8a5300; }
 
+/* --- What is running where ----------------------------------------------- */
+
+/* Boxes rather than a table, and the question people arrive with is the reason.
+   Somebody opens this page because something is wrong and they want to know what
+   is in production; a table of repositories with an environment column makes that
+   a scan down one column of a wide grid instead of a glance at one box. auto-fit
+   stacks them on a phone rather than squeezing four columns below the width a
+   commit hash needs. */
+.environments {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 1rem;
+    align-items: start;
+    margin-top: 1rem;
+}
+
+.environment {
+    background: var(--surface-sunken);
+    border-radius: 6px;
+    padding: 0.75rem;
+
+    /* Without this a long branch name makes the grid track wider than its share
+       and the four boxes stop being the same size, which reads as a fault. */
+    min-width: 0;
+}
+
+.environment__heading {
+    margin: 0 0 0.5rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-quiet);
+}
+
+.environment__line {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+    padding: 0.35rem 0;
+    border-top: 1px solid var(--line);
+    font-size: 0.9rem;
+}
+
 /*
  * A build or a deployment that has not finished yet. Blue rather than the amber of
  * .pill--wait, because those two ask different things of whoever is reading: amber is
