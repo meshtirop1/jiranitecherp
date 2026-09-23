@@ -25,6 +25,9 @@ namespace JiranisokoTech.Domain.People;
 /// </remarks>
 public sealed class Employee : Entity, IAuditable
 {
+    private readonly List<Skill> _skills = [];
+    private readonly List<Certification> _certifications = [];
+
     private Employee()
     {
         FullName = string.Empty;
@@ -263,7 +266,117 @@ public sealed class Employee : Entity, IAuditable
     /// thought about it; a missing member says nobody did, and the next person to
     /// add a national insurance number would have no prompt to reconsider.
     /// </remarks>
-    public static IReadOnlySet<string> AuditExcludes { get; } = new HashSet<string>();
+    /// <summary>How to reach them, and where they are.</summary>
+    public PersonalDetails Details { get; private set; } = PersonalDetails.Empty;
+
+    /// <summary>Who to call if something happens at work.</summary>
+    public EmergencyContact Emergency { get; private set; } = EmergencyContact.Empty;
+
+    /// <summary>
+    /// What they are paid, and on what terms.
+    /// </summary>
+    /// <remarks>
+    /// Behind employees.pay everywhere it appears. The permission to see that somebody
+    /// works here is not the permission to see what they earn, and a system where those
+    /// are one permission is a system where the staff list is a salary list.
+    /// </remarks>
+    public EmploymentTerms Terms { get; private set; } = EmploymentTerms.Empty;
+
+    /// <remarks>Returns a copy — see the note on Invoice.Lines for why.</remarks>
+    public IReadOnlyList<Skill> Skills => _skills.ToList();
+
+    /// <remarks>Returns a copy — see the note on Invoice.Lines for why.</remarks>
+    public IReadOnlyList<Certification> Certifications => _certifications.ToList();
+
+    public void Record(PersonalDetails details) => Details = details;
+
+    public void Record(EmergencyContact contact) => Emergency = contact;
+
+    /// <summary>
+    /// Set what somebody is paid.
+    /// </summary>
+    /// <remarks>
+    /// Raises an event of its own rather than folding into a general change, because
+    /// this is the one field on a staff record where "who changed it, when, and from
+    /// what" is a question somebody will eventually be asked under oath. The amounts
+    /// are deliberately not in the event: an outbox row is JSON in a table with its own
+    /// retention, and a salary does not belong in two places.
+    /// </remarks>
+    public void Agree(EmploymentTerms terms)
+    {
+        var wasPaid = Terms.SalaryMinorUnits;
+
+        Terms = terms;
+
+        if (wasPaid != terms.SalaryMinorUnits)
+        {
+            Raise(new EmployeeTermsChanged(Id, FullName, terms.Contract, terms.Frequency));
+        }
+    }
+
+    /// <summary>
+    /// Say somebody has a skill, or change how well.
+    /// </summary>
+    /// <remarks>
+    /// Replaces rather than adding a second row for the same name. Somebody who was
+    /// learning Rust last year and is strong at it now has one skill, and a list that
+    /// showed both would be a list nobody trusts.
+    /// </remarks>
+    public void Knows(string name, SkillLevel level)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("A skill has to have a name.", nameof(name));
+        }
+
+        _skills.RemoveAll(skill =>
+            string.Equals(skill.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        _skills.Add(Skill.Of(name, level));
+    }
+
+    public void Forgets(string name) =>
+        _skills.RemoveAll(skill =>
+            string.Equals(skill.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    public void Holds(string name, string issuer, DateOnly? issuedOn, DateOnly? expiresOn)
+    {
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(issuer))
+        {
+            throw new ArgumentException(
+                "A certification needs a name and whoever issued it. Without the issuer it "
+                + "cannot be verified, which is the only reason to record one.",
+                nameof(name));
+        }
+
+        _certifications.RemoveAll(one =>
+            string.Equals(one.Name, name.Trim(), StringComparison.OrdinalIgnoreCase)
+            && string.Equals(one.Issuer, issuer.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        _certifications.Add(Certification.Of(name, issuer, issuedOn, expiresOn));
+    }
+
+    public void NoLongerHolds(Guid certificationId) =>
+        _certifications.RemoveAll(one => one.Id == certificationId);
+
+    /// <summary>
+    /// The identity and tax numbers never reach the audit trail.
+    /// </summary>
+    /// <remarks>
+    /// These are the two fields in this system whose disclosure does a person lasting
+    /// harm rather than embarrassing the firm. The trail is append-only and kept for
+    /// years, so a national identity number written into it is written there for good —
+    /// and it would be a second copy, in a table read by more people than the staff
+    /// record is.
+    ///
+    /// The salary is excluded for a different reason: not because it is dangerous, but
+    /// because the trail is read by anybody holding audit.view, and a change history
+    /// containing every salary the firm has ever paid is a payroll report by another
+    /// name. That the terms changed is recorded; what they changed to is on the record
+    /// itself, behind employees.pay.
+    /// </remarks>
+    public static IReadOnlySet<string> AuditExcludes { get; } =
+        new HashSet<string> { nameof(Details), nameof(Terms) };
 
     private static string Require(string value, string parameter = "fullName") =>
         string.IsNullOrWhiteSpace(value)

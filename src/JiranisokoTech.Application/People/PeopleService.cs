@@ -284,6 +284,106 @@ public sealed class PeopleService(IPeopleRepository people)
         await people.SaveAsync(cancellationToken);
     }
 
+    /// <summary>Record how to reach somebody, and where they are.</summary>
+    public async Task RecordDetailsAsync(
+        Guid employeeId, PersonalDetails details, CancellationToken cancellationToken = default)
+    {
+        var employee = await RequiredEmployee(employeeId, cancellationToken);
+
+        employee.Record(details);
+        await people.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>Record who to call if something happens at work.</summary>
+    public async Task RecordEmergencyAsync(
+        Guid employeeId, EmergencyContact contact, CancellationToken cancellationToken = default)
+    {
+        var employee = await RequiredEmployee(employeeId, cancellationToken);
+
+        employee.Record(contact);
+        await people.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Agree what somebody is paid and on what terms.
+    /// </summary>
+    /// <remarks>
+    /// Refuses a fixed-term contract with no end date, because a fixed term without one
+    /// is a permanent contract that nobody meant to offer — and the difference shows up
+    /// years later in a dispute about notice.
+    /// </remarks>
+    public async Task AgreeTermsAsync(
+        Guid employeeId, EmploymentTerms terms, CancellationToken cancellationToken = default)
+    {
+        if (terms.Contract == ContractType.FixedTerm && terms.EndsOn is null)
+        {
+            throw new InvalidOperationException(
+                "A fixed-term contract needs the date it ends. Without one it is a permanent "
+                + "contract that nobody meant to offer.");
+        }
+
+        if (terms is { SalaryMinorUnits: not null, SalaryCurrency: null or "" })
+        {
+            throw new InvalidOperationException(
+                "A salary needs a currency. A bare number is not an amount of money.");
+        }
+
+        var employee = await RequiredEmployee(employeeId, cancellationToken);
+
+        employee.Agree(terms);
+        await people.SaveAsync(cancellationToken);
+    }
+
+    public async Task RecordSkillAsync(
+        Guid employeeId,
+        string name,
+        SkillLevel level,
+        CancellationToken cancellationToken = default)
+    {
+        var employee = await RequiredEmployee(employeeId, cancellationToken);
+
+        employee.Knows(name, level);
+        await people.SaveAsync(cancellationToken);
+    }
+
+    public async Task RemoveSkillAsync(
+        Guid employeeId, string name, CancellationToken cancellationToken = default)
+    {
+        var employee = await RequiredEmployee(employeeId, cancellationToken);
+
+        employee.Forgets(name);
+        await people.SaveAsync(cancellationToken);
+    }
+
+    public async Task RecordCertificationAsync(
+        Guid employeeId,
+        string name,
+        string issuer,
+        DateOnly? issuedOn,
+        DateOnly? expiresOn,
+        CancellationToken cancellationToken = default)
+    {
+        if (issuedOn is { } issued && expiresOn is { } expires && expires < issued)
+        {
+            throw new InvalidOperationException(
+                "A certification cannot expire before it was issued.");
+        }
+
+        var employee = await RequiredEmployee(employeeId, cancellationToken);
+
+        employee.Holds(name, issuer, issuedOn, expiresOn);
+        await people.SaveAsync(cancellationToken);
+    }
+
+    public async Task RemoveCertificationAsync(
+        Guid employeeId, Guid certificationId, CancellationToken cancellationToken = default)
+    {
+        var employee = await RequiredEmployee(employeeId, cancellationToken);
+
+        employee.NoLongerHolds(certificationId);
+        await people.SaveAsync(cancellationToken);
+    }
+
     private async Task<Employee> RequiredEmployee(Guid id, CancellationToken cancellationToken) =>
         await people.FindAsync(id, cancellationToken)
         ?? throw new InvalidOperationException("That person is not on the staff list.");

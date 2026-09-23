@@ -168,6 +168,21 @@ public static class Permissions
     /// </remarks>
     public const string TasksDeploy = "tasks.deploy";
 
+    /// <summary>
+    /// See and set what somebody is paid, and their identity and tax numbers.
+    /// </summary>
+    /// <remarks>
+    /// Separate from employees.manage, which is the permission to keep the staff
+    /// record — names, departments, reporting lines, start dates. This one is for the
+    /// two things on that record whose disclosure is a different order of problem:
+    /// what a person earns, and the numbers that identify them to the state.
+    ///
+    /// A system where seeing the staff list means seeing everybody's salary is a
+    /// system where the staff list is a salary list, and the person who notices that
+    /// first is whoever is paid least.
+    /// </remarks>
+    public const string EmployeesPay = "employees.pay";
+
     // --- the code repositories ---------------------------------------------
 
     /// <summary>See which repositories are watched, and what came out of them.</summary>
@@ -203,7 +218,7 @@ public static class Permissions
         UsersView, UsersInvite, UsersManage, UsersAssignRoles, RolesManage,
         AuditView, SettingsManage,
 
-        EmployeesView, EmployeesManage, DepartmentsView, DepartmentsManage,
+        EmployeesView, EmployeesManage, EmployeesPay, DepartmentsView, DepartmentsManage,
 
         RequisitionsCreate, RequisitionsView, PostingsManage, CandidatesView,
         ApplicationsManage, ApplicationsHire, InterviewsSchedule, InterviewsView,
@@ -266,6 +281,12 @@ public static class Roles
             [
                 Permissions.UsersView, Permissions.UsersInvite, Permissions.UsersManage,
                 Permissions.EmployeesView, Permissions.EmployeesManage,
+
+                // HR keeps the contracts and runs the payroll, so HR holds this.
+                // A head of department deliberately does not: they decide what their
+                // team does, not what it costs.
+                Permissions.EmployeesPay,
+
                 Permissions.DepartmentsView,
 
                 // HR sits at step one of the hiring chain, so HR must be able to

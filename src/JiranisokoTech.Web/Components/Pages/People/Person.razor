@@ -3,6 +3,7 @@
 @using System.Security.Claims
 @using JiranisokoTech.Application.Authorization
 @using JiranisokoTech.Application.Documents
+@using JiranisokoTech.Application.Abstractions
 @using JiranisokoTech.Application.People
 @using JiranisokoTech.Domain.Documents
 @using JiranisokoTech.Domain.People
@@ -13,6 +14,8 @@
 @inject PeopleQueries People
 @inject PeopleService Service
 @inject DocumentService Files
+@inject IPeopleRepository Staff
+@inject IClock Clock
 
 @*
     Static, like everything that changes something.
@@ -39,7 +42,36 @@ else
         <span class="pill pill--@Row.Status.ToString().ToLowerInvariant()">@Row.Status</span>
     </div>
 
-    <p class="subtle">@(Row.JobTitle ?? "No job title recorded")</p>
+    <div class="portrait">
+        @if (Photo is { } photo)
+        {
+            <img src="/documents/@photo.Id" alt="@Row.FullName" class="portrait__image" />
+        }
+        else
+        {
+            @*
+                Initials rather than a silhouette. A generic outline of a person says
+                nothing and looks like a fault; two letters at least identify who is
+                missing a photograph.
+            *@
+            <span class="portrait__initials" aria-hidden="true">@Initials(Row.FullName)</span>
+        }
+
+        <p class="subtle">@(Row.JobTitle ?? "No job title recorded")</p>
+    </div>
+
+    <AuthorizeView Policy="@ManagePolicy" Context="mayPhoto">
+        <EditForm Model="Nothing" method="post" OnValidSubmit="AttachPhoto" FormName="photo"
+                  enctype="multipart/form-data" class="inline">
+            <label>
+                <span class="visually-hidden">A photograph</span>
+                <input type="file" name="photo" accept="image/*" />
+            </label>
+            <button type="submit" class="button button--quiet">
+                @(Photo is null ? "Add a photo" : "Replace the photo")
+            </button>
+        </EditForm>
+    </AuthorizeView>
 
     @if (Refusal is not null)
     {
@@ -232,6 +264,13 @@ else
         </section>
     }
 
+    @*
+        The rest of the record — contact details, next of kin, terms, skills and
+        qualifications — in its own component. This page was already long, and none
+        of that is about employment state, which is what the sections above are.
+    *@
+    <StaffRecord Person="Record" Today="Today" />
+
     <p><a href="/people">Back to people</a></p>
 }
 
@@ -307,6 +346,29 @@ else
 
     private PersonRow? Row { get; set; }
 
+    /// <summary>
+    /// The staff record itself, not the row the list shows.
+    /// </summary>
+    /// <remarks>
+    /// Read as the entity because the sections below it are about owned values —
+    /// contact details, terms, skills — and flattening those into a query row would
+    /// mean a second shape of the same data for a screen that writes them back.
+    /// </remarks>
+    private Employee? Record { get; set; }
+
+    private DateOnly Today { get; set; }
+
+    /// <summary>The most recent photograph, which is the current one.</summary>
+    /// <remarks>
+    /// The last rather than the only. Replacing a photo attaches a new file instead of
+    /// overwriting the old one, because the document store is append-only and a
+    /// replaced portrait is not something worth building a delete path for.
+    /// </remarks>
+    private Attachment? Photo { get; set; }
+
+    /// <summary>A model for the photograph form, which carries only a file.</summary>
+    private object Nothing { get; } = new();
+
     private List<PersonRow> Reports { get; set; } = [];
 
     private List<PersonRow> Candidates { get; set; } = [];
@@ -351,11 +413,79 @@ else
         await LoadAsync();
     }
 
+    /// <summary>
+    /// Attach a photograph, read straight off the posted form.
+    /// </summary>
+    /// <remarks>
+    /// A plain file input rather than InputFile, because this page is statically
+    /// rendered: there is no circuit, so InputFile never runs and @onchange never
+    /// fires. The bytes arrive with the rest of the multipart body.
+    /// </remarks>
+    private async Task AttachPhoto()
+    {
+        Refusal = null;
+
+        var file = Request?.Request.Form.Files["photo"];
+
+        if (file is null || file.Length == 0)
+        {
+            Refusal = "Choose an image first.";
+            await LoadAsync();
+            return;
+        }
+
+        try
+        {
+            await using var contents = file.OpenReadStream();
+
+            await Files.AttachAsync(
+                AttachedTo.Photo, Id, contents, file.FileName, file.Length, Me, "Photograph");
+
+            Done = "The photograph has been attached.";
+            await LoadAsync();
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    /// <summary>
+    /// Two letters from a name.
+    /// </summary>
+    /// <remarks>
+    /// Shown where a photograph is missing. A generic silhouette says nothing and
+    /// reads as a fault; initials at least identify whose photograph is absent.
+    /// </remarks>
+    private static string Initials(string fullName)
+    {
+        var parts = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        return parts.Length switch
+        {
+            0 => "?",
+            1 => parts[0][..1].ToUpperInvariant(),
+            _ => (parts[0][..1] + parts[^1][..1]).ToUpperInvariant(),
+        };
+    }
+
     private async Task LoadAsync()
     {
         var roster = await People.RosterAsync();
 
         Row = roster.FirstOrDefault(person => person.Id == Id);
+        Record = await Staff.FindAsync(Id);
+        Today = Clock.Today;
+
+        /*
+         * Read for anybody who may open this page, unlike the personnel file below.
+         * A photograph is what a colleague looks at to work out who they are about to
+         * meet; hiding it behind the permission that guards salaries would produce a
+         * directory of grey squares.
+         */
+        Photo = (await Files.ForAsync(AttachedTo.Photo, Id)).LastOrDefault();
         Reports = roster.Where(person => person.ReportsToId == Id).ToList();
         Departments = await People.DepartmentNamesAsync();
 

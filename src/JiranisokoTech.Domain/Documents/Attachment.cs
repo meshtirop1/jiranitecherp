@@ -27,6 +27,24 @@ public enum AttachedTo
     /// with the terms it signed.
     /// </remarks>
     Contract = 6,
+
+    /// <summary>
+    /// Somebody's photograph, for the staff directory.
+    /// </summary>
+    /// <remarks>
+    /// Its own kind rather than another file on the employee, because the access rule
+    /// has to be different and reusing Employee would have made it the same one.
+    ///
+    /// A personnel file holds a contract with a salary on it, a disciplinary letter, a
+    /// scan of a passport, and is deliberately readable only by employees.manage and
+    /// the person themselves. A face is not that. It is the thing a colleague looks at
+    /// to work out who they are about to meet, and hiding it behind the permission that
+    /// guards salaries would mean a directory of grey squares.
+    ///
+    /// So a photo is readable by anybody who may read the staff list, and is still
+    /// replaceable only by whoever keeps the record or the person in it.
+    /// </remarks>
+    Photo = 7,
 }
 
 /// <summary>

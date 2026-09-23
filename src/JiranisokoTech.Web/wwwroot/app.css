@@ -745,6 +745,39 @@ code.key {
     color: #6c757d;
 }
 
+/* Somebody's photograph, beside their name. Fixed square rather than intrinsic
+   size, because a portrait uploaded from a phone is four thousand pixels wide and
+   would otherwise push the whole page sideways on a small screen. */
+.portrait {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.portrait__image {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid #e3e5e9;
+}
+
+/* Initials where there is no photograph. A generic silhouette says nothing and
+   reads as a fault; two letters identify whose is missing. */
+.portrait__initials {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: #eef0f3;
+    color: #6c757d;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
 /* A form or a block of related controls, lifted off the page. */
 .panel {
     padding: 1.25rem;

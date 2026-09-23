@@ -119,6 +119,10 @@ public static class Documents
         AttachedTo.ExpenseClaim => Permissions.ExpensesViewAll,
         AttachedTo.Employee => Permissions.EmployeesView,
         AttachedTo.Contract => Permissions.ContractsView,
+
+        // A face, not a personnel file. See the remarks on AttachedTo.Photo for why
+        // this is the wide permission where Employee is the narrow one.
+        AttachedTo.Photo => Permissions.EmployeesView,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown attachment kind."),
     };
 
@@ -135,6 +139,7 @@ public static class Documents
         // same permission. Anybody who may put a signature into the record may
         // also have agreed what it signs.
         AttachedTo.Contract => Permissions.ContractsManage,
+        AttachedTo.Photo => Permissions.EmployeesManage,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown attachment kind."),
     };
 }

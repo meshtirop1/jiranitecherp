@@ -1,0 +1,508 @@
+@page "/my-profile"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Abstractions
+@using JiranisokoTech.Application.Documents
+@using JiranisokoTech.Application.People
+@using JiranisokoTech.Domain.Documents
+@using JiranisokoTech.Domain.People
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IPeopleRepository Staff
+@inject PeopleQueries People
+@inject PeopleService Service
+@inject DocumentService Files
+@inject IClock Clock
+@inject NavigationManager Navigation
+
+@*
+    The page about yourself.
+
+    Every other screen in this system is about somebody or something; this one is the
+    only one whose subject is the person reading it, and that changes what the
+    permission has to be. It asks only for a signed-in account, because requiring
+    employees.view would mean an engineer could not see their own phone number — the
+    same shape as the board they could not open.
+
+    What it deliberately cannot do is show or change pay, contract terms, or the
+    identity and tax numbers. Those are HR's record of you rather than your record of
+    yourself, and a page that let somebody edit their own salary would be a page with
+    one obvious use.
+*@
+
+<PageTitle>My profile — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>My profile</h1>
+</div>
+
+@if (Me is null)
+{
+    <p class="refusal" role="alert">
+        Your sign-in is not linked to a staff record, so there is nothing here to
+        show. An administrator can link them on the People page.
+    </p>
+}
+else
+{
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <div class="portrait">
+        @if (Photo is { } photo)
+        {
+            <img src="/documents/@photo.Id" alt="@Me.FullName" class="portrait__image" />
+        }
+        else
+        {
+            <span class="portrait__initials" aria-hidden="true">@Initials(Me.FullName)</span>
+        }
+
+        <div>
+            <p><strong>@Me.FullName</strong></p>
+            <p class="subtle">@(Me.JobTitle ?? "No job title recorded")</p>
+        </div>
+    </div>
+
+    <EditForm Model="Nothing" method="post" OnValidSubmit="AttachPhoto" FormName="photo"
+              enctype="multipart/form-data" class="inline">
+        <label>
+            <span class="visually-hidden">A photograph</span>
+            <input type="file" name="photo" accept="image/*" />
+        </label>
+        <button type="submit" class="button button--quiet">
+            @(Photo is null ? "Add a photo" : "Replace it")
+        </button>
+    </EditForm>
+
+    <EditForm Model="Input" method="post" OnValidSubmit="Save" FormName="details"
+              class="panel stack">
+        <DataAnnotationsValidator />
+
+        <h2>How to reach me</h2>
+
+        <div class="fields">
+            <label>
+                <span>Phone</span>
+                <InputText @bind-Value="Input.Phone" />
+            </label>
+
+            <label>
+                <span>Personal email</span>
+                <InputText @bind-Value="Input.PersonalEmail" />
+                <span class="subtle">
+                    Used after your last day, when the work address has stopped
+                    working.
+                </span>
+            </label>
+
+            <label>
+                <span>Where I work</span>
+                <InputSelect @bind-Value="Input.Location">
+                    <option value="">Not said</option>
+                    @foreach (var where in Enum.GetValues<WorkLocation>())
+                    {
+                        <option value="@where">@where</option>
+                    }
+                </InputSelect>
+            </label>
+
+            <label>
+                <span>Time zone</span>
+                <InputText @bind-Value="Input.TimeZone" placeholder="Africa/Nairobi" />
+            </label>
+        </div>
+
+        <h2>If something happens to me at work</h2>
+
+        <div class="fields">
+            <label>
+                <span>Who to call</span>
+                <InputText @bind-Value="Input.EmergencyName" />
+            </label>
+
+            <label>
+                <span>Relationship</span>
+                <InputText @bind-Value="Input.EmergencyRelationship" />
+            </label>
+
+            <label>
+                <span>Their phone</span>
+                <InputText @bind-Value="Input.EmergencyPhone" />
+            </label>
+        </div>
+
+        <button type="submit">Save</button>
+    </EditForm>
+
+    <section class="standing">
+        <h2>What I am good at</h2>
+
+        <p class="subtle">
+            This is what the firm searches when a project needs somebody who knows
+            something. Nobody else keeps it up to date for you.
+        </p>
+
+        @if (Me.Skills.Count == 0)
+        {
+            <p class="empty">Nothing recorded yet.</p>
+        }
+        else
+        {
+            <ul class="plain">
+                @foreach (var skill in Me.Skills.OrderByDescending(one => one.Level))
+                {
+                    <li>
+                        <strong>@skill.Name</strong>
+                        <span class="pill pill--quiet">@skill.Level</span>
+
+                        <EditForm Model="Nothing" method="post"
+                                  FormName="@($"forget-{skill.Id}")"
+                                  OnValidSubmit="() => Forget(skill.Name)" class="inline">
+                            <button type="submit" class="button button--quiet">Remove</button>
+                        </EditForm>
+                    </li>
+                }
+            </ul>
+        }
+
+        <EditForm Model="Learning" method="post" OnValidSubmit="SaveSkill" FormName="skill"
+                  class="inline">
+            <InputText @bind-Value="Learning.Name" placeholder="Rust" />
+            <InputSelect @bind-Value="Learning.Level">
+                @foreach (var level in Enum.GetValues<SkillLevel>())
+                {
+                    <option value="@level">@level</option>
+                }
+            </InputSelect>
+            <button type="submit">Record it</button>
+        </EditForm>
+    </section>
+
+    <section class="standing">
+        <h2>My qualifications</h2>
+
+        @if (Me.Certifications.Count == 0)
+        {
+            <p class="empty">None recorded.</p>
+        }
+        else
+        {
+            <ul class="plain">
+                @foreach (var held in Me.Certifications.OrderBy(one => one.ExpiresOn))
+                {
+                    <li>
+                        <strong>@held.Name</strong>
+                        <span class="subtle">@held.Issuer</span>
+
+                        @if (held.HasLapsed(Today))
+                        {
+                            <span class="pill pill--danger">Lapsed</span>
+                        }
+                        else if (held.LapsesSoon(Today))
+                        {
+                            @* Two months, which is enough time to renew one. *@
+                            <span class="pill pill--danger">
+                                Lapses @held.ExpiresOn!.Value.ToString("d MMM yyyy")
+                            </span>
+                        }
+                        else if (held.ExpiresOn is { } expires)
+                        {
+                            <span class="subtle">until @expires.ToString("d MMM yyyy")</span>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+
+        <EditForm Model="Certifying" method="post" OnValidSubmit="SaveCertification"
+                  FormName="certification" class="inline">
+            <InputText @bind-Value="Certifying.Name" placeholder="AWS Solutions Architect" />
+            <InputText @bind-Value="Certifying.Issuer" placeholder="Amazon" />
+            <InputDate @bind-Value="Certifying.ExpiresOn" />
+            <button type="submit">Record it</button>
+        </EditForm>
+    </section>
+
+    <p class="subtle">
+        Your pay, your contract and your identity numbers are on the record HR keeps
+        and are not shown or changed here. Ask HR if any of them is wrong.
+    </p>
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    /*
+     * The upload is read off the request rather than from a bound model. This page is
+     * statically rendered, so InputFile never runs and @onchange never fires.
+     */
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    private object Nothing { get; } = new();
+
+    private DetailsInput _input = new();
+
+    [SupplyParameterFromForm(FormName = "details")]
+    private DetailsInput Input
+    {
+        get => _input;
+        set => _input = value ?? new DetailsInput();
+    }
+
+    private SkillInput _learning = new();
+
+    [SupplyParameterFromForm(FormName = "skill")]
+    private SkillInput Learning
+    {
+        get => _learning;
+        set => _learning = value ?? new SkillInput();
+    }
+
+    private CertificationInput _certifying = new();
+
+    [SupplyParameterFromForm(FormName = "certification")]
+    private CertificationInput Certifying
+    {
+        get => _certifying;
+        set => _certifying = value ?? new CertificationInput();
+    }
+
+    /// <summary>
+    /// The staff record of whoever is reading.
+    /// </summary>
+    /// <remarks>
+    /// Resolved from the signed-in account rather than taken from the address, which is
+    /// the whole of this page's authorization. There is no identifier to tamper with:
+    /// the only record it can reach is the one linked to the account that asked.
+    /// </remarks>
+    private Employee? Me { get; set; }
+
+    private Attachment? Photo { get; set; }
+
+    private DateOnly Today { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private bool _filled;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Today = Clock.Today;
+
+        var user = (await AuthenticationState).User;
+
+        if (!Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            return;
+        }
+
+        if (await People.EmployeeForAccountAsync(account) is not { } employeeId)
+        {
+            return;
+        }
+
+        Me = await Staff.FindAsync(employeeId);
+        Photo = (await Files.ForAsync(AttachedTo.Photo, employeeId)).LastOrDefault();
+
+        if (!_filled && Me is not null)
+        {
+            _filled = true;
+
+            _input = new DetailsInput
+            {
+                Phone = Me.Details.Phone,
+                PersonalEmail = Me.Details.PersonalEmail,
+                Location = Me.Details.Location?.ToString(),
+                TimeZone = Me.Details.TimeZone,
+                EmergencyName = Me.Emergency.Name,
+                EmergencyRelationship = Me.Emergency.Relationship,
+                EmergencyPhone = Me.Emergency.Phone,
+            };
+        }
+    }
+
+    private async Task Save()
+    {
+        Refusal = null;
+
+        /*
+         * Written through `with` on what is already stored, so the fields this page
+         * does not show — the identity and tax numbers — keep their values. Building a
+         * fresh PersonalDetails here would silently clear them the first time somebody
+         * updated their phone number.
+         */
+        await Service.RecordDetailsAsync(Me!.Id, Me.Details with
+        {
+            Phone = Blank(Input.Phone),
+            PersonalEmail = Blank(Input.PersonalEmail),
+            Location = Enum.TryParse<WorkLocation>(Input.Location, out var where) ? where : null,
+            TimeZone = Blank(Input.TimeZone),
+        });
+
+        await Service.RecordEmergencyAsync(Me.Id, new EmergencyContact
+        {
+            Name = Blank(Input.EmergencyName),
+            Relationship = Blank(Input.EmergencyRelationship),
+            Phone = Blank(Input.EmergencyPhone),
+        });
+
+        Navigation.NavigateTo("/my-profile", forceLoad: true);
+    }
+
+    private async Task SaveSkill()
+    {
+        if (string.IsNullOrWhiteSpace(Learning.Name))
+        {
+            return;
+        }
+
+        await Service.RecordSkillAsync(
+            Me!.Id,
+            Learning.Name,
+            Enum.TryParse<SkillLevel>(Learning.Level, out var level)
+                ? level
+                : SkillLevel.Working);
+
+        Navigation.NavigateTo("/my-profile", forceLoad: true);
+    }
+
+    private async Task Forget(string name)
+    {
+        await Service.RemoveSkillAsync(Me!.Id, name);
+        Navigation.NavigateTo("/my-profile", forceLoad: true);
+    }
+
+    private async Task SaveCertification()
+    {
+        Refusal = null;
+
+        if (string.IsNullOrWhiteSpace(Certifying.Name)
+            || string.IsNullOrWhiteSpace(Certifying.Issuer))
+        {
+            Refusal =
+                "A qualification needs a name and whoever issued it. Without the issuer it "
+                + "cannot be verified, which is the only reason to record one.";
+
+            await LoadAsync();
+            return;
+        }
+
+        try
+        {
+            await Service.RecordCertificationAsync(
+                Me!.Id, Certifying.Name, Certifying.Issuer, null, Certifying.ExpiresOn);
+
+            Navigation.NavigateTo("/my-profile", forceLoad: true);
+        }
+        catch (InvalidOperationException exception)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private async Task AttachPhoto()
+    {
+        Refusal = null;
+
+        var file = Request?.Request.Form.Files["photo"];
+
+        if (file is null || file.Length == 0)
+        {
+            Refusal = "Choose an image first.";
+            await LoadAsync();
+            return;
+        }
+
+        try
+        {
+            await using var contents = file.OpenReadStream();
+
+            await Files.AttachAsync(
+                AttachedTo.Photo, Me!.Id, contents, file.FileName, file.Length, Me.Id,
+                "Photograph");
+
+            Done = "That is your photograph now.";
+            await LoadAsync();
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string Initials(string fullName)
+    {
+        var parts = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        return parts.Length switch
+        {
+            0 => "?",
+            1 => parts[0][..1].ToUpperInvariant(),
+            _ => (parts[0][..1] + parts[^1][..1]).ToUpperInvariant(),
+        };
+    }
+
+    private static string? Blank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private sealed class DetailsInput
+    {
+        [StringLength(50)]
+        public string? Phone { get; set; }
+
+        [EmailAddress(ErrorMessage = "That does not look like an email address.")]
+        [StringLength(200)]
+        public string? PersonalEmail { get; set; }
+
+        public string? Location { get; set; }
+
+        [StringLength(100)]
+        public string? TimeZone { get; set; }
+
+        [StringLength(200)]
+        public string? EmergencyName { get; set; }
+
+        [StringLength(100)]
+        public string? EmergencyRelationship { get; set; }
+
+        [StringLength(50)]
+        public string? EmergencyPhone { get; set; }
+    }
+
+    private sealed class SkillInput
+    {
+        [StringLength(100)]
+        public string? Name { get; set; }
+
+        public string? Level { get; set; } = nameof(SkillLevel.Working);
+    }
+
+    private sealed class CertificationInput
+    {
+        [StringLength(200)]
+        public string? Name { get; set; }
+
+        [StringLength(200)]
+        public string? Issuer { get; set; }
+
+        public DateOnly? ExpiresOn { get; set; }
+    }
+}

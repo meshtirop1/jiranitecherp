@@ -1,0 +1,684 @@
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.People
+@using JiranisokoTech.Domain.People
+@using Microsoft.AspNetCore.Authorization
+@inject PeopleService Service
+@inject NavigationManager Navigation
+
+@*
+    The rest of a staff record: how to reach somebody, who to call in an emergency,
+    what they are paid, and what they are good at.
+
+    Its own component rather than four more sections on Person.razor, which was
+    already long. Each form carries a distinct FormName, which is what lets several
+    of them share one statically rendered page — the browser posts one, the framework
+    matches the handler to the name, and only that form's model is bound.
+*@
+
+@if (Person is null)
+{
+    return;
+}
+
+<section class="standing">
+    <h2>How to reach them</h2>
+
+    <dl class="facts">
+        <dt>Phone</dt>
+        <dd>@(Person.Details.Phone ?? "Not recorded")</dd>
+
+        <dt>Personal email</dt>
+        <dd>@(Person.Details.PersonalEmail ?? "Not recorded")</dd>
+
+        <dt>Where they work</dt>
+        <dd>@(Person.Details.Location?.ToString() ?? "Not recorded")</dd>
+
+        <dt>Time zone</dt>
+        <dd>@(Person.Details.TimeZone ?? "Not recorded")</dd>
+
+        <dt>If something happens</dt>
+        <dd>
+            @if (Person.Emergency.IsEmpty)
+            {
+                @* The one piece of personal data whose absence is a risk rather
+                   than an inconvenience, so it is said in red. *@
+                <span class="pill pill--danger">Nobody recorded</span>
+            }
+            else
+            {
+                @Person.Emergency.Name
+
+                @if (Person.Emergency.Relationship is { } relationship)
+                {
+                    <span class="subtle">@relationship</span>
+                }
+
+                @if (Person.Emergency.IsReachable)
+                {
+                    <text>— @Person.Emergency.Phone</text>
+                }
+                else
+                {
+                    @* A name with no number is a gap that looks filled. *@
+                    <span class="pill pill--danger">No number</span>
+                }
+            }
+        </dd>
+    </dl>
+
+    <AuthorizeView Policy="@ManagePolicy" Context="mayRecord">
+        <EditForm Model="Contact" method="post" OnValidSubmit="SaveContact" FormName="contact"
+                  class="panel stack">
+            <DataAnnotationsValidator />
+
+            <h3>Record their details</h3>
+
+            <div class="fields">
+                <label>
+                    <span>Phone</span>
+                    <InputText @bind-Value="Contact.Phone" />
+                </label>
+
+                <label>
+                    <span>Personal email</span>
+                    <InputText @bind-Value="Contact.PersonalEmail" />
+                    <span class="subtle">
+                        A work address stops working on somebody's last day, and a
+                        final payslip still has to reach them.
+                    </span>
+                </label>
+
+                <label>
+                    <span>Where they work</span>
+                    <InputSelect @bind-Value="Contact.Location">
+                        <option value="">Not said</option>
+                        @foreach (var where in Enum.GetValues<WorkLocation>())
+                        {
+                            <option value="@where">@where</option>
+                        }
+                    </InputSelect>
+                </label>
+
+                <label>
+                    <span>Time zone</span>
+                    <InputText @bind-Value="Contact.TimeZone" placeholder="Africa/Nairobi" />
+                </label>
+            </div>
+
+            <div class="fields">
+                <label>
+                    <span>Emergency contact</span>
+                    <InputText @bind-Value="Contact.EmergencyName" />
+                </label>
+
+                <label>
+                    <span>Relationship</span>
+                    <InputText @bind-Value="Contact.EmergencyRelationship" />
+                </label>
+
+                <label>
+                    <span>Their phone</span>
+                    <InputText @bind-Value="Contact.EmergencyPhone" />
+                </label>
+            </div>
+
+            <button type="submit">Save</button>
+        </EditForm>
+    </AuthorizeView>
+</section>
+
+@*
+    Pay, and the numbers that identify somebody to the state, behind their own
+    permission. employees.view is the permission to see that a person works here;
+    this is the permission to see what they earn. Keeping them apart is what stops
+    the staff list being a salary list.
+*@
+<AuthorizeView Policy="@PayPolicy" Context="mayPay">
+    <section class="standing">
+        <h2>Terms</h2>
+
+        @if (Refusal is not null)
+        {
+            <p class="refusal" role="alert">@Refusal</p>
+        }
+
+        <dl class="facts">
+            <dt>Contract</dt>
+            <dd>
+                @(Person.Terms.Contract?.ToString() ?? "Not agreed")
+
+                @if (Person.Terms.HasExpired(Today))
+                {
+                    <span class="pill pill--danger">Ran out</span>
+                }
+                else if (Person.Terms.IsOnProbation(Today))
+                {
+                    <span class="pill pill--quiet">On probation</span>
+                }
+            </dd>
+
+            <dt>Salary</dt>
+            <dd>
+                @if (Person.Terms.Salary is { } salary)
+                {
+                    <text>@salary.ToString()</text>
+                    <span class="subtle">
+                        per @(Person.Terms.Frequency?.ToString()?.ToLowerInvariant() ?? "period")
+                    </span>
+                }
+                else
+                {
+                    <text>Not agreed</text>
+                }
+            </dd>
+
+            <dt>Notice</dt>
+            <dd>@(Person.Terms.NoticeDays is { } days ? $"{days} days" : "Not agreed")</dd>
+
+            <dt>Probation ends</dt>
+            <dd>@(Person.Terms.ProbationEndsOn?.ToString("d MMMM yyyy") ?? "—")</dd>
+
+            @if (Person.Terms.EndsOn is { } endsOn)
+            {
+                <dt>Contract ends</dt>
+                <dd>@endsOn.ToString("d MMMM yyyy")</dd>
+            }
+
+            @*
+                Masked, always. Enough for somebody holding the paper copy to confirm
+                it is the same number, and not enough to be worth taking from a
+                screenshot.
+            *@
+            <dt>National ID</dt>
+            <dd><code>@(Person.Details.MaskedNationalId ?? "Not recorded")</code></dd>
+
+            <dt>Tax number</dt>
+            <dd><code>@(Person.Details.MaskedTaxNumber ?? "Not recorded")</code></dd>
+        </dl>
+
+        <EditForm Model="Pay" method="post" OnValidSubmit="SaveTerms" FormName="terms"
+                  class="panel stack">
+            <DataAnnotationsValidator />
+
+            <h3>Agree terms</h3>
+
+            <div class="fields">
+                <label>
+                    <span>Contract</span>
+                    <InputSelect @bind-Value="Pay.Contract">
+                        <option value="">Not said</option>
+                        @foreach (var kind in Enum.GetValues<ContractType>())
+                        {
+                            <option value="@kind">@kind</option>
+                        }
+                    </InputSelect>
+                </label>
+
+                <label>
+                    <span>Salary per period</span>
+                    <InputNumber @bind-Value="Pay.Salary" min="0" />
+                    <span class="subtle">
+                        Per period, not per year. A year holds twelve months or
+                        twenty-six fortnights depending on the answer below.
+                    </span>
+                </label>
+
+                <label>
+                    <span>Currency</span>
+                    <InputText @bind-Value="Pay.Currency" maxlength="3" placeholder="KES" />
+                </label>
+
+                <label>
+                    <span>Paid</span>
+                    <InputSelect @bind-Value="Pay.Frequency">
+                        <option value="">Not said</option>
+                        @foreach (var how in Enum.GetValues<PayFrequency>())
+                        {
+                            <option value="@how">@how</option>
+                        }
+                    </InputSelect>
+                </label>
+            </div>
+
+            <div class="fields">
+                <label>
+                    <span>Notice, in days</span>
+                    <InputNumber @bind-Value="Pay.NoticeDays" min="0" max="365" />
+                </label>
+
+                <label>
+                    <span>Probation ends</span>
+                    <InputDate @bind-Value="Pay.ProbationEndsOn" />
+                </label>
+
+                <label>
+                    <span>Contract ends</span>
+                    <InputDate @bind-Value="Pay.EndsOn" />
+                </label>
+            </div>
+
+            <div class="fields">
+                <label>
+                    <span>National ID</span>
+                    <InputText @bind-Value="Pay.NationalId" autocomplete="off" />
+                </label>
+
+                <label>
+                    <span>Tax number</span>
+                    <InputText @bind-Value="Pay.TaxNumber" autocomplete="off" />
+                </label>
+            </div>
+
+            <button type="submit">Save</button>
+        </EditForm>
+    </section>
+</AuthorizeView>
+
+<section class="standing">
+    <h2>What they are good at</h2>
+
+    @if (Person.Skills.Count == 0)
+    {
+        <p class="empty">Nothing recorded, so "who here knows Rust" has no answer yet.</p>
+    }
+    else
+    {
+        <ul class="plain">
+            @foreach (var skill in Person.Skills.OrderByDescending(one => one.Level))
+            {
+                <li>
+                    <strong>@skill.Name</strong>
+                    <span class="pill pill--quiet">@skill.Level</span>
+
+                    <AuthorizeView Policy="@ManagePolicy" Context="mayForget">
+                        <EditForm Model="Nothing" method="post"
+                                  FormName="@($"forget-{skill.Id}")"
+                                  OnValidSubmit="() => Forget(skill.Name)" class="inline">
+                            <button type="submit" class="button button--quiet">Remove</button>
+                        </EditForm>
+                    </AuthorizeView>
+                </li>
+            }
+        </ul>
+    }
+
+    <AuthorizeView Policy="@ManagePolicy" Context="maySkill">
+        <EditForm Model="Learning" method="post" OnValidSubmit="SaveSkill" FormName="skill"
+                  class="inline">
+            <InputText @bind-Value="Learning.Name" placeholder="Rust" />
+            <InputSelect @bind-Value="Learning.Level">
+                @foreach (var level in Enum.GetValues<SkillLevel>())
+                {
+                    <option value="@level">@level</option>
+                }
+            </InputSelect>
+            <button type="submit">Record it</button>
+        </EditForm>
+    </AuthorizeView>
+</section>
+
+<section class="standing">
+    <h2>Qualifications</h2>
+
+    @if (Person.Certifications.Count == 0)
+    {
+        <p class="empty">None recorded.</p>
+    }
+    else
+    {
+        <ul class="plain">
+            @foreach (var held in Person.Certifications.OrderBy(one => one.ExpiresOn))
+            {
+                <li>
+                    <strong>@held.Name</strong>
+                    <span class="subtle">@held.Issuer</span>
+
+                    @*
+                        The expiry is the reason these are recorded at all. One that
+                        lapsed quietly is the one a client asks for evidence of
+                        during a tender.
+                    *@
+                    @if (held.HasLapsed(Today))
+                    {
+                        <span class="pill pill--danger">Lapsed</span>
+                    }
+                    else if (held.LapsesSoon(Today))
+                    {
+                        <span class="pill pill--danger">
+                            Lapses @held.ExpiresOn!.Value.ToString("d MMM yyyy")
+                        </span>
+                    }
+                    else if (held.ExpiresOn is { } expires)
+                    {
+                        <span class="subtle">until @expires.ToString("d MMM yyyy")</span>
+                    }
+
+                    <AuthorizeView Policy="@ManagePolicy" Context="mayDrop">
+                        <EditForm Model="Nothing" method="post"
+                                  FormName="@($"drop-{held.Id}")"
+                                  OnValidSubmit="() => Drop(held.Id)" class="inline">
+                            <button type="submit" class="button button--quiet">Remove</button>
+                        </EditForm>
+                    </AuthorizeView>
+                </li>
+            }
+        </ul>
+    }
+
+    <AuthorizeView Policy="@ManagePolicy" Context="mayCertify">
+        <EditForm Model="Certifying" method="post" OnValidSubmit="SaveCertification"
+                  FormName="certification" class="inline">
+            <InputText @bind-Value="Certifying.Name" placeholder="AWS Solutions Architect" />
+            <InputText @bind-Value="Certifying.Issuer" placeholder="Amazon" />
+            <InputDate @bind-Value="Certifying.ExpiresOn" />
+            <button type="submit">Record it</button>
+        </EditForm>
+    </AuthorizeView>
+</section>
+
+@code {
+    private const string ManagePolicy =
+        PermissionClaim.PolicyPrefix + Permissions.EmployeesManage;
+
+    private const string PayPolicy = PermissionClaim.PolicyPrefix + Permissions.EmployeesPay;
+
+    [Parameter]
+    [EditorRequired]
+    public Employee? Person { get; set; }
+
+    [Parameter]
+    [EditorRequired]
+    public DateOnly Today { get; set; }
+
+    private object Nothing { get; } = new();
+
+    private string? Refusal { get; set; }
+
+    private ContactInput _contact = new();
+
+    [SupplyParameterFromForm(FormName = "contact")]
+    private ContactInput Contact
+    {
+        get => _contact;
+        set => _contact = value ?? new ContactInput();
+    }
+
+    private PayInput _pay = new();
+
+    [SupplyParameterFromForm(FormName = "terms")]
+    private PayInput Pay
+    {
+        get => _pay;
+        set => _pay = value ?? new PayInput();
+    }
+
+    private SkillInput _learning = new();
+
+    [SupplyParameterFromForm(FormName = "skill")]
+    private SkillInput Learning
+    {
+        get => _learning;
+        set => _learning = value ?? new SkillInput();
+    }
+
+    private CertificationInput _certifying = new();
+
+    [SupplyParameterFromForm(FormName = "certification")]
+    private CertificationInput Certifying
+    {
+        get => _certifying;
+        set => _certifying = value ?? new CertificationInput();
+    }
+
+    /// <summary>
+    /// Fills the forms from what is already recorded.
+    /// </summary>
+    /// <remarks>
+    /// Only on the first render. Refilling after a post would overwrite whatever the
+    /// person had just typed with the values from the database, which on a statically
+    /// rendered page means their edit disappearing the moment they submit a different
+    /// form on the same screen.
+    /// </remarks>
+    protected override void OnParametersSet()
+    {
+        if (_filled || Person is null)
+        {
+            return;
+        }
+
+        _filled = true;
+
+        _contact = new ContactInput
+        {
+            Phone = Person.Details.Phone,
+            PersonalEmail = Person.Details.PersonalEmail,
+            Location = Person.Details.Location?.ToString(),
+            TimeZone = Person.Details.TimeZone,
+            EmergencyName = Person.Emergency.Name,
+            EmergencyRelationship = Person.Emergency.Relationship,
+            EmergencyPhone = Person.Emergency.Phone,
+        };
+
+        _pay = new PayInput
+        {
+            Contract = Person.Terms.Contract?.ToString(),
+            Salary = Person.Terms.SalaryMinorUnits,
+            Currency = Person.Terms.SalaryCurrency,
+            Frequency = Person.Terms.Frequency?.ToString(),
+            NoticeDays = Person.Terms.NoticeDays,
+            ProbationEndsOn = Person.Terms.ProbationEndsOn,
+            EndsOn = Person.Terms.EndsOn,
+
+            // Deliberately not filled from what is stored. Showing the whole number
+            // back in an input would undo the masking everywhere else on this page,
+            // and the field is for entering one rather than reading it.
+            NationalId = null,
+            TaxNumber = null,
+        };
+    }
+
+    private bool _filled;
+
+    private async Task SaveContact()
+    {
+        await Service.RecordDetailsAsync(Person!.Id, Person.Details with
+        {
+            Phone = Blank(Contact.Phone),
+            PersonalEmail = Blank(Contact.PersonalEmail),
+            Location = Enum.TryParse<WorkLocation>(Contact.Location, out var where)
+                ? where
+                : null,
+            TimeZone = Blank(Contact.TimeZone),
+        });
+
+        await Service.RecordEmergencyAsync(Person.Id, new EmergencyContact
+        {
+            Name = Blank(Contact.EmergencyName),
+            Relationship = Blank(Contact.EmergencyRelationship),
+            Phone = Blank(Contact.EmergencyPhone),
+        });
+
+        Reload();
+    }
+
+    private async Task SaveTerms()
+    {
+        Refusal = null;
+
+        try
+        {
+            /*
+             * The identity numbers are only written when something was typed. An
+             * empty field means "leave it alone" rather than "clear it", because the
+             * form deliberately does not show the stored value — so an empty box is
+             * the normal state of this form, not an instruction.
+             */
+            await Service.RecordDetailsAsync(Person!.Id, Person.Details with
+            {
+                NationalId = Blank(Pay.NationalId) ?? Person.Details.NationalId,
+                TaxNumber = Blank(Pay.TaxNumber) ?? Person.Details.TaxNumber,
+            });
+
+            await Service.AgreeTermsAsync(Person.Id, new EmploymentTerms
+            {
+                Contract = Enum.TryParse<ContractType>(Pay.Contract, out var kind)
+                    ? kind
+                    : null,
+                SalaryMinorUnits = Pay.Salary,
+                SalaryCurrency = Blank(Pay.Currency)?.ToUpperInvariant(),
+                Frequency = Enum.TryParse<PayFrequency>(Pay.Frequency, out var how)
+                    ? how
+                    : null,
+                NoticeDays = Pay.NoticeDays,
+                ProbationEndsOn = Pay.ProbationEndsOn,
+                EndsOn = Pay.EndsOn,
+            });
+
+            Reload();
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+        }
+    }
+
+    private async Task SaveSkill()
+    {
+        if (string.IsNullOrWhiteSpace(Learning.Name))
+        {
+            return;
+        }
+
+        await Service.RecordSkillAsync(
+            Person!.Id,
+            Learning.Name,
+            Enum.TryParse<SkillLevel>(Learning.Level, out var level)
+                ? level
+                : SkillLevel.Working);
+
+        Reload();
+    }
+
+    private async Task Forget(string name)
+    {
+        await Service.RemoveSkillAsync(Person!.Id, name);
+        Reload();
+    }
+
+    private async Task SaveCertification()
+    {
+        Refusal = null;
+
+        if (string.IsNullOrWhiteSpace(Certifying.Name)
+            || string.IsNullOrWhiteSpace(Certifying.Issuer))
+        {
+            Refusal =
+                "A qualification needs a name and whoever issued it. Without the issuer it "
+                + "cannot be verified, which is the only reason to record one.";
+
+            return;
+        }
+
+        try
+        {
+            await Service.RecordCertificationAsync(
+                Person!.Id, Certifying.Name, Certifying.Issuer, null, Certifying.ExpiresOn);
+
+            Reload();
+        }
+        catch (InvalidOperationException exception)
+        {
+            Refusal = exception.Message;
+        }
+    }
+
+    private async Task Drop(Guid id)
+    {
+        await Service.RemoveCertificationAsync(Person!.Id, id);
+        Reload();
+    }
+
+    /// <summary>
+    /// Reload the page so the sections show what was just saved.
+    /// </summary>
+    /// <remarks>
+    /// A full load rather than a re-render, because this page is statically rendered
+    /// and the parent holds the Employee that was read before the post.
+    /// </remarks>
+    private void Reload() =>
+        Navigation.NavigateTo($"/people/{Person!.Id}", forceLoad: true);
+
+    private static string? Blank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private sealed class ContactInput
+    {
+        [StringLength(50)]
+        public string? Phone { get; set; }
+
+        [EmailAddress(ErrorMessage = "That does not look like an email address.")]
+        [StringLength(200)]
+        public string? PersonalEmail { get; set; }
+
+        public string? Location { get; set; }
+
+        [StringLength(100)]
+        public string? TimeZone { get; set; }
+
+        [StringLength(200)]
+        public string? EmergencyName { get; set; }
+
+        [StringLength(100)]
+        public string? EmergencyRelationship { get; set; }
+
+        [StringLength(50)]
+        public string? EmergencyPhone { get; set; }
+    }
+
+    private sealed class PayInput
+    {
+        public string? Contract { get; set; }
+
+        [Range(0, long.MaxValue, ErrorMessage = "A salary cannot be negative.")]
+        public long? Salary { get; set; }
+
+        [StringLength(3, MinimumLength = 3, ErrorMessage = "Three letters, such as KES.")]
+        public string? Currency { get; set; }
+
+        public string? Frequency { get; set; }
+
+        [Range(0, 365)]
+        public int? NoticeDays { get; set; }
+
+        public DateOnly? ProbationEndsOn { get; set; }
+
+        public DateOnly? EndsOn { get; set; }
+
+        [StringLength(50)]
+        public string? NationalId { get; set; }
+
+        [StringLength(50)]
+        public string? TaxNumber { get; set; }
+    }
+
+    private sealed class SkillInput
+    {
+        [StringLength(100)]
+        public string? Name { get; set; }
+
+        public string? Level { get; set; } = nameof(SkillLevel.Working);
+    }
+
+    private sealed class CertificationInput
+    {
+        [StringLength(200)]
+        public string? Name { get; set; }
+
+        [StringLength(200)]
+        public string? Issuer { get; set; }
+
+        public DateOnly? ExpiresOn { get; set; }
+    }
+}

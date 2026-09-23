@@ -53,7 +53,7 @@ By section: **34 done, 22 partial, 42 not started, 1 excluded by agreement.**
 | ◐ | 4 | Session and device management | Sign out everywhere works; no per-device list, no suspicious-login detection |
 | ☐ | 4 | Self-service password reset | An administrator must issue a link. There is no forgot-password page |
 | ☐ | 4 | Email verification | |
-| ◐ | 4 | Profile | Name, title, department, manager, capacity. No photo, phone, skills, certifications, location or time zone |
+| ✅ | 4 | Profile | A page about yourself at /my-profile — photo, phone, location, time zone, next of kin, skills, qualifications. Pay and identity numbers deliberately not editable there |
 | ✅ | 5 | RBAC | 7 roles, one matrix, permission-as-claim, deny by default |
 | ◐ | 5 | Permission granularity | Resource-level by ownership (own work, own file). No department, project or team scoping |
 | ✅ | 29 | Audit log | Append-only, same transaction, readable and filterable |
@@ -75,7 +75,7 @@ By section: **34 done, 22 partial, 42 not started, 1 excluded by agreement.**
 
 | | § | Item | Note |
 | --- | --- | --- | --- |
-| ◐ | 6 | Employee records | No personal details, emergency contacts, contract, salary, benefits, work location, skills or certifications |
+| ✅ | 6 | Employee records | Contact details, next of kin, contract, salary, work location, skills, certifications. Salary and identity numbers behind employees.pay |
 | ✅ | 6 | Departments | With heads |
 | ☐ | 6 | Teams | Distinct from departments |
 | ✅ | 6 | Reporting lines | Org chart, cycle-safe |

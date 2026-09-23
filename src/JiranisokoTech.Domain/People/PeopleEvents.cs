@@ -74,3 +74,18 @@ public sealed record DepartmentHeadChanged(
 public sealed record DepartmentClosed(Guid DepartmentId) : DomainEvent;
 
 public sealed record DepartmentReopened(Guid DepartmentId) : DomainEvent;
+
+/// <summary>
+/// Somebody's pay or terms changed.
+/// </summary>
+/// <remarks>
+/// Carries no amounts, deliberately. An outbox row is JSON in a table with its own
+/// retention and its own readers, and a salary does not belong in two places. What the
+/// event is for is telling the rest of the system that the terms moved — payroll,
+/// when it exists, and anything watching contract types — not for carrying the figure.
+/// </remarks>
+public sealed record EmployeeTermsChanged(
+    Guid EmployeeId,
+    string FullName,
+    ContractType? Contract,
+    PayFrequency? Frequency) : DomainEvent;
