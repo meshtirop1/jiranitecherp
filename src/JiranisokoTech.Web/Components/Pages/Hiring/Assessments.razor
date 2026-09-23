@@ -1,0 +1,373 @@
+@page "/hiring/assessments"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Abstractions
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Recruitment
+@using JiranisokoTech.Domain.Recruitment
+@using JiranisokoTech.Infrastructure.Recruitment
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.InterviewsView)]
+@inject RecruitmentQueries Queries
+@inject AssessmentService Service
+@inject IClock Clock
+@inject NavigationManager Navigation
+
+@*
+    The exercise between the interview and the offer.
+
+    Behind interviews.view rather than a permission of its own, and that is the same argument
+    the builds panel settled: an exercise is the same grain of evidence about the same
+    candidate as a scorecard, read by the same people to make the same decision. A second
+    permission would mean somebody who may read an interview's notes being refused the
+    exercise those notes discuss.
+
+    Per-row forms carry their values as plain named inputs read off the cascaded HttpContext
+    rather than through [SupplyParameterFromForm]. One model bound to a form whose name changes
+    per row binds to whichever row posted last, which under static rendering is a value from
+    somebody else's row arriving in this one's handler.
+*@
+
+<PageTitle>Exercises — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/hiring">Hiring</a></nav>
+
+<div class="page-head">
+    <h1>Exercises</h1>
+    <p class="subtle">@Summary</p>
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<AuthorizeView Policy="@ManagePolicy" Context="maySet">
+    <EditForm Model="Setting" method="post" OnValidSubmit="Set" FormName="set" class="panel stack">
+        <DataAnnotationsValidator />
+
+        <h2>Set an exercise</h2>
+
+        @if (Candidates.Count == 0)
+        {
+            <p class="subtle">
+                Nobody is at interview or exercise stage, so there is nobody to set one for.
+            </p>
+        }
+        else
+        {
+            <div class="fields">
+                <label>
+                    <span>Who</span>
+                    <InputSelect @bind-Value="Setting.ApplicationId">
+                        @foreach (var one in Candidates)
+                        {
+                            <option value="@one.Id">@one.CandidateName — @one.PostingTitle</option>
+                        }
+                    </InputSelect>
+                </label>
+
+                <label>
+                    <span>What sort</span>
+                    <InputSelect @bind-Value="Setting.Kind">
+                        @foreach (var kind in Kinds)
+                        {
+                            <option value="@kind">@Words.For(kind)</option>
+                        }
+                    </InputSelect>
+                </label>
+
+                <label>
+                    <span>Due by</span>
+                    <InputDate @bind-Value="Setting.DueBy" />
+                    <ValidationMessage For="() => Setting.DueBy" />
+                </label>
+            </div>
+
+            <label>
+                <span>What it is called</span>
+                <InputText @bind-Value="Setting.Title" placeholder="Depot routing exercise" />
+                <ValidationMessage For="() => Setting.Title" />
+            </label>
+
+            <label>
+                <span>What they are asked to do</span>
+                @*
+                    Stored in full rather than linked. A candidate who asks six months later
+                    what they were set deserves an answer, and a link to a document somebody
+                    has since edited is not one.
+                *@
+                <InputTextArea @bind-Value="Setting.Instructions" rows="6" />
+                <ValidationMessage For="() => Setting.Instructions" />
+            </label>
+
+            <button type="submit">Set it</button>
+        }
+    </EditForm>
+</AuthorizeView>
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">
+        No exercise has been set yet. Not every post needs one — the offer step only waits for
+        an exercise that exists.
+    </p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Exercises</caption>
+        <thead>
+            <tr>
+                <th scope="col">Who</th>
+                <th scope="col">Exercise</th>
+                <th scope="col">Due</th>
+                <th scope="col">Where it stands</th>
+                <th scope="col"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Rows)
+            {
+                <tr>
+                    <td>
+                        @row.CandidateName
+                        <span class="subtle">@row.PostingTitle</span>
+                    </td>
+                    <td>
+                        @row.Title
+                        <span class="subtle">@Words.For(row.Kind)</span>
+                    </td>
+                    <td>
+                        @row.DueBy.ToString("d MMM yyyy")
+                        @if (row.IsLateOn(Today))
+                        {
+                            @* Said in words as well as colour, so it survives a printout. *@
+                            <span class="pill pill--danger">overdue</span>
+                        }
+                    </td>
+                    <td>
+                        <span class="pill @Tone(row.Status)">@Words.For(row.Status)</span>
+
+                        @if (row.Result is { } result)
+                        {
+                            <span class="subtle">@Words.For(result)</span>
+                        }
+
+                        @if (row.WasLate)
+                        {
+                            <span class="subtle">handed in after the deadline</span>
+                        }
+
+                        @if (row.CancelledBecause is { } because)
+                        {
+                            <span class="subtle">@because</span>
+                        }
+                    </td>
+                    <td>
+                        <AuthorizeView Policy="@ManagePolicy" Context="mayChange">
+                            @if (row.Status == AssessmentStatus.Assigned)
+                            {
+                                <EditForm Model="Nothing" method="post"
+                                          FormName="@($"in-{row.Id}")"
+                                          OnValidSubmit="() => HandedIn(row.Id)" class="inline">
+                                    <input type="url" name="url" placeholder="Where the work is" />
+                                    <button type="submit" class="button button--quiet">
+                                        Handed in
+                                    </button>
+                                </EditForm>
+
+                                <EditForm Model="Nothing" method="post"
+                                          FormName="@($"later-{row.Id}")"
+                                          OnValidSubmit="() => DueLater(row.Id)" class="inline">
+                                    <input type="date" name="dueBy" />
+                                    <button type="submit" class="button button--quiet">
+                                        Give them longer
+                                    </button>
+                                </EditForm>
+                            }
+
+                            @if (row.Status == AssessmentStatus.Submitted)
+                            {
+                                <EditForm Model="Nothing" method="post"
+                                          FormName="@($"mark-{row.Id}")"
+                                          OnValidSubmit="() => Mark(row.Id)" class="inline">
+                                    <select name="result">
+                                        @foreach (var verdict in Verdicts)
+                                        {
+                                            <option value="@verdict">@Words.For(verdict)</option>
+                                        }
+                                    </select>
+                                    @*
+                                        Notes are required by the aggregate, not merely asked
+                                        for here. A recommendation with no reasoning is a
+                                        verdict nobody can check, and this is the record
+                                        somebody reads when a candidate asks why.
+                                    *@
+                                    <input type="text" name="notes"
+                                           placeholder="What you made of it" />
+                                    <button type="submit" class="button button--quiet">Mark it</button>
+                                </EditForm>
+                            }
+
+                            @if (row.IsOutstanding)
+                            {
+                                <EditForm Model="Nothing" method="post"
+                                          FormName="@($"off-{row.Id}")"
+                                          OnValidSubmit="() => Cancel(row.Id)" class="inline">
+                                    <input type="text" name="because" placeholder="Why" />
+                                    <button type="submit" class="danger">Call it off</button>
+                                </EditForm>
+                            }
+
+                            @if (row.SubmissionUrl is { } where)
+                            {
+                                <a href="@where">The work</a>
+                            }
+                        </AuthorizeView>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private const string ManagePolicy =
+        PermissionClaim.PolicyPrefix + Permissions.InterviewsSchedule;
+
+    private static readonly AssessmentKind[] Kinds =
+        [AssessmentKind.TakeHome, AssessmentKind.LiveExercise, AssessmentKind.WrittenTest];
+
+    private static readonly Recommendation[] Verdicts =
+        [Recommendation.StrongNo, Recommendation.No, Recommendation.Yes,
+         Recommendation.StrongYes];
+
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    private SetInput _setting = new();
+
+    [SupplyParameterFromForm(FormName = "set")]
+    private SetInput Setting
+    {
+        get => _setting;
+        set => _setting = value ?? new SetInput();
+    }
+
+    private object Nothing { get; } = new();
+
+    private List<AssessmentRow> Rows { get; set; } = [];
+
+    /// <summary>Applications far enough along to be set an exercise.</summary>
+    private List<WaitingApplicationRow> Candidates { get; set; } = [];
+
+    private DateOnly Today { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string Summary
+    {
+        get
+        {
+            var waiting = Rows.Count(row => row.IsOutstanding);
+            var late = Rows.Count(row => row.IsLateOn(Today));
+
+            if (Rows.Count == 0)
+            {
+                return "Work set between the interview and the offer.";
+            }
+
+            return late > 0
+                ? $"{waiting} waiting, {late} past the deadline."
+                : $"{waiting} waiting.";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Today = Clock.Today;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Rows = await Queries.AssessmentsAsync();
+
+        var live = await Queries.ApplicationsAsync();
+
+        Candidates = [.. live.Where(one =>
+            one.Status is ApplicationStatus.Interviewing or ApplicationStatus.Assessing)];
+
+        Setting.ApplicationId ??= Candidates.FirstOrDefault()?.Id;
+        Setting.DueBy ??= Today.AddDays(7);
+    }
+
+    private Task Set() => TryAsync(() => Service.SetAsync(
+        Setting.ApplicationId!.Value,
+        Setting.Kind,
+        Setting.Title,
+        Setting.Instructions,
+        Setting.DueBy!.Value));
+
+    private Task HandedIn(Guid id) => TryAsync(() => Service.HandedInAsync(
+        id, Request?.Request.Form["url"].ToString()));
+
+    private Task Mark(Guid id) => TryAsync(() => Service.MarkAsync(
+        id,
+        Enum.TryParse<Recommendation>(Request?.Request.Form["result"], out var verdict)
+            ? verdict
+            : Recommendation.No,
+        Request?.Request.Form["notes"].ToString() ?? string.Empty));
+
+    private Task Cancel(Guid id) => TryAsync(() => Service.CancelAsync(
+        id, Request?.Request.Form["because"].ToString() ?? string.Empty));
+
+    private Task DueLater(Guid id) => TryAsync(() => Service.DueLaterAsync(
+        id,
+        DateOnly.TryParse(Request?.Request.Form["dueBy"], out var when)
+            ? when
+            : Today.AddDays(7)));
+
+    private async Task TryAsync(Func<Task> act)
+    {
+        Refusal = null;
+
+        try
+        {
+            await act();
+            Navigation.NavigateTo("/hiring/assessments", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string? Tone(AssessmentStatus status) => status switch
+    {
+        AssessmentStatus.Marked => "pill--done",
+        AssessmentStatus.Cancelled => "pill--quiet",
+        AssessmentStatus.Submitted => "pill--wait",
+        _ => "pill--running",
+    };
+
+    private sealed class SetInput
+    {
+        public Guid? ApplicationId { get; set; }
+
+        public AssessmentKind Kind { get; set; } = AssessmentKind.TakeHome;
+
+        [Required(ErrorMessage = "What the exercise is called.")]
+        [StringLength(200)]
+        public string Title { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "What they are being asked to do.")]
+        [StringLength(8000)]
+        public string Instructions { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "When it is due.")]
+        public DateOnly? DueBy { get; set; }
+    }
+}

@@ -52,4 +52,19 @@ public sealed class RecruitmentRepository(AppDbContext database) : IRecruitmentR
 
     public Task SaveAsync(CancellationToken cancellationToken = default) =>
         database.SaveChangesAsync(cancellationToken);
+
+    public Task<TechnicalAssessment?> FindAssessmentAsync(
+        Guid id, CancellationToken cancellationToken = default) =>
+        database.Assessments.FirstOrDefaultAsync(
+            assessment => assessment.Id == id, cancellationToken);
+
+    public Task<bool> AssessmentOutstandingAsync(
+        Guid applicationId, CancellationToken cancellationToken = default) =>
+        database.Assessments.AnyAsync(
+            assessment => assessment.ApplicationId == applicationId
+                && (assessment.Status == AssessmentStatus.Assigned
+                    || assessment.Status == AssessmentStatus.Submitted),
+            cancellationToken);
+
+    public void Add(TechnicalAssessment assessment) => database.Assessments.Add(assessment);
 }

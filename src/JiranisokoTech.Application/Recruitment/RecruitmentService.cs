@@ -325,6 +325,28 @@ public sealed class RecruitmentService(
                 + "requisition, and that has to happen in the same breath.");
         }
 
+        if (status == ApplicationStatus.Offered
+            && await recruitment.AssessmentOutstandingAsync(applicationId, cancellationToken))
+        {
+            /*
+             * Only checkable here, which is why it is not on the aggregate. The application
+             * knows its own state machine and nothing about exercises; the exercise knows
+             * nothing about offers. One of them has to be told about the other and this is
+             * the only place that can load both.
+             *
+             * An offer sent while the work is still with the candidate is an offer made on
+             * evidence nobody has read — and it is the specific waste this whole stage was
+             * added to prevent, so refusing it is the point rather than a precaution.
+             *
+             * It does not require that an exercise was ever set. Not every post needs one,
+             * and demanding one would turn a decision into a box to tick.
+             */
+            throw new InvalidOperationException(
+                "There is an exercise out on this application that nobody has marked yet. An "
+                + "offer made now is an offer made without reading the work. Mark it, or call "
+                + "it off and say why.");
+        }
+
         application.MoveTo(status, clock.Now, because);
         await recruitment.SaveAsync(cancellationToken);
     }

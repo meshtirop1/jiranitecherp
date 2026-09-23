@@ -182,10 +182,18 @@ public sealed class UserAdministration(
 
         var since = clock.Now.AddHours(-1);
 
+        /*
+         * Counted against the normalised address, not what was typed. Identity resolves an
+         * account through its normalised form, so varying the case would otherwise open a
+         * fresh bucket per spelling and let somebody fill one inbox with letters from this
+         * firm's domain while the limit reported nothing.
+         */
+        var key = RecoveryAsk.Normalised(typed);
+
         var alreadySent = await database.Set<RecoveryAsk>()
             .AsNoTracking()
             .CountAsync(
-                ask => ask.Email == typed
+                ask => ask.Email == key
                     && ask.At >= since
                     && ask.Outcome == RecoveryOutcome.LinkSent,
                 cancellationToken);

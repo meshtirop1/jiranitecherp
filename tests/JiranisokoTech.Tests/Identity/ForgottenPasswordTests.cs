@@ -114,7 +114,8 @@ public class ForgottenPasswordTests(ApplicationFactory factory) : IClassFixture<
 
         var ask = await database.Set<RecoveryAsk>()
             .AsNoTracking()
-            .FirstOrDefaultAsync(one => one.Email == "ghost-in-the-list@example.test");
+            .FirstOrDefaultAsync(one => one.Email == RecoveryAsk.Normalised(
+                "ghost-in-the-list@example.test"));
 
         Assert.NotNull(ask);
         Assert.Equal(RecoveryOutcome.NoSuchAccount, ask.Outcome);
@@ -159,7 +160,7 @@ public class ForgottenPasswordTests(ApplicationFactory factory) : IClassFixture<
 
         var asks = await database.Set<RecoveryAsk>()
             .AsNoTracking()
-            .Where(one => one.Email == address)
+            .Where(one => one.Email == RecoveryAsk.Normalised(address))
             .ToListAsync();
 
         Assert.Equal(
@@ -167,6 +168,56 @@ public class ForgottenPasswordTests(ApplicationFactory factory) : IClassFixture<
             asks.Count(one => one.Outcome == RecoveryOutcome.LinkSent));
 
         // The refused one is recorded too, so a run of them is visible afterwards.
+        Assert.Contains(asks, one => one.Outcome == RecoveryOutcome.Throttled);
+    }
+
+    /// <summary>
+    /// Varying the case does not open a fresh bucket.
+    /// </summary>
+    /// <remarks>
+    /// The fault this test exists for shipped in the first version of this feature and was
+    /// caught reading it back. Identity resolves an account through its normalised address, so
+    /// mesh@x and MESH@x are one account — but the throttle stored what was typed, so they
+    /// were two buckets. Anybody who noticed could fill one inbox with password letters from
+    /// this firm's own domain by changing a letter's case, while the limit reported nothing
+    /// wrong.
+    /// </remarks>
+    [Fact]
+    public async Task Varying_the_case_does_not_open_a_fresh_bucket()
+    {
+        const string address = "mixedcase@jiranisokotech.co.ke";
+
+        await factory.CreateAccountAsync(address, "a-long-enough-password", "Mixed Case");
+
+        foreach (var spelling in new[]
+        {
+            address,
+            address.ToUpperInvariant(),
+            "MixedCase@Jiranisokotech.co.ke",
+            address,
+        })
+        {
+            using var scope = factory.Services.CreateScope();
+
+            await scope.ServiceProvider
+                .GetRequiredService<UserAdministration>()
+                .AskForARecoveryLinkAsync(spelling, "https://erp.jiranisokotech.co.ke");
+        }
+
+        using var reading = factory.Services.CreateScope();
+        var database = reading.ServiceProvider.GetRequiredService<
+            JiranisokoTech.Infrastructure.Persistence.AppDbContext>();
+
+        var asks = await database.Set<RecoveryAsk>()
+            .AsNoTracking()
+            .Where(one => one.Email == RecoveryAsk.Normalised(address))
+            .ToListAsync();
+
+        // Four spellings, one bucket: three links and then a refusal.
+        Assert.Equal(4, asks.Count);
+        Assert.Equal(
+            UserAdministration.MostLinksAnHour,
+            asks.Count(one => one.Outcome == RecoveryOutcome.LinkSent));
         Assert.Contains(asks, one => one.Outcome == RecoveryOutcome.Throttled);
     }
 

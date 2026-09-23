@@ -60,6 +60,17 @@ public class AppDbContext(
     public DbSet<Client> Clients => Set<Client>();
 
     /// <summary>
+    /// The exercises candidates are set, and what the marker made of them.
+    /// </summary>
+    /// <remarks>
+    /// Its own table rather than a fourth InterviewKind. An interview is a conversation at a
+    /// time with people in the room; an exercise is work done unattended against a deadline,
+    /// and one table for both would put a panel and a scheduled time on rows that have
+    /// neither.
+    /// </remarks>
+    public DbSet<TechnicalAssessment> Assessments => Set<TechnicalAssessment>();
+
+    /// <summary>
     /// Notices already given about approaching deadlines.
     /// </summary>
     /// <remarks>

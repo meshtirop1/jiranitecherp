@@ -1,4 +1,5 @@
 using JiranisokoTech.Domain.Clients;
+using JiranisokoTech.Domain.Recruitment;
 using JiranisokoTech.Domain.Contracts;
 using JiranisokoTech.Domain.Engineering;
 using JiranisokoTech.Domain.Integrations;
@@ -257,6 +258,43 @@ public static class Words
         ActivityKind.Email => "An email",
         ActivityKind.Sent => "Sent them something",
         _ => kind.ToString(),
+    };
+
+    /// <summary>A four-point recommendation, said the way an interviewer says it.</summary>
+    /// <remarks>
+    /// Moved here from Interviews.razor when the exercises screen became the second place
+    /// showing it. Two copies of an enum's wording differ the first time one is adjusted, and
+    /// a reader holding both concludes one of the screens is wrong — which is the whole
+    /// argument for this file.
+    /// </remarks>
+    public static string For(Recommendation recommendation) => recommendation switch
+    {
+        Recommendation.StrongNo => "Strong no",
+        Recommendation.No => "No",
+        Recommendation.Yes => "Yes",
+        Recommendation.StrongYes => "Strong yes",
+        _ => recommendation.ToString(),
+    };
+
+    public static string For(AssessmentKind kind) => kind switch
+    {
+        AssessmentKind.TakeHome => "Take-home",
+        AssessmentKind.LiveExercise => "Live exercise",
+        AssessmentKind.WrittenTest => "Written test",
+        _ => kind.ToString(),
+    };
+
+    /// <remarks>
+    /// "Out with them" rather than "Assigned", because the question somebody opens the
+    /// exercises screen to answer is who is waiting on whom.
+    /// </remarks>
+    public static string For(AssessmentStatus status) => status switch
+    {
+        AssessmentStatus.Assigned => "Out with them",
+        AssessmentStatus.Submitted => "Waiting to be marked",
+        AssessmentStatus.Marked => "Marked",
+        AssessmentStatus.Cancelled => "Called off",
+        _ => status.ToString(),
     };
 
     public static string For(ClientStatus status) => status switch

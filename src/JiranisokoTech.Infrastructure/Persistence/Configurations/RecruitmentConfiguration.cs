@@ -134,3 +134,54 @@ public sealed class JobApplicationConfiguration : IEntityTypeConfiguration<JobAp
         builder.HasIndex(application => new { application.PostingId, application.Status });
     }
 }
+
+public sealed class TechnicalAssessmentConfiguration
+    : IEntityTypeConfiguration<TechnicalAssessment>
+{
+    public void Configure(EntityTypeBuilder<TechnicalAssessment> builder)
+    {
+        builder.ToTable("technical_assessments");
+
+        builder.HasKey(assessment => assessment.Id);
+
+        builder.Property(assessment => assessment.Kind).HasConversion<int>().IsRequired();
+        builder.Property(assessment => assessment.Status).HasConversion<int>().IsRequired();
+
+        // Nullable and still converted. A nullable enum without this is stored as a string by
+        // nobody's intention, and the column type is not something a test would notice.
+        builder.Property(assessment => assessment.Result).HasConversion<int>();
+
+        builder.Property(assessment => assessment.Title).HasMaxLength(200).IsRequired();
+
+        /*
+         * Long, because it holds the exercise as it was actually set. A candidate who asks six
+         * months later what they were asked to do deserves an answer, and a truncated one is
+         * worse than none.
+         */
+        builder.Property(assessment => assessment.Instructions).HasMaxLength(8000).IsRequired();
+
+        builder.Property(assessment => assessment.SubmissionUrl).HasMaxLength(500);
+        builder.Property(assessment => assessment.MarkerNotes).HasMaxLength(4000);
+        builder.Property(assessment => assessment.CancelledBecause).HasMaxLength(500);
+
+        builder.Ignore(assessment => assessment.IsOutstanding);
+
+        /*
+         * The one question asked on every move to an offer: is anything still out on this
+         * application. It has to be cheap, because it is asked whether or not an exercise was
+         * ever set.
+         */
+        builder.HasIndex(assessment => new { assessment.ApplicationId, assessment.Status });
+
+        /*
+         * Cascaded, unlike most links in this codebase. An exercise is only meaningful as part
+         * of one person's application — with the application gone it names nobody, and a row
+         * about an exercise set for somebody who is not in the system is not evidence of
+         * anything.
+         */
+        builder.HasOne<JobApplication>()
+            .WithMany()
+            .HasForeignKey(assessment => assessment.ApplicationId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}

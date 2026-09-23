@@ -25,6 +25,15 @@ public enum ApplicationStatus
 
     /// <summary>They withdrew.</summary>
     Withdrawn = 7,
+
+    /// <summary>Out with an exercise, or with whoever is marking it.</summary>
+    /// <remarks>
+    /// Appended at 8 rather than slotted in at 4 where it belongs in the reader's head. The
+    /// column is an int through HasConversion, so renumbering would leave every application
+    /// already stored as Offered reading back as Assessing — and the hiring board would show
+    /// people sitting an exercise nobody set.
+    /// </remarks>
+    Assessing = 8,
 }
 
 /// <summary>
@@ -66,7 +75,23 @@ public sealed class JobApplication : Entity, IAuditable
         ],
         [ApplicationStatus.Interviewing] =
         [
-            ApplicationStatus.Offered, ApplicationStatus.Rejected, ApplicationStatus.Withdrawn,
+            ApplicationStatus.Assessing, ApplicationStatus.Offered,
+            ApplicationStatus.Rejected, ApplicationStatus.Withdrawn,
+        ],
+
+        /*
+         * Back to interviewing as well as on to an offer, so the stage is not a one-way door.
+         * An exercise that raises a question worth a second conversation is the ordinary
+         * reason to set one, and a stage nobody can leave except forwards would be worked
+         * around by not using it.
+         *
+         * Interviewing keeps its direct route to Offered. Not every post needs an exercise,
+         * and forcing one would make this stage a box to tick rather than a decision.
+         */
+        [ApplicationStatus.Assessing] =
+        [
+            ApplicationStatus.Interviewing, ApplicationStatus.Offered,
+            ApplicationStatus.Rejected, ApplicationStatus.Withdrawn,
         ],
         [ApplicationStatus.Offered] =
         [
@@ -160,6 +185,7 @@ public sealed class JobApplication : Entity, IAuditable
         is ApplicationStatus.Received
         or ApplicationStatus.Screening
         or ApplicationStatus.Interviewing
+        or ApplicationStatus.Assessing
         or ApplicationStatus.Offered;
 
     /// <summary>Where an application in this state may go next.</summary>

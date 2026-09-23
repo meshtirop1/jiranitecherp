@@ -240,6 +240,125 @@ public sealed class RecruitmentQueries(AppDbContext database)
             .OrderBy(row => row.Status)
             .ThenBy(row => row.AppliedAt)
             .ToListAsync(cancellationToken);
+    /// <summary>
+    /// The exercises that have been set, the ones still waiting first.
+    /// </summary>
+    /// <remarks>
+    /// Outstanding before settled, because this screen is worked rather than browsed: somebody
+    /// opens it to see what is waiting on them, and a list ordered by date puts last month's
+    /// marked exercises above this week's unmarked one.
+    ///
+    /// Capped, like every list in this codebase that grows without bound. A firm that has set
+    /// two hundred exercises has a hiring history worth a report rather than a page.
+    /// </remarks>
+    public async Task<List<AssessmentRow>> AssessmentsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await database.Assessments
+            .AsNoTracking()
+            .OrderBy(assessment => assessment.Status == AssessmentStatus.Marked
+                || assessment.Status == AssessmentStatus.Cancelled)
+            .ThenBy(assessment => assessment.DueBy)
+            .Take(200)
+            .Select(assessment => new
+            {
+                assessment.Id,
+                assessment.ApplicationId,
+                assessment.Kind,
+                assessment.Title,
+                assessment.Instructions,
+                assessment.DueBy,
+                assessment.Status,
+                assessment.SubmissionUrl,
+                assessment.Result,
+                assessment.MarkerNotes,
+                assessment.CancelledBecause,
+                assessment.SubmittedAt,
+            })
+            .ToListAsync(cancellationToken);
+
+        var applicationIds = rows.Select(row => row.ApplicationId).Distinct().ToList();
+
+        /*
+         * The candidate's name and the post, resolved in one second query rather than joined —
+         * the pattern the rest of this file uses, and the reason is the same: two small reads
+         * are plain to follow where the join costs a reader five minutes.
+         */
+        var about = await database.Applications
+            .AsNoTracking()
+            .Where(application => applicationIds.Contains(application.Id))
+            .Select(application => new
+            {
+                application.Id,
+                Candidate = database.Candidates
+                    .Where(candidate => candidate.Id == application.CandidateId)
+                    .Select(candidate => candidate.FullName)
+                    .FirstOrDefault(),
+                Posting = database.Postings
+                    .Where(posting => posting.Id == application.PostingId)
+                    .Select(posting => posting.Title)
+                    .FirstOrDefault(),
+            })
+            .ToDictionaryAsync(row => row.Id, cancellationToken);
+
+        return rows.Select(row => new AssessmentRow(
+            row.Id,
+            row.ApplicationId,
+            about.TryGetValue(row.ApplicationId, out var who)
+                ? who.Candidate ?? "Somebody since removed"
+                : "Somebody since removed",
+            about.TryGetValue(row.ApplicationId, out var post)
+                ? post.Posting ?? "A post since removed"
+                : "A post since removed",
+            row.Kind,
+            row.Title,
+            row.Instructions,
+            row.DueBy,
+            row.Status,
+            row.SubmissionUrl,
+            row.Result,
+            row.MarkerNotes,
+            row.CancelledBecause,
+            row.SubmittedAt)).ToList();
+    }
+
+}
+
+/// <summary>One exercise, as the hiring screen shows it.</summary>
+public sealed record AssessmentRow(
+    Guid Id,
+    Guid ApplicationId,
+    string CandidateName,
+    string PostingTitle,
+    AssessmentKind Kind,
+    string Title,
+    string Instructions,
+    DateOnly DueBy,
+    AssessmentStatus Status,
+    string? SubmissionUrl,
+    Recommendation? Result,
+    string? MarkerNotes,
+    string? CancelledBecause,
+    DateTimeOffset? SubmittedAt)
+{
+    /// <summary>Waiting on somebody — out with the candidate, or back and unmarked.</summary>
+    public bool IsOutstanding =>
+        Status is AssessmentStatus.Assigned or AssessmentStatus.Submitted;
+
+    /// <summary>
+    /// Whether the deadline has gone by with nothing handed in.
+    /// </summary>
+    /// <remarks>
+    /// Takes the day rather than reading a clock, so the screen and any test agree about what
+    /// "today" is. There is no stored Expired status for the same reason an invoice has no
+    /// Overdue one: being late is what is true at the moment somebody looks.
+    /// </remarks>
+    public bool IsLateOn(DateOnly today) =>
+        Status == AssessmentStatus.Assigned && DueBy < today;
+
+    /// <summary>Whether it was handed in after the deadline, which the two dates show.</summary>
+    public bool WasLate =>
+        SubmittedAt is { } handed && DateOnly.FromDateTime(handed.UtcDateTime) > DueBy;
 }
 
 public sealed record OpeningRow(

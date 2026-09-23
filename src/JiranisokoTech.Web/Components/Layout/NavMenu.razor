@@ -104,6 +104,15 @@
                     <div class="nav-item px-3">
                         <NavLink class="nav-link" href="hiring/interviews">Interviews</NavLink>
                     </div>
+
+                    @*
+                        Beside interviews and under the same permission, because it is the same
+                        grain of evidence about the same candidate — read by the same people to
+                        make the same decision.
+                    *@
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="hiring/assessments">Exercises</NavLink>
+                    </div>
                 </AuthorizeView>
 
                 <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ReportsView)"

@@ -140,7 +140,7 @@ else
                 @if (interview.Verdict is { } verdict)
                 {
                     <span class="pill @(verdict is Recommendation.StrongNo or Recommendation.No ? "pill--danger" : "pill--done")">
-                        @Say(verdict)
+                        @Words.For(verdict)
                     </span>
                 }
             </p>
@@ -154,7 +154,7 @@ else
                     {
                         <li>
                             <strong>@card.InterviewerName</strong>
-                            <span class="pill">@Say(card.Recommendation)</span>
+                            <span class="pill">@Words.For(card.Recommendation)</span>
                             <span>@card.Notes</span>
                         </li>
                     }
@@ -203,7 +203,7 @@ else
                             <InputSelect @bind-Value="Scoring.Recommendation">
                                 @foreach (var option in Enum.GetValues<Recommendation>())
                                 {
-                                    <option value="@option">@Say(option)</option>
+                                    <option value="@option">@Words.For(option)</option>
                                 }
                             </InputSelect>
                         </label>
@@ -358,15 +358,6 @@ else
             await LoadAsync();
         }
     }
-
-    private static string Say(Recommendation recommendation) => recommendation switch
-    {
-        Recommendation.StrongNo => "Strong no",
-        Recommendation.No => "No",
-        Recommendation.Yes => "Yes",
-        Recommendation.StrongYes => "Strong yes",
-        _ => recommendation.ToString(),
-    };
 
     private static string? PillFor(InterviewStatus status) => status switch
     {

@@ -139,6 +139,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ExpenseService>();
         services.AddScoped<InvoiceService>();
         services.AddScoped<InterviewService>();
+        services.AddScoped<AssessmentService>();
 
         services.AddScoped<IRecruitmentRepository, RecruitmentRepository>();
         services.AddScoped<RecruitmentService>();

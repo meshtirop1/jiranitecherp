@@ -83,18 +83,41 @@ public sealed class RecoveryAsk
         string? ipAddress = null,
         string? userAgent = null) =>
         new(userId,
-            Trim(email, 255) ?? string.Empty,
+            Normalised(email),
             outcome,
             at,
             Trim(ipAddress, 45),
             Trim(userAgent, 400));
+
+    /// <summary>
+    /// The address as a key, upper-cased the way Identity normalises it.
+    /// </summary>
+    /// <remarks>
+    /// Not a tidiness. ASP.NET Identity resolves an account through its normalised address, so
+    /// mesh@x, Mesh@x and MESH@x are one account — and a throttle that stored what somebody
+    /// typed would give them three separate buckets. Anybody who noticed could then fill one
+    /// inbox with password letters from this firm's own domain by varying the case, walking
+    /// straight past the limit this table exists to impose.
+    ///
+    /// Upper-cased rather than lower, to match what Identity puts in NormalizedEmail, so the
+    /// two agree about what one address is.
+    /// </remarks>
+    public static string Normalised(string? email) =>
+        (Trim(email, 255) ?? string.Empty).ToUpperInvariant();
 
     public Guid Id { get; private init; }
 
     /// <summary>Null when the address matched no account.</summary>
     public Guid? UserId { get; private init; }
 
-    /// <summary>The address somebody typed, kept even when it matched nothing.</summary>
+    /// <summary>
+    /// The address asked about, normalised — a key, not a transcript of what was typed.
+    /// </summary>
+    /// <remarks>
+    /// Kept even when it matched no account, because those rows are the ones that show
+    /// somebody working through a list. Normalised because it is what the throttle counts on;
+    /// see <see cref="Normalised"/>.
+    /// </remarks>
     public string Email { get; private init; }
 
     public RecoveryOutcome Outcome { get; private init; }

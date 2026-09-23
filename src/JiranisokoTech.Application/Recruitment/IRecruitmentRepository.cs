@@ -22,6 +22,23 @@ public interface IRecruitmentRepository
     Task<List<JobPosting>> OpenPostingsForAsync(
         Guid requisitionId, CancellationToken cancellationToken = default);
 
+    Task<TechnicalAssessment?> FindAssessmentAsync(
+        Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// An exercise is still out on this application, or is back and unmarked.
+    /// </summary>
+    /// <remarks>
+    /// Asked before every move to an offer, whether or not an exercise was ever set, so it has
+    /// to be cheap — it is an AnyAsync over the (ApplicationId, Status) index and nothing more.
+    /// An offer sent while the work is still with the candidate is the waste this whole step
+    /// exists to prevent.
+    /// </remarks>
+    Task<bool> AssessmentOutstandingAsync(
+        Guid applicationId, CancellationToken cancellationToken = default);
+
+    void Add(TechnicalAssessment assessment);
+
     void Add(JobRequisition requisition);
 
     void Add(JobPosting posting);

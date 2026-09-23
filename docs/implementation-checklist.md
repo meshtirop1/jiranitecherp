@@ -15,7 +15,7 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 24 September 2026 · 1014 tests · verified against PostgreSQL in
+Last updated: 24 September 2026 · 1026 tests · verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
 container, a lost opportunity surviving its client record being deleted, the
 builds and deployments tables applying to a real Postgres, and
@@ -43,7 +43,7 @@ reports on it again — and the build and deployment half does not. What is buil
 is an ERP that a software company could run its business on, plus the beginning
 of the part that makes it developer-native.
 
-By section: **33 done, 7 partial, 58 not started, 1 excluded by agreement.**
+By section: **34 done, 6 partial, 58 not started, 1 excluded by agreement.**
 
 That count was recomputed from the tables below rather than adjusted, because the
 figure previously here did not add up to anything the tables said and had been
@@ -139,7 +139,7 @@ This block is the brief's stated centre of gravity and none of it exists.
 | ✅ | 7 | Interviews and scorecards | Panels, four-point scale, one strong no carries |
 | ✅ | 7 | Candidate correspondence | Acknowledgement, rejection, invitation, offer |
 | ✅ | 7 | Candidate profile | Portfolio, GitHub, LinkedIn, experience, education, skills as stated, and a salary expectation behind employees.pay |
-| ☐ | 7 | Technical assessments | |
+| ✅ | 7 | Technical assessments | An exercise between the interview and the offer, with an Assessing stage that is not a one-way door. **The rule is the point, not the table:** an offer is refused while an exercise is out or unmarked, because an offer made then is made on evidence nobody has read. Marking demands the reasoning as well as the verdict; late work is still accepted, because refusing it throws away the only evidence there is. No rubric — weighted criteria turn a judgement into arithmetic somebody then has to defend to a candidate |
 | ☐ | 8 | Offer documents, electronic acceptance | A letter is sent; there is no offer object to approve or accept |
 | ☐ | 8 | Onboarding checklist, equipment, account provisioning | |
 | ✅ | 9 | Offboarding | Work released, plus a checklist: assets out, sign-in closed with who closed it, exit interview kept narrowly. A departure cannot be closed with access still live |
