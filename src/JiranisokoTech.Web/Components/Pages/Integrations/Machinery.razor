@@ -1,0 +1,234 @@
+@page "/settings/machinery"
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Infrastructure.Scheduling
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.SettingsManage)]
+@inject JobQueries Jobs
+
+<PageTitle>Machinery — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/settings">Settings</a></nav>
+
+<div class="page-head">
+    <h1>Machinery</h1>
+</div>
+
+<p class="instructions">
+    The parts of this system that run without anybody asking: three queues and the
+    scheduled jobs. Brought together on one screen because the question somebody asks
+    is "is anything stuck", not "is the outbox stuck".
+</p>
+
+@if (Depths is { AnythingNeedsSomebody: true })
+{
+    @*
+        Waiting and given-up are kept apart everywhere, because they want opposite
+        responses: something waiting will sort itself out, and something given up on
+        never will until a person does something.
+    *@
+    <p class="refusal" role="alert">
+        <strong>@Depths.TotalAbandoned</strong>
+        @(Depths.TotalAbandoned == 1 ? "thing has" : "things have") given up and will not
+        be tried again without somebody.
+    </p>
+}
+
+<section class="standing">
+    <h2>Queues</h2>
+
+    @if (Depths is null)
+    {
+        <p class="empty">Nothing to report.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Queue depths</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Queue</th>
+                    <th scope="col">Waiting</th>
+                    <th scope="col">Gave up</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>
+                        <strong>Events</strong>
+                        <span class="subtle">
+                            This system's own handlers, after a change is saved
+                        </span>
+                    </td>
+                    <td class="number">@Depths.OutboxWaiting</td>
+                    <td class="number @(Depths.OutboxAbandoned > 0 ? "over" : null)">
+                        @Depths.OutboxAbandoned
+                    </td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td>
+                        <strong>Deliveries in</strong>
+                        <span class="subtle">What the Git hosts have sent</span>
+                    </td>
+                    <td class="number">@Depths.DeliveriesWaiting</td>
+                    <td class="number @(Depths.DeliveriesDeadLettered > 0 ? "over" : null)">
+                        @Depths.DeliveriesDeadLettered
+                    </td>
+                    <td><a href="/repositories/deliveries">Look</a></td>
+                </tr>
+                <tr>
+                    <td>
+                        <strong>Notifications out</strong>
+                        <span class="subtle">What this system is telling other systems</span>
+                    </td>
+                    <td class="number">@Depths.NotificationsWaiting</td>
+                    <td class="number @(Depths.NotificationsDeadLettered > 0 ? "over" : null)">
+                        @Depths.NotificationsDeadLettered
+                    </td>
+                    <td><a href="/settings/webhooks">Look</a></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p class="subtle">
+            Depths are counted in the database each time this page opens, never tracked
+            in memory — a counter would drift the first time a process restarted
+            mid-batch, and a wrong depth here is worse than none because somebody acts
+            on it.
+        </p>
+    }
+</section>
+
+<section class="standing">
+    <h2>Scheduled jobs</h2>
+
+    @if (States.Count == 0)
+    {
+        <p class="empty">No jobs are registered.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Scheduled jobs</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Job</th>
+                    <th scope="col">Every</th>
+                    <th scope="col">Last ran</th>
+                    <th scope="col">What it found</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var job in States)
+                {
+                    <tr>
+                        <td>
+                            <code>@job.Name</code>
+                            <span class="subtle">@job.Description</span>
+                        </td>
+                        <td>@Said(job.Every)</td>
+                        <td>
+                            @if (job.HasNeverRun)
+                            {
+                                @* Different from late, and only one of them means the
+                                   job has stopped. *@
+                                <span class="pill pill--quiet">Never</span>
+                            }
+                            else
+                            {
+                                @job.LastAt!.Value.ToString("d MMM HH:mm")
+
+                                @if (job.IsOverdue)
+                                {
+                                    <span class="pill pill--danger">Overdue</span>
+                                }
+                                @if (job.LastMilliseconds is { } took)
+                                {
+                                    <span class="subtle">@took ms</span>
+                                }
+                            }
+                        </td>
+                        <td>
+                            @if (job.LastFailed)
+                            {
+                                <span class="pill pill--danger">Failed</span>
+                            }
+                            <span class="subtle">@(job.LastDetail ?? "—")</span>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <p class="subtle">
+            A job is called overdue after twice its interval, not once. A daily job that
+            ran at 09:01 one morning and 09:02 the next is a minute late and not a
+            problem; one that has not run in two days has stopped.
+        </p>
+    }
+</section>
+
+<section class="standing">
+    <h2>Recent runs</h2>
+
+    @if (History.Count == 0)
+    {
+        <p class="empty">Nothing has run yet.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Recent job runs</caption>
+            <thead>
+                <tr>
+                    <th scope="col">When</th>
+                    <th scope="col">Job</th>
+                    <th scope="col">Took</th>
+                    <th scope="col">What happened</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var run in History)
+                {
+                    <tr>
+                        <td>@run.At.ToString("d MMM HH:mm:ss")</td>
+                        <td><code>@run.Job</code></td>
+                        <td class="number">@run.Milliseconds ms</td>
+                        <td>
+                            @if (run.Outcome == JobOutcome.Failed)
+                            {
+                                <span class="pill pill--danger">Failed</span>
+                            }
+                            <span class="subtle">@run.Detail</span>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    private List<JobState> States { get; set; } = [];
+
+    private List<JobRun> History { get; set; } = [];
+
+    private QueueDepths? Depths { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        States = await Jobs.JobsAsync();
+        History = await Jobs.HistoryAsync();
+        Depths = await Jobs.DepthsAsync();
+    }
+
+    /// <summary>An interval as somebody would say it.</summary>
+    private static string Said(TimeSpan every) => every switch
+    {
+        { TotalDays: >= 1 } when every.TotalDays % 1 == 0 =>
+            every.TotalDays == 1 ? "day" : $"{every.TotalDays:0} days",
+        { TotalHours: >= 1 } => every.TotalHours == 1 ? "hour" : $"{every.TotalHours:0} hours",
+        _ => $"{every.TotalMinutes:0} minutes",
+    };
+}

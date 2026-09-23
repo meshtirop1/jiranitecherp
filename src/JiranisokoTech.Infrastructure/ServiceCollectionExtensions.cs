@@ -23,6 +23,8 @@ using JiranisokoTech.Domain.Audit;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Infrastructure.Messaging;
 using JiranisokoTech.Infrastructure.Approvals;
+using JiranisokoTech.Infrastructure.Observability;
+using JiranisokoTech.Infrastructure.Scheduling;
 using JiranisokoTech.Infrastructure.Authorization;
 using JiranisokoTech.Infrastructure.Business;
 using JiranisokoTech.Infrastructure.Mail;
@@ -167,6 +169,30 @@ public static class ServiceCollectionExtensions
          * search box came to treat "the projects you are on" as "every project".
          */
         services.AddScoped<Reaches>();
+
+        /*
+         * Recurring work, and what came of each run.
+         *
+         * The outbox reacts to what happened; a great deal of what a firm needs is nobody
+         * having done anything — a certification lapsing, a contract running out — and an
+         * absence raises no event. Jobs are registered here rather than created on a
+         * screen, because a screen for defining arbitrary scheduled work is a screen for
+         * writing an application inside an application.
+         */
+        services.AddScoped<IRecurringJob, WarnAboutLapsingQualifications>();
+        services.AddScoped<IRecurringJob, WarnAboutExpiringContracts>();
+        services.AddScoped<IRecurringJob, PruneJobHistory>();
+        services.AddHostedService<Scheduler>();
+        services.AddScoped<JobQueries>();
+
+        /*
+         * Counters, and the listener that keeps their totals for /metrics. A singleton,
+         * because the totals have to outlive every request — and the listener has to be
+         * started before anything records a measurement, which is what the hosted service
+         * registration buys.
+         */
+        services.AddSingleton<MetricsReader>();
+        services.AddHostedService(provider => provider.GetRequiredService<MetricsReader>());
         services.AddScoped<SearchQueries>();
         services.AddScoped<AuditQueries>();
 

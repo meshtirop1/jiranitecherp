@@ -61,7 +61,7 @@ By section: **34 done, 22 partial, 42 not started, 1 excluded by agreement.**
 | ✅ | 41 | Database | PostgreSQL, migrations applied on start, indexed |
 | ✅ | 44 | Error handling | 403/404/500, no internals leaked |
 | ✅ | 45 | Health endpoints | `/health` and `/ready`, liveness thinner than readiness |
-| ◐ | 45 | Observability | Structured logging. No metrics, no tracing, no job monitoring |
+| ✅ | 45 | Observability | Structured logging, counters at a gated /metrics, spans on the background work, and one screen showing all three queues and every scheduled job |
 | ✅ | 46 | Testing foundation | 652 tests, run inside the image build |
 | ✅ | 54 | Security | Headers, CSRF, rate limiting, secure cookies, server-side authorization, hashing |
 | ✅ | 78 | Architecture | Domain ← Application ← Infrastructure ← Web, enforced by project references |
@@ -165,7 +165,7 @@ This block is the brief's stated centre of gravity and none of it exists.
 | ☐ | 32 | Notification centre | Email only. No in-app centre, grouping or rules |
 | ☐ | 59 | Notification rules | |
 | ☐ | 33 | Calendar | |
-| ◐ | 42 | Background jobs | Outbox dispatcher runs as a hosted service. No general queue or scheduler |
+| ✅ | 42 | Background jobs | A scheduler with a run history, three jobs registered in code, and the outbox plus two webhook queues beside it |
 | ☐ | 42 | Scheduled jobs | Nothing runs on a timetable — no renewal reminders, no SSL expiry, no overdue chasing |
 | ☐ | 43 | Caching | Redis runs and nothing uses it |
 

@@ -1,4 +1,5 @@
 using JiranisokoTech.Application.Abstractions;
+using JiranisokoTech.Application.Observability;
 using JiranisokoTech.Domain.Integrations;
 using Microsoft.Extensions.Logging;
 
@@ -136,6 +137,9 @@ public sealed class OutboundDispatcher(
         {
             delivery.Sent(result.ResponseCode ?? 200, clock.Now);
             subscription.Delivered(clock.Now);
+
+            Telemetry.NotificationsSent.Add(
+                1, new KeyValuePair<string, object?>("event", delivery.Event));
         }
         else
         {
@@ -151,6 +155,9 @@ public sealed class OutboundDispatcher(
                 // subscription. Counting every failed attempt would switch off an
                 // endpoint after two bad minutes.
                 subscription.Failed(clock.Now);
+
+                Telemetry.NotificationsFailed.Add(
+                    1, new KeyValuePair<string, object?>("event", delivery.Event));
 
                 logger.LogWarning(
                     "A {Event} notification to {Subscription} gave up after {Attempts} "

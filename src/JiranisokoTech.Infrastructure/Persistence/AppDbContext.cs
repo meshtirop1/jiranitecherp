@@ -143,6 +143,16 @@ public class AppDbContext(
 
     public DbSet<OutboxMessage> Outbox => Set<OutboxMessage>();
 
+    /// <summary>
+    /// What each scheduled job did, and when.
+    /// </summary>
+    /// <remarks>
+    /// The history is the whole feature. A scheduler with no record of its runs is one
+    /// nobody can tell has stopped, and a job that silently stopped three weeks ago is
+    /// worse than one that never existed — because the firm has been relying on it.
+    /// </remarks>
+    public DbSet<Scheduling.JobRun> JobRuns => Set<Scheduling.JobRun>();
+
     public override int SaveChanges() =>
         SaveChangesAsync().GetAwaiter().GetResult();
 

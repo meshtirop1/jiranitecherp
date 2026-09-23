@@ -85,6 +85,64 @@ public static class Letters
             toAddress, toName, "Your account was used somewhere new", text, link: null);
     }
 
+    /// <summary>
+    /// Qualifications that lapse in the next two months.
+    /// </summary>
+    /// <remarks>
+    /// A list in one message rather than one message per qualification. Three separate
+    /// emails about three certificates is three things to dismiss; one list is a thing to
+    /// act on.
+    /// </remarks>
+    public static EmailMessage QualificationsLapsing(
+        string toAddress, string toName, IReadOnlyList<string> lines)
+    {
+        var listed = string.Join(Environment.NewLine, lines);
+
+        var text = $"""
+            Hello {toName},
+
+            These qualifications lapse within the next two months:
+
+            {listed}
+
+            Two months is about what it takes to book and sit most examinations.
+            A qualification nobody renews is discovered at the moment a client asks
+            for evidence of it.
+
+            {Signature}
+            """;
+
+        return Compose(
+            toAddress, toName, "Qualifications lapsing soon", text, link: null);
+    }
+
+    /// <summary>Client contracts that run out in the next six weeks.</summary>
+    /// <remarks>
+    /// Work continuing past the end of the contract that authorises it is work a client
+    /// can decline to pay for, and it is otherwise discovered at the invoice rather than
+    /// at the date.
+    /// </remarks>
+    public static EmailMessage ContractsExpiring(
+        string toAddress, string toName, IReadOnlyList<string> lines)
+    {
+        var listed = string.Join(Environment.NewLine, lines);
+
+        var text = $"""
+            Hello {toName},
+
+            These client contracts run out within the next six weeks:
+
+            {listed}
+
+            Work done after a contract ends is work the client can decline to pay
+            for, and that is usually noticed at the invoice rather than at the date.
+
+            {Signature}
+            """;
+
+        return Compose(toAddress, toName, "Contracts running out soon", text, link: null);
+    }
+
     /// <summary>Somebody is waiting on this person to decide something.</summary>
     public static EmailMessage AwaitingDecision(
         string toAddress,

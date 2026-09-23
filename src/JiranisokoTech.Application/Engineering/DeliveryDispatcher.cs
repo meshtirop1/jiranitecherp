@@ -1,4 +1,5 @@
 using JiranisokoTech.Application.Abstractions;
+using JiranisokoTech.Application.Observability;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Domain.Engineering;
 using Microsoft.Extensions.Logging;
@@ -99,6 +100,12 @@ public sealed class DeliveryDispatcher(
                 delivery.Attempts + 1);
 
             delivery.Failed(Short(exception), clock.Now);
+
+            if (delivery.Status == DeliveryStatus.DeadLettered)
+            {
+                Telemetry.DeliveriesDeadLettered.Add(
+                    1, new KeyValuePair<string, object?>("event", delivery.Event));
+            }
         }
 
         /*

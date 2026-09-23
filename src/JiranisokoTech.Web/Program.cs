@@ -232,6 +232,13 @@ app.MapPublicApi();
 app.MapWebhookEndpoints();
 
 /*
+ * The counters, for a scraper. Not mounted at all unless Metrics:Token is configured —
+ * an endpoint that exists and always refuses tells a prober that metrics are here and a
+ * token is worth looking for.
+ */
+app.MapMetrics();
+
+/*
  * Anonymous, because a stylesheet has no account.
  *
  * Without this the deny-by-default policy catches every css, js and font file

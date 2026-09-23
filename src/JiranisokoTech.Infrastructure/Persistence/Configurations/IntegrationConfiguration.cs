@@ -114,3 +114,23 @@ public sealed class ExchangeRateConfiguration : IEntityTypeConfiguration<Exchang
         builder.HasIndex(one => new { one.From, one.To, one.On }).IsUnique();
     }
 }
+
+public sealed class JobRunConfiguration : IEntityTypeConfiguration<Scheduling.JobRun>
+{
+    public void Configure(EntityTypeBuilder<Scheduling.JobRun> builder)
+    {
+        builder.ToTable("job_runs");
+
+        builder.HasKey(run => run.Id);
+
+        builder.Property(run => run.Job).HasMaxLength(100).IsRequired();
+        builder.Property(run => run.Outcome).HasConversion<int>().IsRequired();
+        builder.Property(run => run.Detail).HasMaxLength(500).IsRequired();
+
+        /*
+         * The scheduler's own question on every sweep: when did each job last run. Without
+         * this index that is a scan of the whole history, once a minute, forever.
+         */
+        builder.HasIndex(run => new { run.Job, run.At });
+    }
+}

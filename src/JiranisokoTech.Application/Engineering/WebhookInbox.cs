@@ -1,4 +1,5 @@
 using JiranisokoTech.Application.Abstractions;
+using JiranisokoTech.Application.Observability;
 using JiranisokoTech.Domain.Engineering;
 using Microsoft.Extensions.Logging;
 
@@ -99,6 +100,9 @@ public sealed class WebhookInbox(
                 + "refused.",
                 provider);
 
+            Telemetry.DeliveriesRefused.Add(
+                1, new KeyValuePair<string, object?>("provider", provider.ToString()));
+
             return new Receipt(Reception.Unsigned, "The signature did not match.");
         }
 
@@ -172,6 +176,9 @@ public sealed class WebhookInbox(
 
         repositories.Add(delivery);
         await repositories.SaveAsync(cancellationToken);
+
+        Telemetry.DeliveriesReceived.Add(
+            1, new KeyValuePair<string, object?>("provider", provider.ToString()));
 
         return new Receipt(Reception.Accepted, "Received.", delivery.Id);
     }
