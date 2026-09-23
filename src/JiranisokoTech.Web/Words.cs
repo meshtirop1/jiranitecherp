@@ -157,6 +157,82 @@ public static class Words
         _ => state.ToString(),
     };
 
+    /// <summary>What became of a build, or that nothing has yet.</summary>
+    /// <remarks>
+    /// "Building" rather than "Running", because this word lands in a column beside
+    /// "Passed" and "Failed" and a reader scanning that column is asking what the
+    /// answer was. A noun there looks like an answer whether or not it is one; a verb
+    /// in the present tense cannot be mistaken for a result, and the fifteen minutes
+    /// a build takes are exactly the window in which somebody is looking.
+    ///
+    /// Cancelled keeps its own word and is not softened towards Failed. Somebody
+    /// pushed again or the queue was drained, and the code was never broken — so a
+    /// screen that reports a cancelled build as a failure puts a mark against work
+    /// that was fine, and the reliable lesson people draw from that is to stop
+    /// believing the failures.
+    /// </remarks>
+    public static string For(BuildOutcome outcome) => outcome switch
+    {
+        BuildOutcome.Running => "Building",
+        BuildOutcome.Passed => "Passed",
+        BuildOutcome.Failed => "Failed",
+        BuildOutcome.Cancelled => "Cancelled",
+        _ => outcome.ToString(),
+    };
+
+    /// <summary>Which of the firm's environments something reached.</summary>
+    /// <remarks>
+    /// The three named environments are already what everybody here calls them, so
+    /// there is nothing to translate and translating anyway would only invent a
+    /// second vocabulary for the same three places.
+    ///
+    /// <c>Other</c> is the one that needs care. It is the result of the classifier
+    /// failing to recognise a name, and the host's own name for the environment is
+    /// printed beside this word — so "Somewhere else" says exactly as much as is
+    /// known and leaves the specific answer to the text next to it. A confident
+    /// label like "Custom" or "Internal" would be this system asserting something
+    /// about a deployment it could not place.
+    /// </remarks>
+    public static string For(DeploymentEnvironment environment) => environment switch
+    {
+        DeploymentEnvironment.Development => "Development",
+        DeploymentEnvironment.Staging => "Staging",
+        DeploymentEnvironment.Production => "Production",
+        DeploymentEnvironment.Other => "Somewhere else",
+        _ => environment.ToString(),
+    };
+
+    /// <summary>Where a deployment got to.</summary>
+    /// <remarks>
+    /// "Going out now" rather than "Running", and deliberately not the same word as a
+    /// build's, because the two middles ask different things of the reader: a build
+    /// running is a wait, and a deployment running is the few minutes in which an
+    /// environment may be neither the old version nor the new one. Somebody who sees
+    /// the same word for both will treat them the same way.
+    ///
+    /// "Live" for succeeded because that is what is said in the room, and because the
+    /// environment is printed beside it: "Staging — Live" is a sentence a person would
+    /// say, and "Staging — Succeeded" is one only a pipeline would.
+    /// </remarks>
+    /// <remarks>
+    /// Past tense, because both screens that show these are historical. The timesheet lists
+    /// a day that has already happened, so "going out now" beside 14:32 on last Tuesday is
+    /// simply untrue; and a work item's panel is read long after the release. "Deployed"
+    /// and "Deploy failed" read correctly in both.
+    ///
+    /// Written here rather than on either page because two screens showed this enum with
+    /// two different vocabularies for a while — one saying "Live" and the other "Deployed"
+    /// for the same stored value — which is the exact drift this file exists to prevent, and
+    /// neither page was wrong on its own.
+    /// </remarks>
+    public static string For(DeploymentState state) => state switch
+    {
+        DeploymentState.Running => "Deploying",
+        DeploymentState.Succeeded => "Deployed",
+        DeploymentState.Failed => "Deploy failed",
+        _ => state.ToString(),
+    };
+
     /// <remarks>
     /// "Enquiry" and the rest read as they are, but Won and Lost are said as "Won" and
     /// "Lost" rather than "Closed won" — which is the language of a sales tool and not of

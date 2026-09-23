@@ -15,7 +15,7 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 23 September 2026 · 930 tests · verified against PostgreSQL in
+Last updated: 23 September 2026 · 986 tests · verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
 container, a lost opportunity surviving its client record being deleted, and
 every read path measured against a database holding a million rows — see
@@ -42,7 +42,7 @@ reports on it again — and the build and deployment half does not. What is buil
 is an ERP that a software company could run its business on, plus the beginning
 of the part that makes it developer-native.
 
-By section: **29 done, 10 partial, 59 not started, 1 excluded by agreement.**
+By section: **31 done, 9 partial, 58 not started, 1 excluded by agreement.**
 
 That count was recomputed from the tables below rather than adjusted, because the
 figure previously here did not add up to anything the tables said and had been
@@ -92,7 +92,7 @@ started, which is what they are.
 | ✅ | 6 | Employee lifecycle states | Hired, started, suspended, reinstated, left |
 | ✅ | 23 | Leave | Statutory kinds, approval, overlap refusal, weekends and public holidays excluded |
 | ✅ | 23 | Public holidays | Managed as data, recount in the same transaction |
-| ◐ | 21 | Time tracking | Manual entry, approval, billing, and the day's commits shown beside the form. Deliberately not auto-filled — see below. No calendar or deployment detection |
+| ✅ | 21 | Time tracking | Manual entry, approval, billing, and the day's commits and deployments shown beside the form. Still deliberately not auto-filled — see below. Deployments are found by the day's commit hashes as well as by who triggered them, because on a pipeline-driven release the host names a bot and matching on that alone shows an empty panel. **A known inherited fault:** the day is bounded in UTC while times are shown local, so a late-evening release lands under the next day — pre-existing for commits, and not fixable without deciding whose timezone a day belongs to, which no `FirmSettings` field answers. No calendar integration (§51) |
 | ☐ | 6 | Performance, goals | |
 | ☐ | 6 | Employee announcements | |
 | ✅ | 24 | Employee documents | Narrowed to employees.manage plus the person themselves |
@@ -116,9 +116,9 @@ started, which is what they are.
 | --- | --- | --- |
 | ✅ | 12 | Git integration — all four providers. Only GitHub verified against real deliveries; the other three from published payloads |
 | ✅ | 12 | Repositories, branches, commits, pull requests, reviews |
-| ◐ | 12 | Task ↔ branch ↔ commit ↔ PR mapping. Build and deployment are the missing links, and need section 13 first |
-| ☐ | 13 | CI/CD — builds, pipelines, tests, artifacts |
-| ☐ | 13 | Environments — development, staging, production |
+| ✅ | 12 | Task ↔ branch ↔ commit ↔ PR ↔ build ↔ deployment. A work item shows what was built, whether it passed, and the furthest environment it actually reached. The link comes from the commit's own work item rather than from re-reading the branch, because a deployment runs from `main` or `release/*` — refs `WorkReference` deliberately finds nothing in |
+| ◐ | 13 | CI/CD — builds and pipelines arrive from the host and attach to the work they belong to. **Tests and artifacts are not covered**: a `workflow_run` payload says a run finished and what its conclusion was, and nothing about how many assertions ran, so storing a count would mean inventing one. GitHub only; a repository whose CI reports through the Checks API rather than Actions records nothing |
+| ◐ | 13 | Environments — development, staging, production, classified from the host's free text with the original kept beside it, and Other rather than a guess. Recorded and shown against the work; there is no environments page of its own yet, and nothing here promotes between them |
 | ☐ | 67 | Releases, version numbers, changelog, rollback |
 | ☐ | 68 | Feature flags |
 | ✅ | 40 | Webhooks both ways — signed, idempotent, retried, dead-lettered, replayable |

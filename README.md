@@ -82,8 +82,8 @@ developer's machine could have shown:
   non-root user before that user takes over. Until it did, the sign-in page
   returned 500 from a directory permission.
 
-What is verified: the image builds, the 522 tests run and pass inside it, all
-three containers report healthy, the eight migrations apply to a real Postgres,
+What is verified: the image builds, the tests run and pass inside it, all
+three containers report healthy, every migration applies to a real Postgres,
 the health and readiness endpoints answer, the public pages render with their
 stylesheets, and the signing keys survive a restart.
 

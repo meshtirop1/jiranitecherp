@@ -57,6 +57,31 @@ public interface IEngineeringRepository
     Task<bool> CommitKnownAsync(
         string sha, CancellationToken cancellationToken = default);
 
+    /// <summary>The build with this identifier, if this run has been seen before.</summary>
+    /// <remarks>
+    /// Keyed on the host's own run identifier and not on the commit, because one commit is
+    /// built by several workflows and rebuilt by hand afterwards. Keying on the sha would
+    /// make the second workflow's result overwrite the first's, and a repository with a test
+    /// job and a container job would permanently show only whichever reported last.
+    /// </remarks>
+    Task<Build?> BuildAsync(
+        Guid repositoryId, string externalId, CancellationToken cancellationToken = default);
+
+    Task<Deployment?> DeploymentAsync(
+        Guid repositoryId, string externalId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The work a commit is already attached to.
+    /// </summary>
+    /// <remarks>
+    /// How a build and a deployment find their task. Deliberately not by reading the branch
+    /// name again: the commit's link was resolved when the push arrived, and it may since
+    /// have been corrected by a person on the work item page. Re-deriving it here would
+    /// quietly overrule them, and the branch a build ran on is sometimes not a branch at all.
+    /// </remarks>
+    Task<Guid?> WorkForCommitAsync(
+        string sha, CancellationToken cancellationToken = default);
+
     Task<Contributor?> ContributorAsync(
         GitProvider provider, string handle, CancellationToken cancellationToken = default);
 
@@ -86,6 +111,10 @@ public interface IEngineeringRepository
     void Add(PullRequest pullRequest);
 
     void Add(Commit commit);
+
+    void Add(Build build);
+
+    void Add(Deployment deployment);
 
     Task SaveAsync(CancellationToken cancellationToken = default);
 }

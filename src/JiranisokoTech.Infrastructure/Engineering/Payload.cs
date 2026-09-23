@@ -56,6 +56,30 @@ internal static class Payload
     }
 
     /// <summary>
+    /// An identifier at the end of a path, as text, however the provider wrote it.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="Number"/> and not a convenience. GitHub's workflow
+    /// run and deployment identifiers are past eleven digits and still climbing;
+    /// <see cref="Number"/> returns an <c>int</c>, so reading one through it fails
+    /// <c>TryGetInt32</c>, falls through, and throws — which would have
+    /// dead-lettered every single build delivery, on every repository, with a
+    /// message about a missing number that was sitting right there in the payload.
+    ///
+    /// Returns text rather than a long because that is what the identifier is used
+    /// as: an opaque key for "the same run, reported again". Azure DevOps sends a
+    /// GUID for the same purpose, so a numeric type could not hold all four hosts
+    /// anyway.
+    /// </remarks>
+    public static string? Identifier(JsonElement element, params string[] path) =>
+        At(element, path) switch
+        {
+            { ValueKind: JsonValueKind.String } found => found.GetString(),
+            { ValueKind: JsonValueKind.Number } found => found.GetRawText(),
+            _ => null,
+        };
+
+    /// <summary>
     /// A timestamp at the end of a path, or now.
     /// </summary>
     /// <remarks>

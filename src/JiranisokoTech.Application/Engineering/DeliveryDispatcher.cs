@@ -74,9 +74,39 @@ public sealed class DeliveryDispatcher(
                         delivery.Handled(clock.Now);
                         break;
 
+                    case GitEvent.Built built:
+                        await RecordAsync(repositoryId, built.Report, cancellationToken);
+                        delivery.Handled(clock.Now);
+                        break;
+
+                    case GitEvent.Deployed deployed:
+                        await RecordAsync(repositoryId, deployed.Report, cancellationToken);
+                        delivery.Handled(clock.Now);
+                        break;
+
                     case GitEvent.Uninteresting uninteresting:
                         delivery.Ignored(uninteresting.Why, clock.Now);
                         break;
+
+                    /*
+                     * Unreachable today, and here for the day it is not.
+                     *
+                     * WaitingDeliveriesAsync returns everything still Received or Failed, so
+                     * a delivery that comes through this switch without being marked Handled,
+                     * Ignored or Failed is picked up again on the next pass, and the one after
+                     * that, for ever — with no error, no attempt counted, and nothing on the
+                     * deliveries screen to suggest anything is wrong. Adding a case to
+                     * GitEvent and forgetting to add an arm here is the whole of what it takes.
+                     *
+                     * Throwing turns that silence into a dead-lettered delivery with a
+                     * sentence on it, which somebody sees. GitEventCoverageTests then fails
+                     * the build for it before anybody has to.
+                     */
+                    default:
+                        throw new InvalidOperationException(
+                            $"Nothing here acts on a {read.GetType().Name} event, so this "
+                            + "delivery would be read again on every pass. Add an arm to "
+                            + "DeliveryDispatcher.");
                 }
             }
         }
@@ -239,6 +269,119 @@ public sealed class DeliveryDispatcher(
         pullRequest.Reviewed(
             reviewed.ExternalId, reviewed.Reviewer, reviewed.Verdict, clock.Now);
     }
+
+    /// <summary>
+    /// Record a build, or settle the one already recorded.
+    /// </summary>
+    /// <remarks>
+    /// A run reports two or three times over its life and every delivery carries the same
+    /// identifier, so this is an upsert rather than an insert. Treating each delivery as a
+    /// new build would put three rows on a task for one run of one workflow, two of them
+    /// saying it was still going.
+    /// </remarks>
+    private async Task RecordAsync(
+        Guid repositoryId, BuildReport report, CancellationToken cancellationToken)
+    {
+        var existing = await repositories.BuildAsync(
+            repositoryId, report.ExternalId, cancellationToken);
+
+        if (existing is not null)
+        {
+            if (report.Outcome != BuildOutcome.Running)
+            {
+                existing.Ended(
+                    report.Outcome, report.FinishedAt ?? clock.Now, report.Url);
+            }
+
+            /*
+             * A later delivery can carry the link the first one could not. A build reported
+             * before its own push was handled has no commit to look up, and the run that
+             * finishes ten minutes later does — so the gap is filled, and only ever filled:
+             * a link already made stands, because a person may have set it by hand.
+             */
+            if (existing.WorkItemId is null
+                && await WorkFor(report.Sha, report.Branch, cancellationToken) is { } found)
+            {
+                existing.Belongs(found);
+            }
+
+            return;
+        }
+
+        repositories.Add(Build.Record(
+            repositoryId,
+            report.ExternalId,
+            report.Name,
+            report.Sha,
+            report.Branch,
+            await WorkFor(report.Sha, report.Branch, cancellationToken),
+            report.Outcome,
+            report.StartedAt,
+            report.FinishedAt,
+            report.Url));
+    }
+
+    /// <summary>Record a deployment, or settle the one already recorded.</summary>
+    /// <remarks>
+    /// The same upsert as a build, and for a sharper reason: GitHub sends a deployment event
+    /// and then one or more deployment_status events for the same deployment, so insert-only
+    /// would put every release on the environments page three or four times — on the one
+    /// screen in this system whose whole job is to say what is live.
+    /// </remarks>
+    private async Task RecordAsync(
+        Guid repositoryId, DeploymentReport report, CancellationToken cancellationToken)
+    {
+        var existing = await repositories.DeploymentAsync(
+            repositoryId, report.ExternalId, cancellationToken);
+
+        if (existing is not null)
+        {
+            if (report.State != DeploymentState.Running)
+            {
+                existing.Ended(report.State, report.At, report.Url);
+            }
+
+            if (existing.WorkItemId is null
+                && await WorkFor(report.Sha, report.Branch, cancellationToken) is { } found)
+            {
+                existing.Belongs(found);
+            }
+
+            return;
+        }
+
+        repositories.Add(Deployment.Record(
+            repositoryId,
+            report.ExternalId,
+            report.EnvironmentName,
+            report.Sha,
+            report.Branch,
+            await WorkFor(report.Sha, report.Branch, cancellationToken),
+            report.DeployedBy,
+            report.State,
+            report.At,
+            report.Url));
+    }
+
+    /// <summary>
+    /// The work a build or a deployment belongs to.
+    /// </summary>
+    /// <remarks>
+    /// The commit's own link first, and that order is the point. A commit's link was
+    /// resolved from the branch and the message when the push arrived, and may since have
+    /// been corrected by a person on the work item page — so reading the branch name again
+    /// here would quietly overrule them, on the strength of a string that was wrong the
+    /// first time.
+    ///
+    /// The branch is only a fallback, for the case where the commit itself was never
+    /// recorded: a repository connected after the branch was pushed, or a push delivery
+    /// still dead-lettered. Losing the link entirely in that case would be worse than
+    /// deriving it the same way the push would have.
+    /// </remarks>
+    private async Task<Guid?> WorkFor(
+        string sha, string? branch, CancellationToken cancellationToken) =>
+        await repositories.WorkForCommitAsync(sha, cancellationToken)
+        ?? await WorkItemFor(cancellationToken, branch);
 
     /// <summary>
     /// The work item somebody named, if they named one that exists.

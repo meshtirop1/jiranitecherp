@@ -58,6 +58,20 @@ public class AppDbContext(
 
     public DbSet<Client> Clients => Set<Client>();
 
+    /// <summary>
+    /// Builds of commits, as the hosts reported them.
+    /// </summary>
+    /// <remarks>
+    /// Section 13. Nothing here runs a build; this is a mirror, like commits and pull
+    /// requests, and it exists because section 12 could not be finished without it — a task
+    /// knew its branch, its commits and its pull request and could not say whether any of it
+    /// had built.
+    /// </remarks>
+    public DbSet<Build> Builds => Set<Build>();
+
+    /// <summary>What reached which environment, and whether it landed.</summary>
+    public DbSet<Deployment> Deployments => Set<Deployment>();
+
     /// <summary>The people at a client, who are not the client.</summary>
     public DbSet<Contact> Contacts => Set<Contact>();
 

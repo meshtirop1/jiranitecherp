@@ -5,6 +5,7 @@
 @using JiranisokoTech.Application.Authorization
 @using JiranisokoTech.Infrastructure.Engineering
 @using JiranisokoTech.Application.Business
+@using JiranisokoTech.Domain.Engineering
 @using JiranisokoTech.Domain.Work
 @using JiranisokoTech.Infrastructure.Business
 @using JiranisokoTech.Infrastructure.People
@@ -98,6 +99,35 @@ else
                 @foreach (var merged in Evidence.Merged)
                 {
                     <li><span class="pill pill--done">Merged</span> @merged</li>
+                }
+                @*
+                    The day's releases, in the same list as the commits rather than under
+                    a heading of their own. The panel answers one question — what does
+                    this day look like from outside — and a second section would invite it
+                    to be read as a second category of thing worth being paid for, which
+                    is the inference the paragraph above this panel spends three sentences
+                    refusing.
+
+                    The time of day, and never how long one took. A deployment has a start
+                    and a finish and the difference between them is sitting in the
+                    database, but "22m" printed here is a number of minutes an inch away
+                    from a field asking for a number of minutes, and on a Friday afternoon
+                    somebody will copy it across. The same reasoning that keeps the commit
+                    span a range instead of a total.
+
+                    Failed and still-running ones appear too. A release that did not land
+                    is still where the afternoon went — usually more of it than one that
+                    did — and leaving those out would empty this panel on precisely the
+                    day its owner has the hardest time reconstructing.
+                *@
+                @foreach (var deployment in Evidence.Deployments)
+                {
+                    <li>
+                        <code>@deployment.At.ToLocalTime().ToString("HH:mm")</code>
+                        <span class="pill @PillFor(deployment.State)">@Words.For(deployment.State)</span>
+                        @Reached(deployment)
+                        <code class="subtle">@deployment.Short</code>
+                    </li>
                 }
             </ul>
         </section>
@@ -387,6 +417,52 @@ else
     private static string Total(int minutes) => minutes % 60 == 0
         ? $"{minutes / 60}h"
         : minutes < 60 ? $"{minutes}m" : $"{minutes / 60}h {minutes % 60}m";
+
+    /// <summary>
+    /// What a deployment's state is called beside a timesheet.
+    /// </summary>
+    /// <remarks>
+    /// Not "Live", which is what the domain calls a deployment that succeeded and
+    /// is the right word on a screen about what is currently running. Here it would
+    /// be wrong most of the time: the majority of these rows are staging or a test
+    /// environment, and a line telling somebody their morning went live when it went
+    /// to uat is the sort of small untruth that gets the whole timesheet queried by
+    /// whoever approves it.
+    /// </remarks>
+    private static string PillFor(DeploymentState state) => state switch
+    {
+        DeploymentState.Succeeded => "pill--done",
+        DeploymentState.Failed => "pill--danger",
+
+        /*
+         * Its own colour rather than the waiting one. A deployment that is still going is
+         * not queued behind anything — it is happening — and on a panel read to reconstruct
+         * an afternoon those are different pieces of news.
+         */
+        _ => "pill--running",
+    };
+
+    /// <summary>
+    /// Where it went, named the way the host named it.
+    /// </summary>
+    /// <remarks>
+    /// The classification on its own is not enough. A firm deploying to prod-eu and
+    /// prod-af gets two identical lines reading "Production" and no way to tell which
+    /// release the afternoon actually went on — and this panel exists to be read
+    /// while remembering a day, so two rows that cannot be told apart are worse than
+    /// no rows. The host's own word on its own is not enough either, because "uat"
+    /// means nothing to the person approving the hours. So both, except where they
+    /// would say the same thing twice, and the name alone for
+    /// <see cref="DeploymentEnvironment.Other"/> — "Other" is the name of a bucket,
+    /// not of anywhere anybody deployed to.
+    /// </remarks>
+    private static string Reached(DeploymentRow deployment) => deployment switch
+    {
+        { Environment: DeploymentEnvironment.Other } => deployment.EnvironmentName,
+        { NameAddsSomething: true } =>
+            $"{Words.For(deployment.Environment)} ({deployment.EnvironmentName})",
+        _ => Words.For(deployment.Environment),
+    };
 
     private sealed class AmendInput
     {

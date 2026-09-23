@@ -97,6 +97,37 @@ public sealed class EngineeringRepository(AppDbContext context) : IEngineeringRe
         string sha, CancellationToken cancellationToken = default) =>
         context.Commits.AnyAsync(commit => commit.Sha == sha, cancellationToken);
 
+    public Task<Build?> BuildAsync(
+        Guid repositoryId, string externalId, CancellationToken cancellationToken = default) =>
+        context.Builds.FirstOrDefaultAsync(
+            build => build.RepositoryId == repositoryId && build.ExternalId == externalId,
+            cancellationToken);
+
+    public Task<Deployment?> DeploymentAsync(
+        Guid repositoryId, string externalId, CancellationToken cancellationToken = default) =>
+        context.Deployments.FirstOrDefaultAsync(
+            deployment => deployment.RepositoryId == repositoryId
+                && deployment.ExternalId == externalId,
+            cancellationToken);
+
+    /// <remarks>
+    /// Returns the link of whichever commit matches, and nothing if none does. A build can
+    /// legitimately arrive for a commit this system never saw — the push delivery
+    /// dead-lettered, or the repository was connected after the branch was pushed — and the
+    /// build is still worth recording unattached.
+    /// </remarks>
+    public async Task<Guid?> WorkForCommitAsync(
+        string sha, CancellationToken cancellationToken = default) =>
+        await context.Commits
+            .AsNoTracking()
+            .Where(commit => commit.Sha == sha || commit.Sha == sha.ToUpperInvariant())
+            .Select(commit => commit.WorkItemId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    public void Add(Build build) => context.Builds.Add(build);
+
+    public void Add(Deployment deployment) => context.Deployments.Add(deployment);
+
     public Task<Contributor?> ContributorAsync(
         GitProvider provider, string handle, CancellationToken cancellationToken = default) =>
         context.Contributors.FirstOrDefaultAsync(

@@ -175,6 +175,123 @@ public sealed class CommitConfiguration : IEntityTypeConfiguration<Commit>
     }
 }
 
+public sealed class BuildConfiguration : IEntityTypeConfiguration<Build>
+{
+    public void Configure(EntityTypeBuilder<Build> builder)
+    {
+        builder.ToTable("builds");
+
+        builder.HasKey(build => build.Id);
+
+        builder.Property(build => build.ExternalId).HasMaxLength(100).IsRequired();
+        builder.Property(build => build.Name).HasMaxLength(200).IsRequired();
+        builder.Property(build => build.Sha).HasMaxLength(64).IsRequired();
+        builder.Property(build => build.Branch).HasMaxLength(300).IsRequired();
+        builder.Property(build => build.Outcome).HasConversion<int>().IsRequired();
+        builder.Property(build => build.Url).HasMaxLength(500);
+
+        /*
+         * Ignored, all three, and this is not tidiness. A computed property that is not
+         * ignored becomes a real column: EF maps it, the migration creates it, every save
+         * writes it and nothing ever reads it — and no test fails, because the model and
+         * the snapshot agree about the mistake.
+         */
+        builder.Ignore(build => build.IsRunning);
+        builder.Ignore(build => build.Took);
+
+        /*
+         * Unique within a repository, on the host's own run identifier. This is what makes a
+         * run reported three times — requested, in progress, completed — one row instead of
+         * three, two of which would say a passed build was still going.
+         *
+         * Within a repository rather than globally, unlike a commit's hash: a run identifier
+         * is a counter on the host's side of the fence, and two repositories will reuse the
+         * same small numbers within a week of being connected.
+         */
+        builder.HasIndex(build => new { build.RepositoryId, build.ExternalId }).IsUnique();
+
+        /*
+         * The commit, because "was this built" is asked of a sha — by the work item panel
+         * and by a person who has just pushed. The work item, because the panel asks the
+         * other way round as well.
+         */
+        builder.HasIndex(build => build.Sha);
+
+        builder.HasIndex(build => build.WorkItemId);
+
+        builder.HasOne<Repository>()
+            .WithMany()
+            .HasForeignKey(build => build.RepositoryId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        /*
+         * Set to null rather than cascading, matching a commit. A build is evidence that
+         * something was built and it outlives the task it was attached to; deleting the task
+         * should lose the link, not the fact.
+         */
+        builder.HasOne<WorkItem>()
+            .WithMany()
+            .HasForeignKey(build => build.WorkItemId)
+            .OnDelete(DeleteBehavior.SetNull);
+    }
+}
+
+public sealed class DeploymentConfiguration : IEntityTypeConfiguration<Deployment>
+{
+    public void Configure(EntityTypeBuilder<Deployment> builder)
+    {
+        builder.ToTable("deployments");
+
+        builder.HasKey(one => one.Id);
+
+        builder.Property(one => one.ExternalId).HasMaxLength(100).IsRequired();
+        builder.Property(one => one.Environment).HasConversion<int>().IsRequired();
+        builder.Property(one => one.EnvironmentName).HasMaxLength(100).IsRequired();
+        builder.Property(one => one.Sha).HasMaxLength(64).IsRequired();
+        builder.Property(one => one.Branch).HasMaxLength(300);
+        builder.Property(one => one.DeployedBy).HasMaxLength(200);
+        builder.Property(one => one.State).HasConversion<int>().IsRequired();
+        builder.Property(one => one.Url).HasMaxLength(500);
+
+        builder.Ignore(one => one.IsRunning);
+        builder.Ignore(one => one.Live);
+        builder.Ignore(one => one.Took);
+
+        /*
+         * The same uniqueness as a build, and it matters more here. GitHub sends a
+         * deployment event and then one or more deployment_status events carrying the same
+         * deployment identifier, so without this every release appears three or four times —
+         * on the one screen in this system whose entire job is to say what is live.
+         */
+        builder.HasIndex(one => new { one.RepositoryId, one.ExternalId }).IsUnique();
+
+        /*
+         * The environments page reads "what is in production, most recent first", and the
+         * timesheet reads "what went out on this day". Both are answered by this.
+         *
+         * Named explicitly because the generated name for a two-column index on a table
+         * called deployments runs close to PostgreSQL's 63-character identifier limit, and a
+         * truncated name is how two indexes silently become one.
+         */
+        builder.HasIndex(one => new { one.Environment, one.At })
+            .HasDatabaseName("IX_deployments_environment_at");
+
+        builder.HasIndex(one => one.Sha);
+
+        builder.HasIndex(one => one.WorkItemId);
+
+        builder.HasOne<Repository>()
+            .WithMany()
+            .HasForeignKey(one => one.RepositoryId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne<WorkItem>()
+            .WithMany()
+            .HasForeignKey(one => one.WorkItemId)
+            .OnDelete(DeleteBehavior.SetNull);
+    }
+}
+
 public sealed class ContributorConfiguration : IEntityTypeConfiguration<Contributor>
 {
     public void Configure(EntityTypeBuilder<Contributor> builder)

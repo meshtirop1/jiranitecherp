@@ -346,13 +346,48 @@ public sealed class EngineeringQueries(AppDbContext database)
                 project, projects.GetValueOrDefault(project) ?? "(unknown)"))
             .ToList();
 
+        /*
+         * The day's deployments, found two ways and unioned.
+         *
+         * By the day's commit shas first, and that is the one that actually works. The
+         * obvious approach — filter deployments by DeployedBy against the person's claimed
+         * handles — looks right and would show an empty panel for most real deployments:
+         * DeployedBy is whatever name the host put on whoever or whatever triggered the
+         * release, and on a repository that deploys from a pipeline it is the name of a bot,
+         * a token, or nothing at all.
+         *
+         * By handle as well, because when the host does name a person it is worth having:
+         * somebody who spent the afternoon pressing the deploy button on work they committed
+         * last week has nothing in the first set and everything in the second.
+         *
+         * The union is what the day was actually spent on, and neither half alone is.
+         */
+        var shas = commits.Select(commit => commit.Sha).ToList();
+
+        var deployments = await database.Deployments
+            .AsNoTracking()
+            .Where(one => one.At >= from && one.At < until
+                && (shas.Contains(one.Sha)
+                    || (one.DeployedBy != null && handles.Contains(one.DeployedBy))))
+            .OrderBy(one => one.At)
+            .Select(one => new DeploymentRow(
+                one.Environment,
+                one.EnvironmentName,
+                one.Sha,
+                one.Branch,
+                one.DeployedBy,
+                one.State,
+                one.At,
+                one.Url))
+            .ToListAsync(cancellationToken);
+
         return new DayOfWork(
             [.. commits.Select(commit => new CommitRow(
                 commit.Sha, commit.Message, "you", commit.Branch, commit.At))],
             touched,
             commits.Count > 0 ? commits[0].At : null,
             commits.Count > 0 ? commits[^1].At : null,
-            true) with { Merged = merged };
+            true) with { Merged = merged, Deployments = deployments };
     }
 
     /// <summary>
@@ -404,6 +439,37 @@ public sealed class EngineeringQueries(AppDbContext database)
             })
             .ToListAsync(cancellationToken);
 
+        var builds = await database.Builds
+            .AsNoTracking()
+            .Where(build => build.WorkItemId == workItemId)
+            .OrderByDescending(build => build.StartedAt)
+            .Take(20)
+            .Select(build => new BuildRow(
+                build.Name,
+                build.Sha,
+                build.Branch,
+                build.Outcome,
+                build.StartedAt,
+                build.FinishedAt,
+                build.Url))
+            .ToListAsync(cancellationToken);
+
+        var deployments = await database.Deployments
+            .AsNoTracking()
+            .Where(one => one.WorkItemId == workItemId)
+            .OrderByDescending(one => one.At)
+            .Take(20)
+            .Select(one => new DeploymentRow(
+                one.Environment,
+                one.EnvironmentName,
+                one.Sha,
+                one.Branch,
+                one.DeployedBy,
+                one.State,
+                one.At,
+                one.Url))
+            .ToListAsync(cancellationToken);
+
         return new WorkEvidence(
             commits,
             [.. pullRequests.Select(row => new PullRequestRow(
@@ -415,7 +481,11 @@ public sealed class EngineeringQueries(AppDbContext database)
                 row.State,
                 row.OpenedAt,
                 row.Reviews,
-                row.Approved && !row.Blocked))]);
+                row.Approved && !row.Blocked))])
+        {
+            Builds = builds,
+            Deployments = deployments,
+        };
     }
 }
 
@@ -476,6 +546,76 @@ public sealed record PullRequestRow(
     int Reviews,
     bool IsApproved);
 
+/// <summary>One build, as a screen shows it.</summary>
+/// <remarks>
+/// Carries <c>Name</c> because a repository has several pipelines and "the build failed" is
+/// not actionable until somebody knows which of them. Carries <c>Url</c> because the log is
+/// on the host and this system deliberately does not keep a copy — so the link is the whole
+/// of what a person does next.
+/// </remarks>
+public sealed record BuildRow(
+    string Name,
+    string Sha,
+    string Branch,
+    BuildOutcome Outcome,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? FinishedAt,
+    string? Url)
+{
+    /// <summary>The short hash, for reading.</summary>
+    public string Short => Sha.Length > 7 ? Sha[..7] : Sha;
+
+    /// <summary>
+    /// How long it took, said the way somebody says it.
+    /// </summary>
+    /// <remarks>
+    /// Here rather than on the screen because two screens show builds and they have to agree
+    /// character for character. Two copies of this expression would differ the first time one
+    /// was adjusted, and a reader holding both would conclude one of them was wrong.
+    /// </remarks>
+    public string? Took
+    {
+        get
+        {
+            if (FinishedAt is not { } finished)
+            {
+                return null;
+            }
+
+            var span = finished - StartedAt;
+
+            return span.TotalMinutes < 1
+                ? $"{(int)span.TotalSeconds}s"
+                : $"{(int)span.TotalMinutes}m {span.Seconds}s";
+        }
+    }
+}
+
+/// <summary>One deployment, as a screen shows it.</summary>
+public sealed record DeploymentRow(
+    DeploymentEnvironment Environment,
+    string EnvironmentName,
+    string Sha,
+    string? Branch,
+    string? DeployedBy,
+    DeploymentState State,
+    DateTimeOffset At,
+    string? Url)
+{
+    public string Short => Sha.Length > 7 ? Sha[..7] : Sha;
+
+    /// <summary>
+    /// Whether the name the host used says more than the classification does.
+    /// </summary>
+    /// <remarks>
+    /// So a screen can show "production" once rather than "Production (production)". A firm
+    /// deploying to prod-eu needs to see prod-eu; one deploying to production does not need
+    /// to be told twice.
+    /// </remarks>
+    public bool NameAddsSomething =>
+        !string.Equals(EnvironmentName, Environment.ToString(), StringComparison.OrdinalIgnoreCase);
+}
+
 /// <summary>
 /// What the repositories say one person did on one day.
 /// </summary>
@@ -493,7 +633,24 @@ public sealed record DayOfWork(
 {
     public IReadOnlyList<string> Merged { get; init; } = [];
 
-    public bool IsEmpty => Commits.Count == 0 && Merged.Count == 0;
+    /// <summary>
+    /// What went out on this day that this person's work was part of.
+    /// </summary>
+    /// <remarks>
+    /// Section 21's last gap. An init property rather than a constructor parameter on purpose:
+    /// DayOfWorkAsync returns an empty DayOfWork positionally for somebody with no claimed
+    /// handle, and that early return must keep meaning "nothing is known about this person"
+    /// rather than quietly acquiring a populated list.
+    /// </remarks>
+    public IReadOnlyList<DeploymentRow> Deployments { get; init; } = [];
+
+    /// <remarks>
+    /// Deployments are counted here as well, and forgetting to would have been the fault
+    /// worth catching: a day spent getting a release out, with the commits made the day
+    /// before, would have rendered as a blank panel — in the one case the feature was
+    /// built for.
+    /// </remarks>
+    public bool IsEmpty => Commits.Count == 0 && Merged.Count == 0 && Deployments.Count == 0;
 
     /// <summary>
     /// The span between the first and last commit, said as a range and never as a
@@ -516,7 +673,68 @@ public sealed record WorkEvidence(
     IReadOnlyList<CommitRow> Commits,
     IReadOnlyList<PullRequestRow> PullRequests)
 {
-    public bool IsEmpty => Commits.Count == 0 && PullRequests.Count == 0;
+    /// <summary>What was built, newest first.</summary>
+    /// <remarks>
+    /// Section 12's first missing link. Init properties rather than constructor parameters so
+    /// the empty evidence a screen starts from stays a two-argument expression — the same
+    /// reasoning as DayOfWork.Deployments.
+    /// </remarks>
+    public IReadOnlyList<BuildRow> Builds { get; init; } = [];
+
+    /// <summary>Where it got to, newest first.</summary>
+    public IReadOnlyList<DeploymentRow> Deployments { get; init; } = [];
+
+    public bool IsEmpty => Commits.Count == 0
+        && PullRequests.Count == 0
+        && Builds.Count == 0
+        && Deployments.Count == 0;
+
+    /// <summary>
+    /// The state of the most recent build, if anything has been built.
+    /// </summary>
+    /// <remarks>
+    /// The most recent and not a summary of all of them, because a task with a red build from
+    /// Tuesday and a green one from Thursday is green. Rolling them together would report the
+    /// worst thing that ever happened to the branch rather than where it stands.
+    /// </remarks>
+    public BuildRow? LatestBuild => Builds.Count > 0 ? Builds[0] : null;
+
+    /// <summary>The furthest environment this work actually reached.</summary>
+    /// <remarks>
+    /// Furthest rather than latest, and only counting the ones that landed. A failed
+    /// production deploy after a successful staging one means the work is on staging; saying
+    /// "production" because that was the last thing attempted would be the most consequential
+    /// wrong sentence on the page.
+    /// </remarks>
+    public DeploymentRow? Furthest => Deployments
+        .Where(one => one.State == DeploymentState.Succeeded)
+        .OrderByDescending(one => Rank(one.Environment))
+        .FirstOrDefault();
+
+    /// <summary>
+    /// How far through the firm's environments one of them is.
+    /// </summary>
+    /// <remarks>
+    /// Written out rather than taken from the enum's own order, which is the fault this
+    /// method exists to fix. DeploymentEnvironment.Other is 4 and Production is 3, so
+    /// ordering by the enum reported a succeeded deploy to a sandbox or a review app as
+    /// further than production — and the summary line on the work item page would have said
+    /// "it has reached somewhere else (review-app-17)" about work that was actually live.
+    /// The property directly above this one argues about not overstating how far work got,
+    /// and it was doing the opposite.
+    ///
+    /// Other ranks below all three rather than above them, because it means "we could not
+    /// tell", and an unknown environment is not evidence of progress. The enum's numbers
+    /// cannot simply be reordered: they are persisted as integers and rows already carry
+    /// them.
+    /// </remarks>
+    private static int Rank(DeploymentEnvironment environment) => environment switch
+    {
+        DeploymentEnvironment.Production => 3,
+        DeploymentEnvironment.Staging => 2,
+        DeploymentEnvironment.Development => 1,
+        _ => 0,
+    };
 }
 
 /// <summary>

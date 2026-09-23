@@ -155,6 +155,33 @@ else
         }
         else
         {
+            @*
+                The one line this panel exists to produce. "Was it built, did it pass,
+                where has it got to" is the question somebody opens a work item to
+                answer, and answering it by making them read the newest row of two
+                tables and carry both in their head is how a panel like this stops
+                being read at all.
+
+                Drawn only once something has actually reported a build or a
+                deployment. A firm whose host sends commits but no workflow runs would
+                otherwise be told "nothing has reported a build" on every task it ever
+                opened — which reads as a fault in the work rather than as a gap in
+                what this system is being sent, and the second one is nobody's job to
+                fix on this page.
+            *@
+            @if (Evidence.Builds.Count > 0 || Evidence.Deployments.Count > 0)
+            {
+                <p>
+                    @if (Evidence.LatestBuild is { } latest)
+                    {
+                        <span class="pill @Tone(latest.Outcome)">
+                            @Words.For(latest.Outcome)
+                        </span>
+                    }
+                    @Standing
+                </p>
+            }
+
             @if (Evidence.PullRequests.Count > 0)
             {
                 <table class="grid">
@@ -232,6 +259,125 @@ else
                     </tbody>
                 </table>
             }
+
+            @*
+                Builds and deployments come after the commits and the review rather
+                than before them, because that is the order the work happened in and a
+                reader going down the panel is following one chain: somebody wrote it,
+                somebody reviewed it, a machine built it, and it landed somewhere. The
+                checklist calls the last two the missing links, and they are missing in
+                that position.
+            *@
+            @if (Evidence.Builds.Count > 0)
+            {
+                <table class="grid">
+                    <caption class="visually-hidden">Builds</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Build</th>
+                            <th scope="col">Commit</th>
+                            <th scope="col">Outcome</th>
+                            <th scope="col">Took</th>
+                            <th scope="col"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var build in Evidence.Builds)
+                        {
+                            <tr>
+                                <td>
+                                    @* A repository has several pipelines, and "the build
+                                       failed" is not something anybody can act on until
+                                       they know which one and off what branch. *@
+                                    <strong>@build.Name</strong>
+                                    <span class="subtle">@build.Branch</span>
+                                </td>
+                                <td><code>@build.Short</code></td>
+                                <td>
+                                    <span class="pill @Tone(build.Outcome)">
+                                        @Words.For(build.Outcome)
+                                    </span>
+                                </td>
+                                <td>
+                                    @if (build.Took is { } took)
+                                    {
+                                        @took
+                                    }
+                                    else
+                                    {
+                                        @* A build that has not finished has no duration
+                                           to report, and an empty cell beside a coloured
+                                           pill reads as a build that took no time at
+                                           all. Saying it is still going is the honest
+                                           version of the same emptiness. *@
+                                        <span class="subtle">Still going</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (build.Url is { } log)
+                                    {
+                                        @* The log stays on the host and this system
+                                           deliberately keeps no copy of it, so the link
+                                           is the whole of what somebody does next with a
+                                           failure. Nothing is drawn when the host sent
+                                           no address rather than a dead link. *@
+                                        <a href="@log">Log</a>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            @if (Evidence.Deployments.Count > 0)
+            {
+                <table class="grid">
+                    <caption class="visually-hidden">Deployments</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Where</th>
+                            <th scope="col">Commit</th>
+                            <th scope="col">State</th>
+                            <th scope="col">When</th>
+                            <th scope="col"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var deployment in Evidence.Deployments)
+                        {
+                            <tr>
+                                <td>
+                                    <strong>@Words.For(deployment.Environment)</strong>
+                                    @if (deployment.NameAddsSomething)
+                                    {
+                                        @* Only where the host's own name for the place
+                                           says more than the classification does. A firm
+                                           deploying to "production" would otherwise read
+                                           "Production production"; one deploying to
+                                           prod-eu and prod-af cannot tell two production
+                                           rows apart without it. *@
+                                        <span class="subtle">@deployment.EnvironmentName</span>
+                                    }
+                                </td>
+                                <td><code>@deployment.Short</code></td>
+                                <td>
+                                    <span class="pill @Tone(deployment.State)">
+                                        @Words.For(deployment.State)
+                                    </span>
+                                </td>
+                                <td>@deployment.At.ToString("d MMM yyyy HH:mm")</td>
+                                <td>
+                                    @if (deployment.Url is { } run)
+                                    {
+                                        <a href="@run">Look</a>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
         }
     </AuthorizeView>
 
@@ -280,6 +426,54 @@ else
     private string? Done { get; set; }
 
     private WorkEvidence Evidence { get; set; } = new([], []);
+
+    /// <summary>Where this work stands: what was built of it, and how far out it got.</summary>
+    /// <remarks>
+    /// Composed here rather than spelt out in the markup because the three endings are not
+    /// one sentence with a word swapped. "Nothing has landed in an environment yet" and "it
+    /// has not been deployed" are opposite pieces of news — the first is a deployment that
+    /// went out and failed, which somebody has to go and look at, and the second is a stage
+    /// nobody has reached, which is nothing at all. A reader given the wrong one of those
+    /// either chases a release that was never attempted or ignores one that broke.
+    ///
+    /// Only ever says what the rows say. There is no figure here for how many builds passed
+    /// or how long a deploy usually takes, because neither is in the evidence and a plausible
+    /// number on a page like this is read as a measurement.
+    /// </remarks>
+    private string Standing
+    {
+        get
+        {
+            var built = Evidence.LatestBuild is { } latest
+                ? $"{latest.Name} on {latest.Short}{(latest.Took is { } took ? $", {took}" : null)}."
+                : "Nothing has reported a build.";
+
+            if (Evidence.Furthest is { } furthest)
+            {
+                return $"{built} It has reached {Place(furthest)}.";
+            }
+
+            return Evidence.Deployments.Count > 0
+                ? $"{built} Nothing has landed in an environment yet."
+                : $"{built} It has not been deployed.";
+        }
+    }
+
+    /// <summary>Where a deployment went, said inside a sentence.</summary>
+    /// <remarks>
+    /// Lower case because this lands mid-sentence and a capital there reads as the start of
+    /// one, the same reason the move messages lower-case a status. The host's own name is
+    /// left exactly as it arrived: prod-eu is an identifier somebody will search their CI for,
+    /// and a version of it this page invented would not be found.
+    /// </remarks>
+    private static string Place(DeploymentRow deployment)
+    {
+        var classified = Words.For(deployment.Environment).ToLowerInvariant();
+
+        return deployment.NameAddsSomething
+            ? $"{classified} ({deployment.EnvironmentName})"
+            : classified;
+    }
 
     private bool _loaded;
 
@@ -384,6 +578,43 @@ else
 
         await LoadAsync();
     }
+
+    /// <summary>The colour a build outcome gets, not the word for it.</summary>
+    /// <remarks>
+    /// The words are in <see cref="Words"/>, where every other screen gets them; this is only
+    /// the pill. It is a method rather than the inline conditional the pull request column
+    /// uses because four outcomes do not fit one, and because the summary line and the table
+    /// under it have to agree: a failed build shown red in the sentence and grey in the table
+    /// is a reader deciding this page is unreliable and going to the host to check, which is
+    /// the habit the panel was built to remove.
+    ///
+    /// Cancelled is quiet rather than red on purpose. Somebody pushed again or the queue was
+    /// drained; nothing was broken, and marking it as a failure puts a red row against work
+    /// that was fine.
+    /// </remarks>
+    private static string Tone(BuildOutcome outcome) => outcome switch
+    {
+        BuildOutcome.Passed => "pill--done",
+        BuildOutcome.Failed => "pill--danger",
+
+        // Its own colour, not the waiting one. A build that is running is not queued.
+        BuildOutcome.Running => "pill--running",
+        _ => "pill--quiet",
+    };
+
+    /// <remarks>
+    /// Its own overload rather than a shared one over both enums, because a build and a
+    /// deployment do not have the same middle: a build running is a wait, and a deployment
+    /// running is the few minutes in which an environment is neither the old version nor the
+    /// new one. They share the amber for now, and a change to either should not silently be a
+    /// change to both.
+    /// </remarks>
+    private static string Tone(DeploymentState state) => state switch
+    {
+        DeploymentState.Succeeded => "pill--done",
+        DeploymentState.Failed => "pill--danger",
+        _ => "pill--running",
+    };
 
     private static string Name(WorkItemStatus status) => status switch
     {

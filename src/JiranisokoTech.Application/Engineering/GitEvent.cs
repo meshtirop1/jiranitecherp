@@ -40,6 +40,18 @@ public abstract record GitEvent
         string Reviewer,
         ReviewVerdict Verdict) : GitEvent;
 
+    /// <summary>A build of a commit started, or ended.</summary>
+    /// <remarks>
+    /// One case for both, like <see cref="PullRequestChanged"/> and for the same
+    /// reason: the host sends one event type with a status inside it, and both
+    /// deliveries carry the same body. Which it is, is
+    /// <see cref="BuildReport.Outcome"/>.
+    /// </remarks>
+    public sealed record Built(BuildReport Report) : GitEvent;
+
+    /// <summary>Something reached an environment, or failed to.</summary>
+    public sealed record Deployed(DeploymentReport Report) : GitEvent;
+
     /// <summary>
     /// Read successfully, and there is nothing here for this system.
     /// </summary>
@@ -83,3 +95,43 @@ public sealed record PullRequestChange(
     string Branch,
     string Author,
     DateTimeOffset At);
+
+/// <summary>
+/// A build, as a delivery described it.
+/// </summary>
+/// <remarks>
+/// Carries everything needed to create the record as well as to settle it, because
+/// the delivery that says a build finished can arrive for a run this system never
+/// saw start — the webhook was added mid-run, or the first delivery dead-lettered.
+/// Refusing it then would lose the only half anybody cares about.
+///
+/// The branch is required here and nullable on a deployment, and the asymmetry is
+/// the hosts': a CI run always knows the ref it was triggered by, and a deployment
+/// is of a commit and often does not.
+/// </remarks>
+public sealed record BuildReport(
+    string ExternalId,
+    string Name,
+    string Sha,
+    string Branch,
+    BuildOutcome Outcome,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? FinishedAt,
+    string? Url);
+
+/// <summary>A deployment, as a delivery described it.</summary>
+/// <remarks>
+/// <see cref="EnvironmentName"/> is the host's free text and is not classified
+/// here. Classifying is a domain rule — see Deployment.Classify — and doing it in a
+/// provider adapter would put four copies of it in the codebase, one per host,
+/// which is how three of them come to disagree about whether "uat" is staging.
+/// </remarks>
+public sealed record DeploymentReport(
+    string ExternalId,
+    string EnvironmentName,
+    string Sha,
+    string? Branch,
+    string? DeployedBy,
+    DeploymentState State,
+    DateTimeOffset At,
+    string? Url);

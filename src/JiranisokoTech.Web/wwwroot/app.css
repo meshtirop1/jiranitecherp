@@ -909,6 +909,15 @@ code.key {
 .pill--danger { background: #fdf2f2; color: #8a1b1b; }
 .pill--wait { background: #fff4e5; color: #8a5300; }
 
+/*
+ * A build or a deployment that has not finished yet. Blue rather than the amber of
+ * .pill--wait, because those two ask different things of whoever is reading: amber is
+ * something stopped until a person does something about it, and this is a machine
+ * working that will answer by itself in a few minutes. Sharing a colour between them
+ * sends somebody to chase a pipeline that only needed waiting out.
+ */
+.pill--running { background: #e8f0fb; color: #1b4f8a; }
+
 /* Newer / older, with where you are between them. Wraps rather than squeezing on a
    narrow screen: "51–100 of 40,000" is the half that answers the question. */
 .pager {
@@ -1197,6 +1206,10 @@ code.key {
     :root:not([data-theme="light"]) .pill--danger { background: #3d2126; color: #ff9aa2; }
     :root:not([data-theme="light"]) .pill--quiet { background: #2c3641; color: var(--ink-quiet); }
     :root:not([data-theme="light"]) .pill--wait { background: #3a2f1c; color: #ffc987; }
+
+    /* Lifted for the same reason --link is: #1b4f8a is a dark blue on a dark ground, and
+       a pill whose word cannot be read is a state the page is not actually showing. */
+    :root:not([data-theme="light"]) .pill--running { background: #1e3346; color: #8ec5ff; }
     :root:not([data-theme="light"]) .stale { color: #ff9aa2; }
     :root:not([data-theme="light"]) .pill--active { background: #1d3a27; color: #7ddc9b; }
 
@@ -1261,6 +1274,7 @@ code.key {
 :root[data-theme="dark"] .pill--danger { background: #3d2126; color: #ff9aa2; }
 :root[data-theme="dark"] .pill--quiet { background: #2c3641; color: var(--ink-quiet); }
 :root[data-theme="dark"] .pill--active { background: #1d3a27; color: #7ddc9b; }
+:root[data-theme="dark"] .pill--running { background: #1e3346; color: #8ec5ff; }
 
 :root[data-theme="dark"] .refusal {
     background-color: #3d2126;
