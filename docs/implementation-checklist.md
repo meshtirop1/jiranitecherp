@@ -17,7 +17,8 @@ row with a fixed key rather than a table of organisations.
 
 Last updated: 23 September 2026 · 986 tests · verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
-container, a lost opportunity surviving its client record being deleted, and
+container, a lost opportunity surviving its client record being deleted, the
+builds and deployments tables applying to a real Postgres, and
 every read path measured against a database holding a million rows — see
 [docs/performance.md](performance.md).
 
