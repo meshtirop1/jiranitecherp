@@ -4,6 +4,7 @@ using JiranisokoTech.Application.Engineering;
 using JiranisokoTech.Domain.Engineering;
 using JiranisokoTech.Domain.Work;
 using JiranisokoTech.Infrastructure.Engineering;
+using JiranisokoTech.Infrastructure.People;
 using JiranisokoTech.Infrastructure.Work;
 using JiranisokoTech.Tests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -408,6 +409,7 @@ public class WebhookInboxTests
             await new EngineeringService(
                     new EngineeringRepository(context),
                     new WorkRepository(context),
+                    new PeopleRepository(context),
                     new Secrets(),
                     fixture.Clock)
                 .ReplayAsync(deadLettered);
@@ -529,6 +531,7 @@ public class WebhookInboxTests
         await new EngineeringService(
                 new EngineeringRepository(context),
                 new WorkRepository(context),
+                new PeopleRepository(context),
                 new Secrets(),
                 fixture.Clock)
             .ConnectAsync(GitProvider.GitHub, owner, name, Secret);

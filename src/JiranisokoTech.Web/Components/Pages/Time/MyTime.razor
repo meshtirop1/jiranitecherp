@@ -3,6 +3,7 @@
 @using System.Security.Claims
 @using JiranisokoTech.Application.Abstractions
 @using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Infrastructure.Engineering
 @using JiranisokoTech.Application.Business
 @using JiranisokoTech.Domain.Work
 @using JiranisokoTech.Infrastructure.Business
@@ -14,6 +15,7 @@
 @inject WorkQueries Work
 @inject PeopleQueries People
 @inject TimesheetService Timesheets
+@inject EngineeringQueries Engineering
 @inject IClock Clock
 @inject NavigationManager Navigation
 
@@ -51,6 +53,63 @@ else
             </div>
         }
     </section>
+
+    @*
+        What the repositories say, shown beside the form rather than typed into it.
+
+        Section 21 asked for time to be detected from Git instead of entered by
+        hand, and this is as far as that goes honestly. Deriving hours from the
+        first and last commit of the day would be a guess — a commit is a moment,
+        not a duration, and the gap between two of them holds lunch, a meeting and
+        an afternoon on somebody else's problem. These hours are approved and then
+        billed to a client, so a guess here becomes a figure on an invoice.
+
+        So the evidence is shown and the person writes the number. What it removes
+        is the part that is genuinely hard to remember a day later — which projects,
+        and roughly when — and it leaves the part only they can answer.
+    *@
+    @if (Evidence is { IsEmpty: false })
+    {
+        <section class="panel stack">
+            <h2>What the repositories say you did on @Input.On.ToString("d MMMM")</h2>
+
+            @if (Evidence.Span is { } span)
+            {
+                <p class="subtle">Commits between @span. Not a number of hours.</p>
+            }
+
+            @if (Evidence.Projects.Count > 0)
+            {
+                <p>
+                    Touched:
+                    @string.Join(", ", Evidence.Projects.Select(project => project.Name))
+                </p>
+            }
+
+            <ul class="plain">
+                @foreach (var commit in Evidence.Commits.Take(12))
+                {
+                    <li>
+                        <code>@commit.At.ToLocalTime().ToString("HH:mm")</code>
+                        @commit.Message
+                        <span class="subtle">@commit.Branch</span>
+                    </li>
+                }
+                @foreach (var merged in Evidence.Merged)
+                {
+                    <li><span class="pill pill--done">Merged</span> @merged</li>
+                }
+            </ul>
+        </section>
+    }
+    else if (Evidence is { HasClaimedHandle: false })
+    {
+        <p class="subtle">
+            Nothing from the repositories appears here because no provider login is
+            claimed for you. An administrator can link one on the
+            repositories page, and then what you committed shows up beside this form.
+        </p>
+    }
 
     <EditForm Model="Input" method="post" OnValidSubmit="Log" FormName="log" class="panel stack">
         <DataAnnotationsValidator />
@@ -227,6 +286,15 @@ else
 
     private string? Refusal { get; set; }
 
+    /// <summary>
+    /// What the repositories say about the day the form is showing.
+    /// </summary>
+    /// <remarks>
+    /// Loaded for the day in the form rather than for today, so that somebody
+    /// catching up on Friday sees Tuesday's commits while filling in Tuesday.
+    /// </remarks>
+    private DayOfWork? Evidence { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
         Today = Clock.Today;
@@ -264,6 +332,7 @@ else
     {
         Week = await Queries.DailyMinutesAsync(Me!.Value, Days[0], Days[^1]);
         Entries = await Queries.TimeAsync(employeeId: Me);
+        Evidence = await Engineering.DayOfWorkAsync(Me!.Value, Input.On);
     }
 
     private async Task Log()

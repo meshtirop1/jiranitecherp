@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using JiranisokoTech.Application.Abstractions;
+using JiranisokoTech.Application.People;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Domain.Engineering;
 
@@ -17,6 +18,7 @@ namespace JiranisokoTech.Application.Engineering;
 public sealed class EngineeringService(
     IEngineeringRepository repositories,
     IWorkRepository work,
+    IPeopleRepository people,
     IWebhookSecrets secrets,
     IClock clock)
 {
@@ -140,6 +142,58 @@ public sealed class EngineeringService(
             ?? throw new InvalidOperationException("That delivery is not recorded.");
 
         delivery.Replay();
+        await repositories.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Say that a provider login is a particular member of staff.
+    /// </summary>
+    /// <remarks>
+    /// Never inferred from a name, however obvious the resemblance. The consequence of
+    /// guessing wrong is a person's timesheet showing work somebody else did, and a
+    /// login that looks like a name is not evidence that it is one.
+    ///
+    /// A handle already claimed is reassigned rather than refused, because the
+    /// realistic mistake is claiming it for the wrong person and the fix has to be one
+    /// action — a delete and a re-add would lose the trail of who held it in between.
+    /// </remarks>
+    public async Task<Contributor> ClaimAsync(
+        GitProvider provider,
+        string handle,
+        Guid employeeId,
+        CancellationToken cancellationToken = default)
+    {
+        if (await people.FindAsync(employeeId, cancellationToken) is null)
+        {
+            throw new InvalidOperationException("There is no such member of staff.");
+        }
+
+        if (await repositories.ContributorAsync(provider, handle, cancellationToken)
+            is { } existing)
+        {
+            existing.Reassign(employeeId, clock.Now);
+            await repositories.SaveAsync(cancellationToken);
+
+            return existing;
+        }
+
+        var contributor = Contributor.Claim(provider, handle, employeeId, clock.Now);
+
+        repositories.Add(contributor);
+        await repositories.SaveAsync(cancellationToken);
+
+        return contributor;
+    }
+
+    /// <summary>Take a claim back.</summary>
+    public async Task ReleaseAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (await repositories.FindContributorAsync(id, cancellationToken) is not { } claim)
+        {
+            return;
+        }
+
+        repositories.Remove(claim);
         await repositories.SaveAsync(cancellationToken);
     }
 

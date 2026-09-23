@@ -1,4 +1,5 @@
 using JiranisokoTech.Domain.Engineering;
+using JiranisokoTech.Domain.People;
 using JiranisokoTech.Domain.Work;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -171,5 +172,38 @@ public sealed class CommitConfiguration : IEntityTypeConfiguration<Commit>
             .WithMany()
             .HasForeignKey(commit => commit.WorkItemId)
             .OnDelete(DeleteBehavior.SetNull);
+    }
+}
+
+public sealed class ContributorConfiguration : IEntityTypeConfiguration<Contributor>
+{
+    public void Configure(EntityTypeBuilder<Contributor> builder)
+    {
+        builder.ToTable("contributors");
+
+        builder.HasKey(one => one.Id);
+
+        builder.Property(one => one.Provider).HasConversion<int>().IsRequired();
+        builder.Property(one => one.Handle).HasMaxLength(200).IsRequired();
+
+        /*
+         * One handle belongs to one person. Two rows for the same login would mean a
+         * commit attributed to whichever the query returned first, which is a
+         * timesheet showing somebody else's work and no error anywhere.
+         */
+        builder.HasIndex(one => new { one.Provider, one.Handle }).IsUnique();
+
+        builder.HasIndex(one => one.EmployeeId);
+
+        /*
+         * Cascaded, unlike most links to an employee. A claim is only meaningful as a
+         * statement that this login is that person; with the person gone it is not a
+         * fact about anything, and the commits themselves keep the login they were
+         * made under regardless.
+         */
+        builder.HasOne<Employee>()
+            .WithMany()
+            .HasForeignKey(one => one.EmployeeId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

@@ -34,6 +34,17 @@
     to say the work was done.
 </p>
 
+<AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ReposManage)"
+               Context="permitted">
+    <Authorized>
+        <p class="subtle">
+            A commit carries a provider login rather than a person, so
+            <a href="/repositories/people">who commits as whom</a> is what connects
+            the two. Until a login is claimed, the work under it belongs to nobody.
+        </p>
+    </Authorized>
+</AuthorizeView>
+
 @if (Refusal is not null)
 {
     <p class="refusal" role="alert">@Refusal</p>

@@ -96,6 +96,9 @@ public class AppDbContext(
 
     public DbSet<Commit> Commits => Set<Commit>();
 
+    /// <summary>Which provider login belongs to which member of staff.</summary>
+    public DbSet<Contributor> Contributors => Set<Contributor>();
+
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
 
     /// <summary>

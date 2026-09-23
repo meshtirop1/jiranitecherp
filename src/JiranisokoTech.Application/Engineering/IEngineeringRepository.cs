@@ -57,6 +57,28 @@ public interface IEngineeringRepository
     Task<bool> CommitKnownAsync(
         string sha, CancellationToken cancellationToken = default);
 
+    Task<Contributor?> ContributorAsync(
+        GitProvider provider, string handle, CancellationToken cancellationToken = default);
+
+    Task<Contributor?> FindContributorAsync(
+        Guid id, CancellationToken cancellationToken = default);
+
+    Task<List<Contributor>> ContributorsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Logins that have committed here and belong to nobody yet.
+    /// </summary>
+    /// <remarks>
+    /// The list that makes claiming a handle a five-second job rather than a matter of
+    /// remembering what somebody's GitHub name is. Anything on it is work being
+    /// recorded against nobody.
+    /// </remarks>
+    Task<List<UnclaimedHandle>> UnclaimedAsync(CancellationToken cancellationToken = default);
+
+    void Add(Contributor contributor);
+
+    void Remove(Contributor contributor);
+
     void Add(Repository repository);
 
     void Add(WebhookDelivery delivery);
@@ -67,3 +89,6 @@ public interface IEngineeringRepository
 
     Task SaveAsync(CancellationToken cancellationToken = default);
 }
+
+/// <summary>A login seen in the repositories that belongs to nobody yet.</summary>
+public sealed record UnclaimedHandle(GitProvider Provider, string Handle, int Commits);

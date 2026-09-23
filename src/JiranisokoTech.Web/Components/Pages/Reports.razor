@@ -1,10 +1,12 @@
 @page "/reports"
 @using JiranisokoTech.Application.Abstractions
 @using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Infrastructure.Engineering
 @using JiranisokoTech.Infrastructure.Reporting
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ReportsView)]
 @inject ReportingQueries Reporting
+@inject EngineeringQueries EngineeringQueries
 @inject IClock Clock
 
 @*
@@ -236,8 +238,83 @@
     </ul>
 </section>
 
+@*
+    The repositories, for whoever may see them. Behind the same permission as the
+    repositories screen, because these figures describe a private codebase's
+    activity and somebody who may read a money report is not thereby entitled to it.
+*@
+<AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ReposView)"
+               Context="permitted">
+    <section class="standing">
+        <h2>What was built</h2>
+
+        @if (Engineering is null || Engineering.NothingRecorded)
+        {
+            <p class="empty">
+                Nothing has arrived from a repository in the last
+                @(Engineering?.OverDays ?? 28) days.
+            </p>
+        }
+        else
+        {
+            <ul class="plain">
+                <li>
+                    <strong>@Engineering.Commits</strong>
+                    @(Engineering.Commits == 1 ? "commit" : "commits") and
+                    <strong>@Engineering.PullRequestsMerged</strong> merged
+                    @(Engineering.PullRequestsMerged == 1 ? "pull request" : "pull requests")
+                    in @Engineering.OverDays days.
+                </li>
+
+                @if (Engineering.TypicalMerge is { } typical)
+                {
+                    <li>
+                        A pull request usually takes <strong>@typical</strong> to merge.
+                        The middle one, not the average — one left open over a holiday
+                        drags an average into uselessness.
+                    </li>
+                }
+
+                @if (Engineering.PullRequestsOpen > 0)
+                {
+                    <li>
+                        <strong>@Engineering.PullRequestsOpen</strong>
+                        @(Engineering.PullRequestsOpen == 1 ? "is" : "are") open
+                        @if (Engineering.OldestOpenDays is { } waiting && waiting > 0)
+                        {
+                            <text>, the oldest for <strong>@waiting</strong>
+                            @(waiting == 1 ? "day" : "days")</text>
+                        }.
+                        <a href="/repositories">Go to repositories</a>
+                    </li>
+                }
+
+                @*
+                    The health of the integration rather than of the engineering. A
+                    low share means branches are not being named after the work, so
+                    the board is telling a less complete story than it looks.
+                *@
+                <li>
+                    <strong>@Engineering.AttachedShare%</strong> of those commits are
+                    tied to a task.
+                    @if (Engineering.AttachedShare < 60)
+                    {
+                        <text>
+                            The rest are work the board cannot see. Naming a branch
+                            after the item — <code>feature/412-something</code> — is
+                            what connects them.
+                        </text>
+                    }
+                </li>
+            </ul>
+        }
+    </section>
+</AuthorizeView>
+
 @code {
     private DateOnly Today { get; set; }
+
+    private EngineeringState? Engineering { get; set; }
 
     private FirmState State { get; set; } = Empty;
 
@@ -257,6 +334,7 @@
     {
         Today = Clock.Today;
         State = await Reporting.StateAsync(Today);
+        Engineering = await EngineeringQueries.StateAsync(Today);
     }
 
     private static string Span(DateOnly from, DateOnly to) => from == to

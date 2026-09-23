@@ -97,6 +97,53 @@ public sealed class EngineeringRepository(AppDbContext context) : IEngineeringRe
         string sha, CancellationToken cancellationToken = default) =>
         context.Commits.AnyAsync(commit => commit.Sha == sha, cancellationToken);
 
+    public Task<Contributor?> ContributorAsync(
+        GitProvider provider, string handle, CancellationToken cancellationToken = default) =>
+        context.Contributors.FirstOrDefaultAsync(
+            one => one.Provider == provider && one.Handle.ToLower() == handle.ToLower(),
+            cancellationToken);
+
+    public Task<Contributor?> FindContributorAsync(
+        Guid id, CancellationToken cancellationToken = default) =>
+        context.Contributors.FirstOrDefaultAsync(one => one.Id == id, cancellationToken);
+
+    public Task<List<Contributor>> ContributorsAsync(
+        CancellationToken cancellationToken = default) =>
+        context.Contributors.OrderBy(one => one.Handle).ToListAsync(cancellationToken);
+
+    public async Task<List<UnclaimedHandle>> UnclaimedAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var claimed = await context.Contributors
+            .Select(one => one.Handle)
+            .ToListAsync(cancellationToken);
+
+        /*
+         * Grouped in the database. A firm with a long history has hundreds of
+         * thousands of commits, and pulling the authors back to group them here would
+         * read the column for every one of them to produce a list of a dozen names.
+         */
+        var seen = await context.Commits
+            .Where(commit => !claimed.Contains(commit.Author))
+            .GroupBy(commit => commit.Author)
+            .Select(group => new { Handle = group.Key, Commits = group.Count() })
+            .OrderByDescending(group => group.Commits)
+            .Take(50)
+            .ToListAsync(cancellationToken);
+
+        /*
+         * Reported as GitHub's, because a commit does not record which host it came
+         * from — only the repository does, and the same login can appear on two. The
+         * screen says so, and claiming the wrong one is corrected by claiming again.
+         */
+        return [.. seen.Select(one => new UnclaimedHandle(
+            GitProvider.GitHub, one.Handle, one.Commits))];
+    }
+
+    public void Add(Contributor contributor) => context.Contributors.Add(contributor);
+
+    public void Remove(Contributor contributor) => context.Contributors.Remove(contributor);
+
     public void Add(Repository repository) => context.Repositories.Add(repository);
 
     public void Add(WebhookDelivery delivery) => context.Deliveries.Add(delivery);

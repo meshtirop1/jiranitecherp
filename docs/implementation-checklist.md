@@ -82,7 +82,7 @@ By section: **34 done, 22 partial, 42 not started, 1 excluded by agreement.**
 | ✅ | 6 | Employee lifecycle states | Hired, started, suspended, reinstated, left |
 | ✅ | 23 | Leave | Statutory kinds, approval, overlap refusal, weekends and public holidays excluded |
 | ✅ | 23 | Public holidays | Managed as data, recount in the same transaction |
-| ◐ | 21 | Time tracking | Manual entry, approval, billing. No automatic detection from Git, calendar or deployments |
+| ◐ | 21 | Time tracking | Manual entry, approval, billing, and the day's commits shown beside the form. Deliberately not auto-filled — see below. No calendar or deployment detection |
 | ☐ | 6 | Performance, goals | |
 | ☐ | 6 | Employee announcements | |
 | ✅ | 24 | Employee documents | Narrowed to employees.manage plus the person themselves |
@@ -103,14 +103,14 @@ By section: **34 done, 22 partial, 42 not started, 1 excluded by agreement.**
 
 | | § | Item |
 | --- | --- | --- |
-| ◐ | 12 | Git integration — GitHub built and verified. GitLab, Bitbucket and Azure DevOps are one adapter each, not yet written |
+| ✅ | 12 | Git integration — all four providers. Only GitHub verified against real deliveries; the other three from published payloads |
 | ✅ | 12 | Repositories, branches, commits, pull requests, reviews |
 | ◐ | 12 | Task ↔ branch ↔ commit ↔ PR mapping. Build and deployment are the missing links, and need section 13 first |
 | ☐ | 13 | CI/CD — builds, pipelines, tests, artifacts |
 | ☐ | 13 | Environments — development, staging, production |
 | ☐ | 67 | Releases, version numbers, changelog, rollback |
 | ☐ | 68 | Feature flags |
-| ◐ | 40 | Webhooks in, signed and idempotent. Nothing goes out yet |
+| ✅ | 40 | Webhooks both ways — signed, idempotent, retried, dead-lettered, replayable |
 | ✅ | 75 | Webhook security — signature verification, replay protection, dead-letter, replay |
 | ☐ | 76 | IDE integration readiness |
 
@@ -187,7 +187,7 @@ This block is the brief's stated centre of gravity and none of it exists.
 | ◐ | 39 | API-first | Read-only `/api/v1`, versioned, OpenAPI. No writes, no pagination |
 | ✅ | 34 | Global search | Six kinds, each behind its own permission. No filter syntax |
 | ◐ | 35 | Dashboards | One home page and one standing report. No role-specific dashboards |
-| ◐ | 38 | Reporting | Money, hours, absence, delivery, with CSV export. No engineering metrics |
+| ✅ | 38 | Reporting | Money, hours, absence, delivery and the repositories, with CSV export |
 | ◐ | 52 | Import / export | CSV export. No import |
 | ◐ | 47 | UI and UX | Responsive, consistent. No command palette, keyboard shortcuts, dark mode or bulk actions |
 | ☐ | 48 | Developer experience shortcuts | |

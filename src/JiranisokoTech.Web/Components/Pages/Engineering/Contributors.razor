@@ -1,0 +1,207 @@
+@page "/repositories/people"
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Engineering
+@using JiranisokoTech.Domain.Engineering
+@using JiranisokoTech.Domain.People
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ReposManage)]
+@inject EngineeringService Repos
+@inject IEngineeringRepository Engineering
+@inject PeopleQueries People
+@inject NavigationManager Navigation
+
+<PageTitle>Who commits as whom — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/repositories">Repositories</a></nav>
+
+<div class="page-head">
+    <h1>Who commits as whom</h1>
+</div>
+
+<p class="instructions">
+    A commit carries a provider login; this system knows people. Until a login is
+    claimed, everything committed under it is work recorded against nobody — it
+    cannot appear on a timesheet, in a report, or on anybody's record.
+</p>
+
+<p class="subtle">
+    Never guessed from a name, however obvious the resemblance. A login that looks
+    like somebody's name is not evidence that it is them, and the cost of being
+    wrong is a person's timesheet showing work they did not do.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Unclaimed.Count > 0)
+{
+    <section class="panel stack">
+        <h2>Committing here, belonging to nobody</h2>
+
+        <table class="grid">
+            <caption class="visually-hidden">Unclaimed logins</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Login</th>
+                    <th scope="col">Commits</th>
+                    <th scope="col">Whose is it?</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var handle in Unclaimed)
+                {
+                    <tr>
+                        <td><code>@handle.Handle</code></td>
+                        <td class="number">@handle.Commits</td>
+                        <td>
+                            <EditForm Model="Claiming" method="post"
+                                      FormName="@($"claim-{handle.Handle}")"
+                                      OnValidSubmit="() => Claim(handle.Handle)" class="inline">
+                                <select name="Claiming.EmployeeId" aria-label="Who">
+                                    <option value="">Nobody yet</option>
+                                    @foreach (var person in Staff)
+                                    {
+                                        <option value="@person.Id">@person.FullName</option>
+                                    }
+                                </select>
+
+                                @*
+                                    The provider is asked for because a commit does not
+                                    record which host it came from — only the repository
+                                    does, and the same login can exist on two of them.
+                                *@
+                                <select name="Claiming.Provider" aria-label="Where">
+                                    @foreach (var provider in Enum.GetValues<GitProvider>())
+                                    {
+                                        <option value="@provider">@provider</option>
+                                    }
+                                </select>
+
+                                <button type="submit">Claim it</button>
+                            </EditForm>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+@if (Claimed.Count == 0)
+{
+    <p class="empty">
+        No logins have been claimed, so nothing in the repositories is attributed to
+        anybody here.
+    </p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Claimed logins</caption>
+        <thead>
+            <tr>
+                <th scope="col">Login</th>
+                <th scope="col">Where</th>
+                <th scope="col">Who</th>
+                <th scope="col">Claimed</th>
+                <th scope="col"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var claim in Claimed)
+            {
+                <tr>
+                    <td><code>@claim.Handle</code></td>
+                    <td>@claim.Provider</td>
+                    <td>@(Names.GetValueOrDefault(claim.EmployeeId) ?? "Somebody who has left")</td>
+                    <td>@claim.ClaimedAt.ToString("d MMM yyyy")</td>
+                    <td>
+                        <EditForm Model="Nothing" method="post"
+                                  FormName="@($"release-{claim.Id}")"
+                                  OnValidSubmit="() => Release(claim.Id)" class="inline">
+                            <button type="submit" class="danger">Take it back</button>
+                        </EditForm>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private ClaimInput _claiming = new();
+
+    [SupplyParameterFromForm(FormName = "claim")]
+    private ClaimInput Claiming
+    {
+        get => _claiming;
+        set => _claiming = value ?? new ClaimInput();
+    }
+
+    private object Nothing { get; } = new();
+
+    private List<UnclaimedHandle> Unclaimed { get; set; } = [];
+
+    private List<Contributor> Claimed { get; set; } = [];
+
+    private List<PersonRow> Staff { get; set; } = [];
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Unclaimed = await Engineering.UnclaimedAsync();
+        Claimed = await Engineering.ContributorsAsync();
+        Staff = await People.RosterAsync(status: EmploymentStatus.Active);
+        Names = Staff.ToDictionary(person => person.Id, person => person.FullName);
+    }
+
+    private async Task Claim(string handle)
+    {
+        Refusal = null;
+
+        try
+        {
+            if (!Guid.TryParse(Claiming.EmployeeId, out var employee))
+            {
+                Refusal = "Choose whose login it is.";
+                await LoadAsync();
+                return;
+            }
+
+            var provider = Enum.TryParse<GitProvider>(Claiming.Provider, out var where)
+                ? where
+                : GitProvider.GitHub;
+
+            await Repos.ClaimAsync(provider, handle, employee);
+
+            Navigation.NavigateTo("/repositories/people", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private async Task Release(Guid id)
+    {
+        await Repos.ReleaseAsync(id);
+        Navigation.NavigateTo("/repositories/people", forceLoad: true);
+    }
+
+    private sealed class ClaimInput
+    {
+        public string? EmployeeId { get; set; }
+
+        public string? Provider { get; set; }
+    }
+}
