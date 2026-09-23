@@ -55,7 +55,7 @@ By section: **32 done, 21 partial, 45 not started, 1 excluded by agreement.**
 | ✅ | 44 | Error handling | 403/404/500, no internals leaked |
 | ✅ | 45 | Health endpoints | `/health` and `/ready`, liveness thinner than readiness |
 | ◐ | 45 | Observability | Structured logging. No metrics, no tracing, no job monitoring |
-| ✅ | 46 | Testing foundation | 647 tests, run inside the image build |
+| ✅ | 46 | Testing foundation | 652 tests, run inside the image build |
 | ✅ | 54 | Security | Headers, CSRF, rate limiting, secure cookies, server-side authorization, hashing |
 | ✅ | 78 | Architecture | Domain ← Application ← Infrastructure ← Web, enforced by project references |
 | ✅ | 86 | Environment configuration | `.env.example`, no secrets committed |
