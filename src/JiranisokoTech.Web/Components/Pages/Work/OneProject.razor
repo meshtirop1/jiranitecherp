@@ -1,0 +1,275 @@
+@page "/projects/{Id:guid}"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Documents
+@using JiranisokoTech.Domain.Documents
+@using JiranisokoTech.Domain.Work
+@using JiranisokoTech.Infrastructure.Business
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Infrastructure.Work
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ProjectsViewAll)]
+@inject WorkQueries Work
+@inject BusinessQueries Business
+@inject DocumentService Files
+@inject PeopleQueries People
+@inject NavigationManager Navigation
+
+@*
+    A project, with the work on it, the hours against it and whatever was signed
+    to start it. The list was where you scanned; there was no way to open one,
+    so the brief you could attach to a project had nowhere to be attached from.
+*@
+
+@if (Project is null)
+{
+    <PageTitle>Project not found — Jiranisoko Delivery</PageTitle>
+
+    <h1>No such project</h1>
+    <p>Nothing here has that identifier. <a href="/projects">Back to projects</a>.</p>
+}
+else
+{
+    <PageTitle>@Project.Name — Jiranisoko Delivery</PageTitle>
+
+    <nav class="crumbs"><a href="/projects">Projects</a></nav>
+
+    <div class="page-head">
+        <h1>@Project.Name</h1>
+        <span class="pill @PillFor(Project.Status)">@Spaced(Project.Status)</span>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    <dl class="facts">
+        <dt>Code</dt>
+        <dd><code>@Project.Code</code></dd>
+
+        <dt>Led by</dt>
+        <dd>@(Project.LeadName ?? "Nobody yet")</dd>
+
+        <dt>Due</dt>
+        <dd>@(Project.DueOn?.ToString("d MMMM yyyy") ?? "No date set")</dd>
+
+        <dt>Work</dt>
+        <dd>@Project.OpenItems open of @Project.TotalItems</dd>
+
+        @if (Logged > 0)
+        {
+            <dt>Hours logged</dt>
+            <dd>
+                @Hours(Logged)
+                @if (Unbilled > 0)
+                {
+                    <span class="subtle">@Hours(Unbilled) approved and not yet billed</span>
+                }
+            </dd>
+        }
+    </dl>
+
+    <section class="standing">
+        <h2>The work</h2>
+
+        @if (Items.Count == 0)
+        {
+            <p class="empty">Nothing has been raised against this project.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Work on this project</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">What</th>
+                        <th scope="col">Who</th>
+                        <th scope="col">State</th>
+                        <th scope="col">Due</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in Items)
+                    {
+                        <tr>
+                            <td><a href="/work/@item.Id">@item.Title</a></td>
+                            <td>@(item.AssigneeName ?? "Nobody")</td>
+                            <td>
+                                @Spaced(item.Status)
+                                @if (item.BlockedReason is { } why)
+                                {
+                                    <span class="subtle">@why</span>
+                                }
+                            </td>
+                            <td>@(item.DueOn?.ToString("d MMM") ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="standing">
+        <h2>Attached</h2>
+
+        @if (Attached.Count == 0)
+        {
+            <p class="empty">Nothing attached. A brief or a signed order belongs here.</p>
+        }
+        else
+        {
+            <ul class="plain">
+                @foreach (var file in Attached)
+                {
+                    <li>
+                        <a href="/documents/@file.Id">@file.FileName</a>
+                        <span class="subtle">
+                            @file.Size, @file.UploadedAt.ToString("d MMM yyyy")@(file.Note is { } note ? $" — {note}" : null)
+                        </span>
+                    </li>
+                }
+            </ul>
+        }
+
+        <AuthorizeView Policy="@ManagePolicy" Context="mayAttach">
+            <EditForm Model="Attaching" method="post" OnValidSubmit="Attach" FormName="attach"
+                      enctype="multipart/form-data" class="inline">
+                <label>
+                    <span class="visually-hidden">A file</span>
+                    <input type="file" name="document" />
+                </label>
+                <InputText @bind-Value="Attaching.Note" placeholder="What it is" />
+                <button type="submit" class="button button--quiet">Attach</button>
+            </EditForm>
+        </AuthorizeView>
+    </section>
+}
+
+@code {
+    private const string ManagePolicy = PermissionClaim.PolicyPrefix + Permissions.ProjectsManage;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private AttachInput _attaching = new();
+
+    [SupplyParameterFromForm(FormName = "attach")]
+    private AttachInput Attaching
+    {
+        get => _attaching;
+        set => _attaching = value ?? new AttachInput();
+    }
+
+    private ProjectRow? Project { get; set; }
+
+    private Guid? Me { get; set; }
+
+    private List<WorkItemRow> Items { get; set; } = [];
+
+    private List<Attachment> Attached { get; set; } = [];
+
+    private int Logged { get; set; }
+
+    private int Unbilled { get; set; }
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationState;
+
+        if (Guid.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            Me = await People.EmployeeForAccountAsync(account);
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Project = (await Work.ProjectsAsync()).FirstOrDefault(one => one.Id == Id);
+
+        if (Project is null)
+        {
+            return;
+        }
+
+        Items = await Work.ItemsAsync(projectId: Id);
+        Attached = await Files.ForAsync(AttachedTo.Project, Id);
+
+        // By identifier, not by name. Two projects may share a name, and a
+        // name comparison over every time entry in the system is a table scan
+        // that happens to be wrong as well as slow.
+        var time = await Business.TimeAsync(projectId: Id);
+
+        Logged = time.Sum(entry => entry.Minutes);
+        Unbilled = time
+            .Where(entry => entry.IsApproved && entry.IsBillable && !entry.IsInvoiced)
+            .Sum(entry => entry.Minutes);
+    }
+
+    private Task Attach() => TryAsync(async () =>
+    {
+        var file = Request?.Request.Form.Files["document"];
+
+        if (file is not { Length: > 0 })
+        {
+            throw new InvalidOperationException("Choose a file first.");
+        }
+
+        await using var contents = file.OpenReadStream();
+
+        await Files.AttachAsync(
+            AttachedTo.Project, Id, contents, file.FileName, file.Length, Me, Attaching.Note);
+    });
+
+    private async Task TryAsync(Func<Task> act)
+    {
+        Refusal = null;
+
+        try
+        {
+            await act();
+            Navigation.NavigateTo($"/projects/{Id}", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string Hours(int minutes) => minutes % 60 == 0
+        ? $"{minutes / 60}h"
+        : $"{minutes / 60}h {minutes % 60}m";
+
+    private static string Spaced(Enum value) =>
+        string.Concat(value.ToString().Select((character, index) =>
+            index > 0 && char.IsUpper(character)
+                ? $" {char.ToLowerInvariant(character)}"
+                : $"{character}"));
+
+    private static string? PillFor(ProjectStatus status) => status switch
+    {
+        ProjectStatus.Delivered => "pill--done",
+        ProjectStatus.Cancelled => "pill--quiet",
+        ProjectStatus.OnHold => "pill--danger",
+        _ => null,
+    };
+
+    private sealed class AttachInput
+    {
+        [StringLength(500)]
+        public string? Note { get; set; }
+    }
+}

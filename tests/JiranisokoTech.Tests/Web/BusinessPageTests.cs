@@ -1,6 +1,7 @@
 using System.Net;
 using JiranisokoTech.Application.Authorization;
 using JiranisokoTech.Application.Business;
+using JiranisokoTech.Application.Work;
 using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Tests.Identity;
 using Microsoft.AspNetCore.Identity;
@@ -406,6 +407,40 @@ public class BusinessPageTests(ApplicationFactory factory) : IClassFixture<Appli
         Assert.True(link.Success, "The client list offered no link to open a client.");
 
         var detail = await browser.GetAsync($"/clients/{link.Groups[1].Value}");
+
+        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+        Assert.Contains("Attached", await detail.Content.ReadAsStringAsync());
+    }
+
+    /// <summary>
+    /// A project can be opened, and its list links to it.
+    /// </summary>
+    /// <remarks>
+    /// The same gap the clients had: attachments were built for projects and
+    /// the only page about them was a list with no way in.
+    /// </remarks>
+    [Fact]
+    public async Task A_project_can_be_opened_from_the_list()
+    {
+        using (var scope = factory.Services.CreateScope())
+        {
+            var work = scope.ServiceProvider.GetRequiredService<WorkService>();
+            await work.BeginProjectAsync($"Openable {Guid.CreateVersion7():N}");
+        }
+
+        var browser = await SignedInAsync("projpm@jiranisokotech.co.ke", Roles.ProjectManager);
+
+        var list = await browser.GetAsync("/projects");
+        var html = await list.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+
+        var link = System.Text.RegularExpressions.Regex.Match(
+            html, @"href=""/projects/([0-9a-f-]{36})""");
+
+        Assert.True(link.Success, "The project list offered no link to open a project.");
+
+        var detail = await browser.GetAsync($"/projects/{link.Groups[1].Value}");
 
         Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
         Assert.Contains("Attached", await detail.Content.ReadAsStringAsync());

@@ -107,6 +107,7 @@ public sealed class BusinessQueries(AppDbContext database)
         DateOnly? from = null,
         DateOnly? to = null,
         bool awaitingApprovalOnly = false,
+        Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
         var query = database.TimeEntries.AsNoTracking();
@@ -114,6 +115,11 @@ public sealed class BusinessQueries(AppDbContext database)
         if (employeeId is { } person)
         {
             query = query.Where(entry => entry.EmployeeId == person);
+        }
+
+        if (projectId is { } project)
+        {
+            query = query.Where(entry => entry.ProjectId == project);
         }
 
         if (from is { } start)

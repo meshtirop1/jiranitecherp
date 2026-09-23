@@ -56,7 +56,8 @@ nothing claims to work that does not.
 | ✅ | Applications and interviews — the screens the domain had been waiting for |
 | ✅ | Every permission is enforced by something, and a test that keeps it that way |
 | ✅ | The trail, readable — it had been recorded since week one and shown nowhere |
-| ✅ | 521 tests |
+| ✅ | Clients and projects open onto their own page, where their documents live |
+| ✅ | 522 tests |
 | ☐ | Requiring two-step sign-in of anybody. It is offered, not compulsory |
 | ☐ | Writing through the API, and the integrations that would need it |
 
@@ -81,7 +82,7 @@ developer's machine could have shown:
   non-root user before that user takes over. Until it did, the sign-in page
   returned 500 from a directory permission.
 
-What is verified: the image builds, the 521 tests run and pass inside it, all
+What is verified: the image builds, the 522 tests run and pass inside it, all
 three containers report healthy, the eight migrations apply to a real Postgres,
 the health and readiness endpoints answer, the public pages render with their
 stylesheets, and the signing keys survive a restart.
@@ -98,7 +99,7 @@ anything reads from it today.
 Needs the .NET 10 SDK. Nothing else — the test suite does not require Docker.
 
 ```bash
-dotnet test                              # 521 tests
+dotnet test                              # 522 tests
 dotnet run --project src/JiranisokoTech.Web
 ```
 

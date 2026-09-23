@@ -42,8 +42,14 @@ else
             @foreach (var project in Rows)
             {
                 <tr class="@(Finished(project.Status) ? "row--closed" : "")">
-                    <td><a href="/work?project=@project.Id">@project.Name</a></td>
-                    <td><code>@project.Code</code></td>
+                    @*
+                        The name opens the project; the code goes to the board
+                        filtered to it. Two different questions — "tell me about
+                        this project" and "show me what is left on it" — and the
+                        second was the only one the list could answer.
+                    *@
+                    <td><a href="/projects/@project.Id">@project.Name</a></td>
+                    <td><a href="/work?project=@project.Id"><code>@project.Code</code></a></td>
                     <td>@(project.LeadName ?? "Nobody")</td>
                     @* Open against total, because "8 items" says nothing about
                        whether a project is nearly finished. *@
