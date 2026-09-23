@@ -20,6 +20,18 @@ namespace JiranisokoTech.Web;
 /// </remarks>
 public static class Words
 {
+    /// <summary>A number of minutes as somebody would say it out loud.</summary>
+    /// <remarks>
+    /// Here rather than in the reporting page because the page and its CSV export
+    /// have to agree character for character: the file is the screen, sent to
+    /// somebody else. Two copies of this expression would differ the first time
+    /// one of them was adjusted, and the report would be accused of being wrong
+    /// by whoever was holding the other one.
+    /// </remarks>
+    public static string Hours(int minutes) => minutes % 60 == 0
+        ? $"{minutes / 60}h"
+        : $"{minutes / 60}h {minutes % 60}m";
+
     public static string For(LeaveKind kind) => kind switch
     {
         LeaveKind.Annual => "Annual leave",

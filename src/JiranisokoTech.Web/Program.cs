@@ -8,6 +8,7 @@ using JiranisokoTech.Web.Api;
 using JiranisokoTech.Web.Authorization;
 using JiranisokoTech.Web.Components;
 using JiranisokoTech.Web.Identity;
+using JiranisokoTech.Web.Reporting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -200,6 +201,9 @@ app.MapCvEndpoints();
 
 // And any other attachment, to somebody allowed to read what it is attached to.
 app.MapDocumentEndpoints();
+
+// The reporting page as a file, for sending on.
+app.MapReportEndpoints();
 
 // What another system may read from this one.
 app.MapPublicApi();

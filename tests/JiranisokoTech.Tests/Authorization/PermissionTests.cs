@@ -262,6 +262,31 @@ public class PermissionTests
         }
     }
 
+    /// <summary>
+    /// Anybody who may release work can find the work to release.
+    /// </summary>
+    /// <remarks>
+    /// The tasks.view_own lesson for a third time. A release is made from the
+    /// work item page, on work somebody else did, and that page refuses to show
+    /// another person's card without tasks.view_all — so a role granted
+    /// tasks.deploy without it holds a permission it can never use, and the
+    /// symptom is a head of department reporting that the button does not exist.
+    /// </remarks>
+    [Fact]
+    public void Releasing_work_comes_with_a_way_to_see_it()
+    {
+        foreach (var role in Roles.All)
+        {
+            var held = Roles.PermissionsFor(role);
+
+            if (held.Contains(Permissions.TasksDeploy))
+            {
+                Assert.Contains(Permissions.TasksViewOwn, held);
+                Assert.Contains(Permissions.TasksViewAll, held);
+            }
+        }
+    }
+
     // --- the machinery -----------------------------------------------------
 
     [Fact]

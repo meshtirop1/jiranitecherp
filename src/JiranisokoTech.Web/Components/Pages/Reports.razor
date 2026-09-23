@@ -22,7 +22,19 @@
 
 <PageTitle>Where things stand — Jiranisoko Delivery</PageTitle>
 
-<h1>Where things stand</h1>
+<div class="page-head">
+    <h1>Where things stand</h1>
+
+    @*
+        A plain link, not a form: the export is a GET, so it has an address
+        somebody can bookmark and the browser downloads it without this page
+        needing to do anything. What it contains is decided by the endpoint
+        asking the same two money permissions the sections below are behind, so
+        the file cannot hold something the reader cannot see here.
+    *@
+    <a class="button" href="/reports/where-things-stand.csv">Export as CSV</a>
+</div>
+
 <p class="subtle">As at @Today.ToString("dddd d MMMM yyyy").</p>
 
 <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.InvoicesView)" Context="money">
@@ -64,7 +76,7 @@
 
         @if (State.UnbilledMinutes > 0)
         {
-            <p class="standing__figure">@Hours(State.UnbilledMinutes)</p>
+            <p class="standing__figure">@Words.Hours(State.UnbilledMinutes)</p>
             <p>
                 approved, billable, and on no invoice. This is work the firm has
                 done and has not asked to be paid for.
@@ -91,7 +103,7 @@
             @if (State.UnapprovedEntries > 0)
             {
                 <li>
-                    <strong>@Hours(State.UnapprovedMinutes)</strong> of logged time
+                    <strong>@Words.Hours(State.UnapprovedMinutes)</strong> of logged time
                     across @State.UnapprovedEntries
                     @(State.UnapprovedEntries == 1 ? "entry" : "entries")
                     has not been approved.
@@ -224,10 +236,6 @@
         Today = Clock.Today;
         State = await Reporting.StateAsync(Today);
     }
-
-    private static string Hours(int minutes) => minutes % 60 == 0
-        ? $"{minutes / 60}h"
-        : $"{minutes / 60}h {minutes % 60}m";
 
     private static string Span(DateOnly from, DateOnly to) => from == to
         ? from.ToString("ddd d MMM")

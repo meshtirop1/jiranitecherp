@@ -42,6 +42,11 @@ public static class WorkPermissions
         // Putting it up for review is the worker's.
         WorkItemStatus.InReview => Permissions.TasksSubmit,
 
+        // Releasing accepted work is the head of department's, and nobody
+        // else's by accident. See MayMove: this is the one target the
+        // board-runner's blanket permission does not cover.
+        WorkItemStatus.Deployed => Permissions.TasksDeploy,
+
         WorkItemStatus.Cancelled => Permissions.TasksAssign,
 
         // Starting, stopping, putting it back, saying it is blocked.
@@ -59,7 +64,9 @@ public static class WorkPermissions
     /// "own" in the name is the whole of it.
     ///
     /// Review is the exception that proves it: a reviewer is by definition not
-    /// the person who did the work, so it does not ask whose it is.
+    /// the person who did the work, so it does not ask whose it is. Releasing is
+    /// the second exception, for the same reason and one further one — the
+    /// board-runner's blanket permission stops short of it.
     /// </remarks>
     public static bool MayMove(
         IReadOnlySet<string> permissions,
@@ -67,19 +74,33 @@ public static class WorkPermissions
         Guid? assigneeId,
         Guid? employeeId)
     {
-        if (permissions.Contains(Permissions.TasksAssign))
+        var governing = Governing(target);
+
+        /*
+         * Running the board is not the same as releasing what it finishes, so
+         * the blanket permission stops at the release.
+         *
+         * Without this line the gate would be decorative. A delivery manager
+         * holds tasks.assign and not tasks.deploy, and would have been waved
+         * through here before the governing permission was ever read — the
+         * permission would exist, the role matrix would say who holds it, the
+         * matrix tests would agree, and the release would be open to anybody who
+         * can drag a card. That is the exact fault that had tasks.update_own,
+         * tasks.submit and tasks.review declared and enforced by nothing.
+         */
+        if (governing != Permissions.TasksDeploy && permissions.Contains(Permissions.TasksAssign))
         {
             return true;
         }
-
-        var governing = Governing(target);
 
         if (!permissions.Contains(governing))
         {
             return false;
         }
 
-        if (governing == Permissions.TasksReview)
+        // A reviewer, and a releaser, are by definition not the person who did
+        // the work, so neither is asked whose it is.
+        if (governing is Permissions.TasksReview or Permissions.TasksDeploy)
         {
             return true;
         }

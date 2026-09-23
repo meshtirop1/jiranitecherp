@@ -44,10 +44,28 @@ public sealed class WorkItem : Entity, IAuditable
             [WorkItemStatus.Todo, WorkItemStatus.InProgress, WorkItemStatus.Cancelled],
 
         // Reopening finished work is allowed, because it happens; it goes back to
-        // being in progress rather than straight to done again.
-        [WorkItemStatus.Done] = [WorkItemStatus.InProgress],
+        // being in progress rather than straight to done again. Releasing it is
+        // the other way out, and the only state that leads to a release.
+        [WorkItemStatus.Done] = [WorkItemStatus.InProgress, WorkItemStatus.Deployed],
 
         [WorkItemStatus.Cancelled] = [],
+
+        /*
+         * Nothing leaves Deployed, and this is the entry worth arguing about.
+         *
+         * Every other state is a statement about the firm's own intentions,
+         * which may be revised. This one is a statement about the world outside
+         * it: the thing is live, clients are using it, and somebody's release
+         * note says so. Moving the row back to in progress would leave the
+         * system claiming a release never happened while the release is still
+         * out there, and the board would be the only party that had been told.
+         *
+         * So a fault found after a release, or a rollback, is new work with its
+         * own row and its own reason — the same rule as cancelled work, arrived
+         * at from the opposite direction. The old row keeps standing as the
+         * record of what went out and when.
+         */
+        [WorkItemStatus.Deployed] = [],
     };
 
     private WorkItem()
@@ -112,7 +130,24 @@ public sealed class WorkItem : Entity, IAuditable
     /// <summary>Why it is stopped. Set only while blocked, and cleared on the way out.</summary>
     public string? BlockedReason { get; private set; }
 
-    public bool IsOpen => Status is not (WorkItemStatus.Done or WorkItemStatus.Cancelled);
+    /// <summary>
+    /// The states that mean nobody is waiting on this any more.
+    /// </summary>
+    /// <remarks>
+    /// A list rather than a pattern in <see cref="IsOpen"/>, because the same
+    /// question is asked in SQL in five places — project counts, the board
+    /// filter, the overdue figure, the work a leaver has to hand over — and a
+    /// computed property cannot be translated into a query. Each of those places
+    /// had its own copy of "not Done and not Cancelled", so adding a seventh
+    /// state made a released item count as open work in all five at once, in
+    /// every direction quietly: an inflated open count, a released item reported
+    /// as overdue, and a leaver's finished work taken off them again. They now
+    /// read this, so the answer cannot differ between a query and an object.
+    /// </remarks>
+    public static IReadOnlyList<WorkItemStatus> Finished { get; } =
+        [WorkItemStatus.Done, WorkItemStatus.Cancelled, WorkItemStatus.Deployed];
+
+    public bool IsOpen => !Finished.Contains(Status);
 
     /// <summary>
     /// Where work in this state may go next.
@@ -143,11 +178,20 @@ public sealed class WorkItem : Entity, IAuditable
 
         if (!Allowed[Status].Contains(status))
         {
+            // The two dead ends get a sentence of their own, because "cannot go
+            // from deployed to in progress" reads as a missing feature, and what
+            // is actually being said is that the row is a record of something
+            // that has already left the firm.
             throw new InvalidOperationException(
                 $"Work cannot go from {Describe(Status)} to {Describe(status)}."
-                + (Status == WorkItemStatus.Cancelled
-                    ? " Cancelled work stays cancelled; raise it again if it is wanted."
-                    : string.Empty));
+                + Status switch
+                {
+                    WorkItemStatus.Cancelled =>
+                        " Cancelled work stays cancelled; raise it again if it is wanted.",
+                    WorkItemStatus.Deployed =>
+                        " Deployed work stays deployed; a change to something released is new work.",
+                    _ => string.Empty,
+                });
         }
 
         if (status == WorkItemStatus.Blocked && string.IsNullOrWhiteSpace(because))
@@ -184,6 +228,16 @@ public sealed class WorkItem : Entity, IAuditable
             CompletedAt = at;
         }
 
+        /*
+         * Deploying records nothing of its own, and that is deliberate.
+         *
+         * CompletedAt is when the work was accepted. Stamping the release over
+         * it would lose the one date the delivery figures are worked out from,
+         * and a release date kept next to it would be a column with no question
+         * behind it yet — when somebody asks how long work waits between being
+         * accepted and going out, the move event below already carries the
+         * answer with a timestamp on it.
+         */
         Raise(new WorkItemMoved(Id, from, status, because));
     }
 

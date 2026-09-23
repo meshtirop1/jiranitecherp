@@ -110,18 +110,97 @@ public class WorkPermissionTests
         Assert.True(WorkPermissions.MayMove(head, WorkItemStatus.Done, Somebody, Duncan));
     }
 
-    /// <summary>Running the board means moving anything on it.</summary>
+    /// <summary>Running the board means moving anything on it, except releasing it.</summary>
+    /// <remarks>
+    /// The release is the one exception, and it is the reason the gate is worth
+    /// anything at all. A delivery manager holds tasks.assign, so a blanket
+    /// "anybody who runs the board may make any move" would wave them through
+    /// before tasks.deploy was ever read — and the permission would exist, be
+    /// granted to one role, be asserted by the matrix tests, and guard nothing.
+    /// </remarks>
     [Fact]
-    public void Somebody_who_runs_the_board_may_move_anything()
+    public void Somebody_who_runs_the_board_may_move_anything_except_release_it()
     {
         var manager = HeldBy(Roles.ProjectManager);
 
-        foreach (var target in Enum.GetValues<WorkItemStatus>())
+        foreach (var target in Enum.GetValues<WorkItemStatus>()
+            .Where(target => target != WorkItemStatus.Deployed))
         {
             Assert.True(
                 WorkPermissions.MayMove(manager, target, Somebody, Duncan),
                 $"A manager could not move work to {target}.");
         }
+
+        Assert.False(WorkPermissions.MayMove(
+            manager, WorkItemStatus.Deployed, Somebody, Duncan));
+    }
+
+    /// <summary>
+    /// The release is the head of department's, and the state machine will not
+    /// move without the permission.
+    /// </summary>
+    /// <remarks>
+    /// The capability this replaces: the system being retired has a head who
+    /// releases what their team finishes. It was declared here once as
+    /// tasks.deploy, named a state the work machine did not have, and was
+    /// deleted rather than invented around.
+    /// </remarks>
+    [Fact]
+    public void A_department_head_releases_accepted_work()
+    {
+        var head = HeldBy(Roles.DepartmentHead);
+
+        Assert.Contains(Permissions.TasksDeploy, head);
+        Assert.Equal(Permissions.TasksDeploy, WorkPermissions.Governing(WorkItemStatus.Deployed));
+
+        // Not their own work, any more than a review is: the person who released
+        // it is not the person who did it.
+        Assert.True(WorkPermissions.MayMove(head, WorkItemStatus.Deployed, Somebody, Duncan));
+    }
+
+    /// <summary>A developer cannot release their own work, or anybody's.</summary>
+    /// <remarks>
+    /// Being the person who did the work is what makes this one obvious, and it
+    /// is the case the gate exists for: accepting work and releasing it are two
+    /// decisions, and neither of them is the author's.
+    /// </remarks>
+    [Fact]
+    public void A_developer_cannot_release_anything()
+    {
+        var developer = HeldBy(Roles.Developer);
+
+        Assert.DoesNotContain(Permissions.TasksDeploy, developer);
+
+        Assert.False(WorkPermissions.MayMove(developer, WorkItemStatus.Deployed, Duncan, Duncan));
+        Assert.False(WorkPermissions.MayMove(developer, WorkItemStatus.Deployed, Somebody, Duncan));
+
+        // Nor is it offered to them from the one state it is reachable from, so
+        // the button is not drawn and then refused.
+        Assert.DoesNotContain(
+            WorkItemStatus.Deployed,
+            WorkPermissions.MovesFor(developer, WorkItemStatus.Done, Duncan, Duncan));
+    }
+
+    /// <summary>
+    /// The release is offered to a head only from accepted work.
+    /// </summary>
+    /// <remarks>
+    /// Both filters again: holding tasks.deploy is not a button on every card,
+    /// because the state machine allows the move from Done and nowhere else.
+    /// </remarks>
+    [Theory]
+    [InlineData(WorkItemStatus.Done, true)]
+    [InlineData(WorkItemStatus.InReview, false)]
+    [InlineData(WorkItemStatus.InProgress, false)]
+    [InlineData(WorkItemStatus.Todo, false)]
+    [InlineData(WorkItemStatus.Blocked, false)]
+    public void Releasing_is_offered_from_accepted_work_only(WorkItemStatus from, bool offered)
+    {
+        var head = HeldBy(Roles.DepartmentHead);
+
+        var moves = WorkPermissions.MovesFor(head, from, Somebody, Duncan);
+
+        Assert.Equal(offered, moves.Contains(WorkItemStatus.Deployed));
     }
 
     /// <summary>

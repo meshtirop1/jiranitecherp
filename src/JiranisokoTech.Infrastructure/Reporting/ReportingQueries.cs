@@ -96,13 +96,20 @@ public sealed class ReportingQueries(AppDbContext database)
             .AsNoTracking()
             .CountAsync(item => item.Status == WorkItemStatus.Blocked, cancellationToken);
 
+        /*
+         * Past its date and still open — the second half of that read as "not
+         * Done and not Cancelled" until work gained a released state, at which
+         * point every item the firm had shipped late went on being counted as
+         * late work nobody had finished. The page says "items are past the date
+         * they were due" and sends the reader to the board to do something about
+         * them; there is nothing to do about a released one.
+         */
         var workOverdue = await database.WorkItems
             .AsNoTracking()
             .CountAsync(
                 item => item.DueOn != null
                     && item.DueOn < today
-                    && item.Status != WorkItemStatus.Done
-                    && item.Status != WorkItemStatus.Cancelled,
+                    && !WorkItem.Finished.Contains(item.Status),
                 cancellationToken);
 
         return new FirmState(

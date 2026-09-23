@@ -159,6 +159,80 @@ public class WorkPageTests(ApplicationFactory factory) : IClassFixture<Applicati
         Assert.DoesNotContain("move-InReview", html);
     }
 
+    /// <summary>
+    /// Released work keeps a column, although it is finished.
+    /// </summary>
+    /// <remarks>
+    /// Cancelled work is kept off the board because a board is about what is in
+    /// front of people now. A release is the opposite case: it is the last thing
+    /// that happens to a piece of work and the thing people ask about, and a head
+    /// who releases four items and then sees no trace of any of them concludes
+    /// the button did nothing.
+    /// </remarks>
+    [Fact]
+    public async Task The_board_shows_a_column_for_released_work()
+    {
+        await AcceptedAsync("Cut the depot over to the new scanners", released: true);
+
+        var head = await SignedInAsync("released@jiranisokotech.co.ke", Roles.DepartmentHead);
+
+        var html = await (await head.GetAsync("/work")).Content.ReadAsStringAsync();
+
+        Assert.Contains("Deployed", html);
+        Assert.Contains("Cut the depot over to the new scanners", html);
+        Assert.True(
+            html.IndexOf("Deployed", StringComparison.Ordinal)
+            < html.IndexOf("Cut the depot over to the new scanners", StringComparison.Ordinal),
+            "The released item was not drawn under the Deployed heading.");
+    }
+
+    /// <summary>
+    /// The gate, on one card, seen by two roles.
+    /// </summary>
+    /// <remarks>
+    /// A delivery manager runs the board and may reopen this very item, so the
+    /// page is not refusing them for want of reaching it — the release is the one
+    /// move it does not offer them. Asserted through the page rather than only
+    /// against the permission function, because the page is where the blanket
+    /// "anybody who runs the board may move anything" rule used to live.
+    /// </remarks>
+    [Fact]
+    public async Task Only_a_head_is_offered_the_release()
+    {
+        var item = await AcceptedAsync("Publish the delivery note template");
+
+        var head = await SignedInAsync("release-head@jiranisokotech.co.ke", Roles.DepartmentHead);
+        var forHead = await (await head.GetAsync($"/work/{item}")).Content.ReadAsStringAsync();
+
+        Assert.Contains("move-Deployed", forHead);
+
+        var manager = await SignedInAsync("release-pm@jiranisokotech.co.ke", Roles.ProjectManager);
+        var forManager = await (await manager.GetAsync($"/work/{item}")).Content.ReadAsStringAsync();
+
+        Assert.Contains("move-InProgress", forManager);
+        Assert.DoesNotContain("move-Deployed", forManager);
+    }
+
+    /// <summary>Work walked along to accepted, and optionally out of the door.</summary>
+    private async Task<Guid> AcceptedAsync(string title, bool released = false)
+    {
+        using var scope = factory.Services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<WorkService>();
+
+        var item = await service.RaiseAsync(title, Guid.CreateVersion7(), null);
+
+        await service.MoveAsync(item.Id, WorkItemStatus.InProgress);
+        await service.MoveAsync(item.Id, WorkItemStatus.InReview);
+        await service.MoveAsync(item.Id, WorkItemStatus.Done);
+
+        if (released)
+        {
+            await service.MoveAsync(item.Id, WorkItemStatus.Deployed);
+        }
+
+        return item.Id;
+    }
+
     private async Task<Guid> BeginAsync(string name)
     {
         using var scope = factory.Services.CreateScope();
