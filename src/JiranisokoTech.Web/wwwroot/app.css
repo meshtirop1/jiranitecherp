@@ -22,6 +22,74 @@
     --ink-quiet: #6b7280;
     --line: #e3e5e9;
     --link: #006bb7;
+
+    /*
+     * The semantic colours, promoted from literals.
+     *
+     * The header above described keeping these as literals with hand-written dark
+     * overrides at the bottom as "a deliberate half-measure". An audit of the file said
+     * what that had actually cost: of ninety-seven rules setting a colour literal,
+     * sixty-seven had no dark override at all — including `button, .button`, so every
+     * button in the application drew a light-theme blue-on-white in dark mode, and
+     * `.validation-message`, so the text telling somebody their input was wrong was a red
+     * chosen against a white ground.
+     *
+     * None of that failed anything. StylesheetTests checks that a class EXISTS, which
+     * these all did. A colour is the one kind of CSS mistake that cannot be caught by
+     * asking whether a rule is there.
+     *
+     * Every light value below is byte-for-byte what the rule it replaced already used, so
+     * the light theme did not move. The dark values are lifted for contrast against a dark
+     * ground rather than being the same hues dimmed.
+     */
+    --accent: #1b6ec2;
+    --accent-strong: #1861ac;
+    --accent-quiet: #eef4fb;
+
+    /*
+     * Stays white in both themes. It is the text on a saturated blue button, not a
+     * surface — reading it from --surface would turn it dark on dark blue the moment
+     * somebody switched themes, which is the exact fault this block is fixing.
+     */
+    --on-accent: #fff;
+
+    --danger: #b32121;
+    --danger-strong: #8a1b1b;
+    --warn: #d97706;
+
+    /* The pill grounds and inks, which are pairs and only mean anything as pairs. */
+    --good-ground: #e6f4ea;
+    --good-ink: #1e6b32;
+    --warn-ground: #fff4e5;
+    --warn-ink: #8a5300;
+    --danger-ground: #fdf2f2;
+    --danger-ink: #8a1b1b;
+    --running-ground: #e8f0fb;
+    --running-ink: #1b4f8a;
+
+    /*
+     * A third grey, between --ink and --ink-quiet. It appeared as the literal #4b5563 in
+     * eight rules — definition-list labels, table headings, a week's hours — all of them
+     * "quieter than body text but not as quiet as a hint". Naming it is what stops the
+     * ninth one being #4a5563 by a typo nobody sees.
+     */
+    --ink-mid: #4b5563;
+
+    /*
+     * The edge of something a person types into, which is deliberately darker than --line.
+     * A field whose border is the same weight as a table rule does not read as a field, and
+     * this appeared as the literal var(--field-line) in six rules that all meant "input".
+     */
+    --field-line: #c8ccd4;
+
+    /* The sign-in page's two answers, which are a ground, an ink and an edge each. */
+    --refusal-ground: #fdf2f2;
+    --refusal-ink: #8a1b1b;
+    --done-ground: #e6f4ea;
+    --done-ink: #1e6b32;
+
+    /* A pill's word, a shade lighter than body text so the ground reads as the pill. */
+    --pill-ink: #374151;
 }
 
 /*
@@ -42,7 +110,44 @@
 
         /* Lifted, because #006bb7 on a dark ground fails contrast by a long way. */
         --link: #6fb6ff;
-    }
+
+        /*
+         * The semantic colours again. Lifted rather than dimmed: a saturated hue that
+         * reads well on white is too dark to read on #161a1f, and the instinct to darken
+         * everything for dark mode gets the contrast backwards.
+         */
+        --accent: #2f7fd0;
+        --accent-strong: #3d8de0;
+        --accent-quiet: #20303f;
+        --danger: #c94040;
+        --danger-strong: #d95c5c;
+        --warn: #e0912f;
+
+        --good-ground: #1d3a27;
+        --good-ink: #7ddc9b;
+        --warn-ground: #3a2f1c;
+        --warn-ink: #ffc987;
+        --danger-ground: #3d2126;
+        --danger-ink: #ff9aa2;
+        --running-ground: #1e3346;
+        --running-ink: #8ec5ff;
+        --ink-mid: #b3bcc9;
+    --field-line: #46515f;
+        --field-line: #46515f;
+        --refusal-ground: #3d2126;
+        --refusal-ink: #ff9aa2;
+        --done-ground: #1d3a27;
+        --done-ink: #7ddc9b;
+    
+        /*
+         * The same white as the light theme, declared rather than left to inherit. White on a
+         * saturated blue button is right on either ground — but a token declared in only one
+         * block is the exact fault DarkModeTests catches, and an exception for "this one
+         * happens to be the same value" is how the next one gets missed.
+         */
+        --on-accent: #fff;
+        --pill-ink: var(--ink);
+}
 }
 
 :root[data-theme="dark"] {
@@ -53,25 +158,121 @@
     --ink-quiet: #9aa4b2;
     --line: #333c47;
     --link: #6fb6ff;
+
+    /* The same again, for a reader who chose dark on a light machine. */
+    --accent: #2f7fd0;
+    --accent-strong: #3d8de0;
+    --accent-quiet: #20303f;
+    --danger: #c94040;
+    --danger-strong: #d95c5c;
+    --warn: #e0912f;
+
+    --good-ground: #1d3a27;
+    --good-ink: #7ddc9b;
+    --warn-ground: #3a2f1c;
+    --warn-ink: #ffc987;
+    --danger-ground: #3d2126;
+    --danger-ink: #ff9aa2;
+    --running-ground: #1e3346;
+    --running-ink: #8ec5ff;
+    --ink-mid: #b3bcc9;
+    --refusal-ground: #3d2126;
+    --refusal-ink: #ff9aa2;
+    --done-ground: #1d3a27;
+    --done-ink: #7ddc9b;
+
+    --on-accent: #fff;
+    --pill-ink: var(--ink);
+    --field-line: #46515f;
 }
 
+/*
+ * The type scale.
+ *
+ * Before this there were eighteen distinct font sizes in this file, five of them inside a
+ * tenth of a rem of each other — 0.78, 0.8, 0.82, 0.85 and 0.88. Nobody can see the
+ * difference between those, and their existence has two costs: the pages read as slightly
+ * unsettled without anybody being able to say why, and somebody adding an element has no
+ * step to reach for, so they measure something nearby and invent a nineteenth.
+ *
+ * Seven steps, chosen to absorb the eighteen with the least movement rather than to sit on
+ * a mathematical ratio. The two commonest sizes in the file keep their exact values,
+ * because a scale that moved every label by a hair would be a restyling wearing a
+ * refactor's clothes. Nothing moves by more than a tenth of a rem.
+ */
+:root {
+    --text-xs: 0.78rem;
+    --text-sm: 0.85rem;
+    --text-base: 0.92rem;
+    --text-md: 1.05rem;
+    --text-lg: 1.4rem;
+    --text-xl: 1.6rem;
+    --text-xxl: 2rem;
+}
+
+/*
+ * The system's own faces rather than a web font, deliberately.
+ *
+ * A downloaded face would mean a network request on a page somebody opens to find out
+ * whether the invoicing has broken, a Content-Security-Policy entry for a third-party
+ * origin, and a flash of unstyled text on every cold load. This is self-hosted software
+ * for one firm on their own hardware; the operating system already has a good interface
+ * face and it is already in memory.
+ *
+ * Helvetica Neue stays at the front of the stack so that the appearance on the machines
+ * this was built on does not shift, with the modern system tokens ahead of the old
+ * Arial fallback for everybody else.
+ */
 html, body {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-family: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text',
+        'Segoe UI', system-ui, Helvetica, Arial, sans-serif;
+
+    /* Tabular figures everywhere, because most of this application is columns of numbers
+       and proportional digits make a column of money jitter as it scrolls. */
+    font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Headings are set tighter than the body and never squeezed below it in weight. A heading
+ * that wraps to two lines breaks on a sensible word rather than leaving one word alone on
+ * the second, which is what text-wrap: balance buys for nothing.
+ */
+h1, h2, h3 {
+    text-wrap: balance;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+}
+
+h1 {
+    font-size: var(--text-xl);
+    font-weight: 600;
+}
+
+h2 {
+    font-size: var(--text-md);
+    font-weight: 600;
+}
+
+/* Running text is not measured in characters here because almost nothing on these screens
+   is running text — it is tables, forms and lists. The one place it matters is a page's
+   own explanation, which carries .instructions and is bounded there. */
+.instructions {
+    max-width: 62ch;
 }
 
 a, .btn-link {
     color: var(--link);
 }
 
-.btn-primary {
-    color: #fff;
-    background-color: #1b6ec2;
-    border-color: #1861ac;
-}
-
-.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
-}
+/*
+ * .btn-primary, .btn, .form-control and .form-check-input used to sit here. They came with
+ * the Blazor project template and were applied to nothing: a grep of every component found
+ * zero uses of any of them. The focus rule was worse than dead — it hard-coded a white ring,
+ * which on a dark page would have drawn a white halo round whatever had focus.
+ *
+ * Removed rather than converted to tokens. Rules nothing uses are the reason a stylesheet
+ * becomes something nobody dares change.
+ */
 
 .content {
     padding-top: 1.1rem;
@@ -82,15 +283,17 @@ h1:focus {
 }
 
 .valid.modified:not([type=checkbox]) {
-    outline: 1px solid #26b050;
+    outline: 1px solid var(--good-ink);
 }
 
 .invalid {
-    outline: 1px solid #e50000;
+    outline: 1px solid var(--danger);
 }
 
+/* Through the token, because this is the text that tells somebody what they got
+   wrong — the one sentence on a page that must be readable in either theme. */
 .validation-message {
-    color: #e50000;
+    color: var(--danger);
 }
 
 .blazor-error-boundary {
@@ -102,10 +305,6 @@ h1:focus {
     .blazor-error-boundary::after {
         content: "An error has occurred."
     }
-
-.darker-border-checkbox.form-check-input {
-    border-color: #929292;
-}
 
 .form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {
     color: var(--bs-secondary-color);
@@ -148,7 +347,7 @@ h1:focus {
 }
 
 .bare__heading {
-    font-size: 1.4rem;
+    font-size: var(--text-lg);
     margin-bottom: 1rem;
 }
 
@@ -159,19 +358,19 @@ h1:focus {
 .bare__footer {
     text-align: center;
     padding-top: 1.5rem;
-    font-size: 0.85rem;
-    color: #6b7280;
+    font-size: var(--text-sm);
+    color: var(--ink-quiet);
 }
 
 .signin__title {
-    font-size: 1.5rem;
+    font-size: var(--text-lg);
     margin-bottom: 0.25rem;
 }
 
 .signin__sub {
     margin-bottom: 1.5rem;
-    color: #6b7280;
-    font-size: 0.9rem;
+    color: var(--ink-quiet);
+    font-size: var(--text-base);
 }
 
 .signin__field {
@@ -182,15 +381,15 @@ h1:focus {
 }
 
 .signin__field label {
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     font-weight: 600;
 }
 
 .signin__field input {
     padding: 0.5rem 0.6rem;
-    border: 1px solid #c8ccd4;
+    border: 1px solid var(--field-line);
     border-radius: 4px;
-    font-size: 1rem;
+    font-size: var(--text-md);
 }
 
 .signin__remember {
@@ -198,7 +397,7 @@ h1:focus {
     align-items: center;
     gap: 0.5rem;
     margin-bottom: 1.25rem;
-    font-size: 0.9rem;
+    font-size: var(--text-base);
 }
 
 .signin__submit {
@@ -206,23 +405,23 @@ h1:focus {
     padding: 0.6rem;
     border: 0;
     border-radius: 4px;
-    background-color: #1b6ec2;
-    color: #fff;
-    font-size: 1rem;
+    background-color: var(--accent);
+    color: var(--on-accent);
+    font-size: var(--text-md);
     cursor: pointer;
 }
 
 .signin__submit:hover {
-    background-color: #1861ac;
+    background-color: var(--accent-strong);
 }
 
 .signin__refusal {
     margin-bottom: 1rem;
     padding: 0.6rem 0.75rem;
-    border-left: 3px solid #b32121;
-    background-color: #fdf2f2;
-    color: #8a1b1b;
-    font-size: 0.9rem;
+    border-left: 3px solid var(--refusal-ink);
+    background-color: var(--refusal-ground);
+    color: var(--refusal-ink);
+    font-size: var(--text-base);
 }
 
 /* The same shape as a refusal and the opposite colour, because it arrives in
@@ -230,10 +429,10 @@ h1:focus {
 .signin__done {
     margin-bottom: 1rem;
     padding: 0.6rem 0.75rem;
-    border-left: 3px solid #1e6b32;
-    background-color: #e6f4ea;
-    color: #1e6b32;
-    font-size: 0.9rem;
+    border-left: 3px solid var(--done-ink);
+    background-color: var(--done-ground);
+    color: var(--done-ink);
+    font-size: var(--text-base);
 }
 
 /* Neither a refusal nor a success. The forgotten-password page answers an address
@@ -247,18 +446,18 @@ h1:focus {
     padding: 0.6rem 0.75rem;
     border-left: 3px solid var(--line);
     background: var(--surface-sunken);
-    font-size: 0.92rem;
+    font-size: var(--text-base);
 }
 
 .signin__note {
     margin-top: 1.5rem;
-    font-size: 0.8rem;
-    color: #6b7280;
+    font-size: var(--text-sm);
+    color: var(--ink-quiet);
 }
 
 .nav-who {
     padding-top: 1rem;
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     color: rgba(255, 255, 255, 0.6);
 }
 
@@ -283,7 +482,7 @@ h1:focus {
 
 .account__facts dt {
     font-weight: 600;
-    color: #4b5563;
+    color: var(--ink-mid);
 }
 
 .account__facts dd {
@@ -291,33 +490,33 @@ h1:focus {
 }
 
 .account__hint {
-    font-size: 0.9rem;
-    color: #6b7280;
+    font-size: var(--text-base);
+    color: var(--ink-quiet);
 }
 
 .account__history {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.9rem;
+    font-size: var(--text-base);
 }
 
 .account__history th,
 .account__history td {
     text-align: left;
     padding: 0.4rem 0.75rem 0.4rem 0;
-    border-bottom: 1px solid #e3e5e9;
+    border-bottom: 1px solid var(--line);
     vertical-align: top;
 }
 
 .account__attempt--failed td {
-    color: #8a1b1b;
+    color: var(--danger-ink);
 }
 
 /* A user agent string is long and worth none of the width. */
 .account__agent {
     max-width: 18rem;
     overflow-wrap: anywhere;
-    color: #6b7280;
+    color: var(--ink-quiet);
 }
 
 /* --- Working screens ----------------------------------------------------- */
@@ -331,46 +530,47 @@ h1:focus {
 }
 
 .subtle {
-    color: #6b7280;
+    color: var(--ink-quiet);
 }
 
 .empty {
     padding: 1.5rem;
     background: var(--surface-sunken);
     border-radius: 6px;
-    color: #4b5563;
+    color: var(--ink-mid);
 }
 
 .count {
-    font-size: 0.85rem;
-    color: #6b7280;
+    font-size: var(--text-sm);
+    color: var(--ink-quiet);
 }
 
 .grid {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.92rem;
+    font-size: var(--text-base);
 }
 
 .grid th,
 .grid td {
     text-align: left;
     padding: 0.5rem 0.75rem 0.5rem 0;
-    border-bottom: 1px solid #e3e5e9;
+    border-bottom: 1px solid var(--line);
     vertical-align: top;
 }
 
 .grid th {
-    font-size: 0.78rem;
+    font-size: var(--text-xs);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #6b7280;
+    color: var(--ink-quiet);
 }
 
 /* A closed department is still listed, because everything that ever named it
    still names it. It reads as past rather than present. */
+/* Quieter than a hint, because a closed row is there to be skimmed past. */
 .row--closed td {
-    color: #9ca3af;
+    color: var(--ink-quiet);
 }
 
 .row-actions {
@@ -383,15 +583,15 @@ h1:focus {
     display: inline-block;
     padding: 0.1rem 0.5rem;
     border-radius: 999px;
-    font-size: 0.78rem;
+    font-size: var(--text-xs);
     background: var(--surface-sunken);
-    color: #374151;
+    color: var(--pill-ink);
 }
 
-.pill--active { background: #e6f4ea; color: #1e6b32; }
-.pill--invited { background: #fff4e5; color: #8a5300; }
-.pill--suspended { background: #fdf2f2; color: #8a1b1b; }
-.pill--left { background: #eef1f5; color: #6b7280; }
+.pill--active { background: var(--good-ground); color: var(--good-ink); }
+.pill--invited { background: var(--warn-ground); color: var(--warn-ink); }
+.pill--suspended { background: var(--danger-ground); color: var(--danger-ink); }
+.pill--left { background: var(--surface-sunken); color: var(--ink-quiet); }
 
 .filters {
     display: flex;
@@ -405,8 +605,8 @@ h1:focus {
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
-    font-size: 0.8rem;
-    color: #4b5563;
+    font-size: var(--text-sm);
+    color: var(--ink-mid);
 }
 
 .filters input,
@@ -417,13 +617,13 @@ h1:focus {
 .inline input,
 .inline select {
     padding: 0.4rem 0.5rem;
-    border: 1px solid #c8ccd4;
+    border: 1px solid var(--field-line);
     border-radius: 4px;
-    font-size: 0.95rem;
+    font-size: var(--text-base);
 }
 
 .filters__clear {
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     padding-bottom: 0.5rem;
 }
 
@@ -439,7 +639,7 @@ h1:focus {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     font-weight: 600;
 }
 
@@ -462,25 +662,25 @@ h1:focus {
 button,
 .button {
     padding: 0.4rem 0.9rem;
-    border: 1px solid #1b6ec2;
+    border: 1px solid var(--accent);
     border-radius: 4px;
-    background: #1b6ec2;
-    color: #fff;
-    font-size: 0.9rem;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: var(--text-base);
     cursor: pointer;
     text-decoration: none;
     display: inline-block;
 }
 
 button:hover,
-.button:hover { background: #1861ac; }
+.button:hover { background: var(--accent-strong); }
 
 button.danger {
-    background: #b32121;
-    border-color: #b32121;
+    background: var(--danger);
+    border-color: var(--danger);
 }
 
-button.danger:hover { background: #8a1b1b; }
+button.danger:hover { background: var(--danger-strong); }
 
 .facts {
     display: grid;
@@ -489,21 +689,21 @@ button.danger:hover { background: #8a1b1b; }
     margin: 1.5rem 0;
 }
 
-.facts dt { font-weight: 600; color: #4b5563; }
+.facts dt { font-weight: 600; color: var(--ink-mid); }
 .facts dd { margin: 0; }
 
 .refusal {
     padding: 0.6rem 0.75rem;
-    border-left: 3px solid #b32121;
-    background: #fdf2f2;
-    color: #8a1b1b;
+    border-left: 3px solid var(--danger);
+    background: var(--refusal-ground);
+    color: var(--refusal-ink);
 }
 
 .done {
     padding: 0.6rem 0.75rem;
-    border-left: 3px solid #1e6b32;
-    background: #e6f4ea;
-    color: #1e6b32;
+    border-left: 3px solid var(--good-ink);
+    background: var(--done-ground);
+    color: var(--done-ink);
 }
 
 .reports { padding-left: 1.2rem; }
@@ -514,7 +714,7 @@ button.danger:hover { background: #8a1b1b; }
 .chart ul {
     list-style: none;
     padding-left: 1.25rem;
-    border-left: 1px solid #e3e5e9;
+    border-left: 1px solid var(--line);
     margin: 0.35rem 0;
 }
 
@@ -526,8 +726,8 @@ button.danger:hover { background: #8a1b1b; }
 
 .chart__title,
 .chart__department {
-    font-size: 0.82rem;
-    color: #6b7280;
+    font-size: var(--text-sm);
+    color: var(--ink-quiet);
     margin-left: 0.5rem;
 }
 
@@ -557,15 +757,15 @@ button.danger:hover { background: #8a1b1b; }
 }
 
 .board__heading {
-    font-size: 0.8rem;
+    font-size: var(--text-sm);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #4b5563;
+    color: var(--ink-mid);
     margin: 0 0 0.6rem;
 }
 
 .board__count {
-    color: #6b7280;
+    color: var(--ink-quiet);
     font-weight: 400;
 }
 
@@ -573,7 +773,7 @@ button.danger:hover { background: #8a1b1b; }
     display: block;
     background: var(--surface);
     border: 1px solid var(--line);
-    border-left: 3px solid #c8ccd4;
+    border-left: 3px solid var(--field-line);
     border-radius: 4px;
     padding: 0.55rem 0.7rem;
     margin-bottom: 0.5rem;
@@ -581,13 +781,13 @@ button.danger:hover { background: #8a1b1b; }
 
 /* Priority along the edge of a card: readable at a glance down a column, and
    it costs none of the width the title needs. */
-.card--high { border-left-color: #d97706; }
-.card--dropping { border-left-color: #b32121; }
-.card--low { border-left-color: #e3e5e9; }
+.card--high { border-left-color: var(--warn); }
+.card--dropping { border-left-color: var(--danger); }
+.card--low { border-left-color: var(--line); }
 
 .card__title {
     font-weight: 600;
-    font-size: 0.92rem;
+    font-size: var(--text-base);
     display: block;
     /* Long titles wrap rather than being cut. A truncated card is one somebody
        has to open before they can understand it. */
@@ -598,28 +798,28 @@ button.danger:hover { background: #8a1b1b; }
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
-    font-size: 0.78rem;
-    color: #6b7280;
+    font-size: var(--text-xs);
+    color: var(--ink-quiet);
     margin-top: 0.3rem;
 }
 
 .card__due,
 .card__blocked {
     display: block;
-    font-size: 0.78rem;
+    font-size: var(--text-xs);
     margin-top: 0.3rem;
 }
 
 /* Said in words as well as colour, so it survives a colour-blind reader and a
    printout. */
-.card__due--late { color: #b32121; font-weight: 600; }
+.card__due--late { color: var(--danger); font-weight: 600; }
 
-.card__blocked { color: #8a5300; }
+.card__blocked { color: var(--warn-ink); }
 
 /* --- Approvals ----------------------------------------------------------- */
 
 .approval {
-    border: 1px solid #e3e5e9;
+    border: 1px solid var(--line);
     border-radius: 6px;
     padding: 1rem;
     margin-bottom: 1rem;
@@ -627,13 +827,13 @@ button.danger:hover { background: #8a1b1b; }
 
 .approval__what {
     margin: 0 0 0.25rem;
-    font-size: 1.05rem;
+    font-size: var(--text-md);
 }
 
 .approval__meta {
     margin: 0 0 0.75rem;
-    font-size: 0.85rem;
-    color: #6b7280;
+    font-size: var(--text-sm);
+    color: var(--ink-quiet);
 }
 
 /* The steps already taken, so whoever is deciding can see what the people
@@ -641,19 +841,19 @@ button.danger:hover { background: #8a1b1b; }
 .approval__steps {
     margin: 0 0 1rem;
     padding-left: 1.2rem;
-    font-size: 0.88rem;
+    font-size: var(--text-sm);
 }
 
 .approval__step { margin: 0.15rem 0; }
 
-.approval__step--approved { color: #1e6b32; }
-.approval__step--refused { color: #8a1b1b; }
-.approval__step--skipped { color: #6b7280; }
+.approval__step--approved { color: var(--good-ink); }
+.approval__step--refused { color: var(--danger-ink); }
+.approval__step--skipped { color: var(--ink-quiet); }
 .approval__step--waiting { font-weight: 600; }
 
 .approval__note {
     display: block;
-    color: #6b7280;
+    color: var(--ink-quiet);
     font-style: italic;
 }
 
@@ -663,10 +863,10 @@ code.link {
     display: block;
     padding: 0.5rem;
     margin-top: 0.4rem;
-    background: #fff;
-    border: 1px solid #c8ccd4;
+    background: var(--surface);
+    border: 1px solid var(--field-line);
     border-radius: 4px;
-    font-size: 0.8rem;
+    font-size: var(--text-sm);
     overflow-wrap: anywhere;
     user-select: all;
 }
@@ -675,6 +875,13 @@ code.link {
 
 /* Bounded, because the generated SVG has no intrinsic size and will otherwise
    fill whatever it is given. */
+/*
+ * The only white in this file that stays white in both themes, and it is not a colour
+ * choice. A QR code is read by a camera looking for dark modules on a light ground; drawn
+ * on a dark surface it does not scan, so somebody setting up two-step sign-in in dark mode
+ * would be holding their phone at a square that cannot be read. The theme does not get a
+ * vote on this one.
+ */
 .qr svg {
     width: 12rem;
     height: 12rem;
@@ -684,7 +891,7 @@ code.link {
 }
 
 code.key {
-    font-size: 1rem;
+    font-size: var(--text-md);
     letter-spacing: 0.06em;
     background: var(--surface-sunken);
     padding: 0.15rem 0.4rem;
@@ -705,10 +912,10 @@ code.key {
 .codes code {
     display: block;
     padding: 0.4rem 0.6rem;
-    background: #fff;
-    border: 1px solid #c8ccd4;
+    background: var(--surface);
+    border: 1px solid var(--field-line);
     border-radius: 4px;
-    font-size: 0.95rem;
+    font-size: var(--text-base);
     letter-spacing: 0.04em;
     user-select: all;
 }
@@ -719,13 +926,13 @@ code.key {
    phone on a bad connection. Wider than the sign-in panel, because these
    carry real prose. */
 .careers__title {
-    font-size: 1.6rem;
+    font-size: var(--text-xl);
     margin-bottom: 0.5rem;
 }
 
 .careers__lead {
-    font-size: 1.02rem;
-    color: #374151;
+    font-size: var(--text-md);
+    color: var(--ink-mid);
 }
 
 .careers__list {
@@ -736,24 +943,24 @@ code.key {
 
 .careers__opening {
     padding: 1rem 0;
-    border-top: 1px solid #e3e5e9;
+    border-top: 1px solid var(--line);
 }
 
 .careers__role {
-    font-size: 1.1rem;
+    font-size: var(--text-md);
     font-weight: 600;
 }
 
 .careers__where {
     display: inline-block;
     margin-left: 0.5rem;
-    font-size: 0.85rem;
-    color: #6b7280;
+    font-size: var(--text-sm);
+    color: var(--ink-quiet);
 }
 
 .careers__summary {
     margin: 0.35rem 0 0;
-    color: #4b5563;
+    color: var(--ink-mid);
 }
 
 /* The advert body is shown as text, so its line breaks are what the person
@@ -767,8 +974,8 @@ code.key {
 .careers__optional,
 .careers__hint {
     font-weight: 400;
-    font-size: 0.8rem;
-    color: #6b7280;
+    font-size: var(--text-sm);
+    color: var(--ink-quiet);
 }
 
 /* Roomier than the sign-in panel: this one holds an advert. */
@@ -813,14 +1020,16 @@ code.key {
 .reference {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-weight: 500;
-    color: #6c757d;
+    color: var(--ink-quiet);
 }
 
 /* A figure that has gone the wrong way — over budget, or a negative margin. Colour
    and weight together rather than colour alone, because roughly one man in twelve
    cannot tell this red from the surrounding text. */
+/* Over budget, or over an estimate. Said in words beside the figure as well, so it
+   survives a colour-blind reader and a printout. */
 .over {
-    color: #b02a37;
+    color: var(--danger);
     font-weight: 600;
 }
 
@@ -839,7 +1048,7 @@ code.key {
     height: 72px;
     border-radius: 50%;
     object-fit: cover;
-    border: 1px solid #e3e5e9;
+    border: 1px solid var(--line);
 }
 
 /* Initials where there is no photograph. A generic silhouette says nothing and
@@ -851,9 +1060,9 @@ code.key {
     width: 72px;
     height: 72px;
     border-radius: 50%;
-    background: #eef0f3;
-    color: #6c757d;
-    font-size: 1.5rem;
+    background: var(--surface-sunken);
+    color: var(--ink-mid);
+    font-size: var(--text-lg);
     font-weight: 600;
 }
 
@@ -869,7 +1078,7 @@ code.key {
 .panel h2,
 .panel h3 {
     margin-top: 0;
-    font-size: 1.05rem;
+    font-size: var(--text-md);
 }
 
 /* A checkbox reads along the line with its words, not above them, so it opts
@@ -886,7 +1095,7 @@ code.key {
 }
 
 .crumbs {
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     margin-bottom: 0.5rem;
 }
 
@@ -902,12 +1111,12 @@ code.key {
    the thing to do on this page". Tables are full of these and a row of solid
    blue buttons tells a reader nothing about which one matters. */
 .button--quiet {
-    background: #fff;
-    color: #1b6ec2;
+    background: var(--surface);
+    color: var(--accent);
 }
 
 .button--quiet:hover {
-    background: #eef4fb;
+    background: var(--accent-quiet);
 }
 
 /* The acts at the foot of a page, stacked rather than in a line because each
@@ -918,10 +1127,10 @@ code.key {
     gap: 1.5rem;
 }
 
-.pill--done { background: #e6f4ea; color: #1e6b32; }
-.pill--quiet { background: #eef1f5; color: #6b7280; }
-.pill--danger { background: #fdf2f2; color: #8a1b1b; }
-.pill--wait { background: #fff4e5; color: #8a5300; }
+.pill--done { background: var(--good-ground); color: var(--good-ink); }
+.pill--quiet { background: var(--surface-sunken); color: var(--ink-quiet); }
+.pill--danger { background: var(--danger-ground); color: var(--danger-ink); }
+.pill--wait { background: var(--warn-ground); color: var(--warn-ink); }
 
 /* --- What is running where ----------------------------------------------- */
 
@@ -951,7 +1160,7 @@ code.key {
 
 .environment__heading {
     margin: 0 0 0.5rem;
-    font-size: 0.8rem;
+    font-size: var(--text-sm);
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--ink-quiet);
@@ -964,7 +1173,7 @@ code.key {
     flex-wrap: wrap;
     padding: 0.35rem 0;
     border-top: 1px solid var(--line);
-    font-size: 0.9rem;
+    font-size: var(--text-base);
 }
 
 /*
@@ -974,7 +1183,7 @@ code.key {
  * working that will answer by itself in a few minutes. Sharing a colour between them
  * sends somebody to chase a pipeline that only needed waiting out.
  */
-.pill--running { background: #e8f0fb; color: #1b4f8a; }
+.pill--running { background: var(--running-ground); color: var(--running-ink); }
 
 /* Newer / older, with where you are between them. Wraps rather than squeezing on a
    narrow screen: "51–100 of 40,000" is the half that answers the question. */
@@ -991,7 +1200,7 @@ code.key {
 /* An opportunity nobody has touched for a fortnight. Said in words beside it as
    well — "21 days" is the label, and this only makes the eye land there first —
    because a reader who cannot see the colour still has to be able to find it. */
-.stale { color: #b32121; font-weight: 600; }
+.stale { color: var(--danger); font-weight: 600; }
 
 /* The week at a glance above the timesheet. Seven equal columns that become a
    scrolling strip on a narrow screen rather than squeezing to illegibility —
@@ -1011,31 +1220,31 @@ code.key {
     gap: 0.15rem;
     padding: 0.6rem 0.4rem;
     background: var(--surface-sunken);
-    border: 1px solid #e3e5e9;
+    border: 1px solid var(--line);
     border-radius: 6px;
 }
 
 .week__day--today {
-    border-color: #1b6ec2;
-    background: #eef4fb;
+    border-color: var(--accent);
+    background: var(--accent-quiet);
 }
 
 .week__name {
-    font-size: 0.7rem;
+    font-size: var(--text-xs);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #6b7280;
+    color: var(--ink-quiet);
 }
 
 .week__date {
-    font-size: 1.1rem;
+    font-size: var(--text-md);
     font-weight: 600;
 }
 
 .week__hours {
-    font-size: 0.8rem;
+    font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
-    color: #4b5563;
+    color: var(--ink-mid);
 }
 
 /* --- three classes that were asked for and never defined ------------------
@@ -1065,7 +1274,7 @@ code.key {
 .standing {
     margin: 0 0 2rem;
     padding-bottom: 1.5rem;
-    border-bottom: 1px solid #e3e5e9;
+    border-bottom: 1px solid var(--line);
     max-width: 44rem;
 }
 
@@ -1074,15 +1283,15 @@ code.key {
 }
 
 .standing h2 {
-    font-size: 1rem;
+    font-size: var(--text-md);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #6b7280;
+    color: var(--ink-quiet);
     margin-bottom: 0.5rem;
 }
 
 .standing__figure {
-    font-size: 2rem;
+    font-size: var(--text-xxl);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     margin: 0 0 0.25rem;
@@ -1098,8 +1307,8 @@ code.key {
     padding: 0.75rem 1rem;
     background: var(--surface-sunken);
     border-radius: 6px;
-    font-size: 0.85rem;
-    color: #4b5563;
+    font-size: var(--text-sm);
+    color: var(--ink-mid);
     max-width: 30rem;
 }
 
@@ -1119,10 +1328,10 @@ code.key {
 }
 
 .found h2 {
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #6b7280;
+    color: var(--ink-quiet);
     margin-bottom: 0.4rem;
 }
 
@@ -1135,9 +1344,9 @@ code.key {
 
 .inline input[type="search"] {
     padding: 0.4rem 0.5rem;
-    border: 1px solid #c8ccd4;
+    border: 1px solid var(--field-line);
     border-radius: 4px;
-    font-size: 0.95rem;
+    font-size: var(--text-base);
     min-width: 18rem;
 }
 
@@ -1147,14 +1356,14 @@ code.key {
     display: inline-block;
     padding: 0.5rem 0.75rem;
     background: var(--surface-sunken);
-    border: 1px solid #e3e5e9;
+    border: 1px solid var(--line);
     border-radius: 4px;
-    font-size: 0.95rem;
+    font-size: var(--text-base);
     word-break: break-all;
 }
 
 .scopes {
-    border: 1px solid #e3e5e9;
+    border: 1px solid var(--line);
     border-radius: 6px;
     padding: 0.75rem 1rem;
     display: flex;
@@ -1163,7 +1372,7 @@ code.key {
 }
 
 .scopes legend {
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     font-weight: 600;
     padding: 0 0.35rem;
 }
@@ -1179,7 +1388,7 @@ code.key {
    page and fifty cards is a wall. */
 .entry {
     padding: 0.85rem 0;
-    border-bottom: 1px solid #e3e5e9;
+    border-bottom: 1px solid var(--line);
     max-width: 52rem;
 }
 
@@ -1196,7 +1405,7 @@ code.key {
 }
 
 .entry__subject {
-    font-size: 0.78rem;
+    font-size: var(--text-xs);
     margin: 0.35rem 0 0;
 }
 
@@ -1258,35 +1467,17 @@ code.key {
      * The pills keep their meanings and lose their pastel grounds, which are invisible
      * against a dark surface. The hue carries the meaning; the lightness carries the
      * contrast, and those are separate decisions.
+     *
+     * Only the base pill is redefined here now. The variants used to be seven more lines
+     * in this block, each repeating a ground and an ink that the token set above already
+     * says — two places for one colour, and the reason six of the eight pill variants had
+     * drifted into using different greys for the same meaning. They read their pair from
+     * --good-ground/--good-ink and the rest.
      */
-    :root:not([data-theme="light"]) .pill { background: #2c3641; color: var(--ink); }
-    :root:not([data-theme="light"]) .pill--done { background: #1d3a27; color: #7ddc9b; }
-    :root:not([data-theme="light"]) .pill--danger { background: #3d2126; color: #ff9aa2; }
-    :root:not([data-theme="light"]) .pill--quiet { background: #2c3641; color: var(--ink-quiet); }
-    :root:not([data-theme="light"]) .pill--wait { background: #3a2f1c; color: #ffc987; }
 
-    /* Lifted for the same reason --link is: #1b4f8a is a dark blue on a dark ground, and
-       a pill whose word cannot be read is a state the page is not actually showing. */
-    :root:not([data-theme="light"]) .pill--running { background: #1e3346; color: #8ec5ff; }
-    :root:not([data-theme="light"]) .stale { color: #ff9aa2; }
-    :root:not([data-theme="light"]) .pill--active { background: #1d3a27; color: #7ddc9b; }
 
-    :root:not([data-theme="light"]) .refusal {
-        background-color: #3d2126;
-        color: #ff9aa2;
-    }
 
-    :root:not([data-theme="light"]) .done {
-        background-color: #1d3a27;
-        color: #7ddc9b;
-    }
 
-    :root:not([data-theme="light"]) .over { color: #ff9aa2; }
-
-    :root:not([data-theme="light"]) .portrait__initials {
-        background: var(--surface-sunken);
-        color: var(--ink-quiet);
-    }
 }
 
 :root[data-theme="dark"] body,
@@ -1327,29 +1518,10 @@ code.key {
     border-color: var(--line);
 }
 
-:root[data-theme="dark"] .pill { background: #2c3641; color: var(--ink); }
-:root[data-theme="dark"] .pill--done { background: #1d3a27; color: #7ddc9b; }
-:root[data-theme="dark"] .pill--danger { background: #3d2126; color: #ff9aa2; }
-:root[data-theme="dark"] .pill--quiet { background: #2c3641; color: var(--ink-quiet); }
-:root[data-theme="dark"] .pill--active { background: #1d3a27; color: #7ddc9b; }
-:root[data-theme="dark"] .pill--running { background: #1e3346; color: #8ec5ff; }
 
-:root[data-theme="dark"] .refusal {
-    background-color: #3d2126;
-    color: #ff9aa2;
-}
 
-:root[data-theme="dark"] .done {
-    background-color: #1d3a27;
-    color: #7ddc9b;
-}
 
-:root[data-theme="dark"] .over { color: #ff9aa2; }
 
-:root[data-theme="dark"] .portrait__initials {
-    background: var(--surface-sunken);
-    color: var(--ink-quiet);
-}
 
 
 /* --- the command palette ------------------------------------------------- */
@@ -1362,7 +1534,7 @@ code.key {
     border-radius: 6px;
     color: var(--ink-quiet);
     padding: 0.3rem 0.7rem;
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     cursor: pointer;
 }
 
@@ -1371,7 +1543,7 @@ code.key {
     border-radius: 3px;
     padding: 0 0.25rem;
     margin-left: 0.2rem;
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
 }
 
 .theme {
@@ -1411,7 +1583,7 @@ code.key {
     border: 0;
     border-bottom: 1px solid var(--line);
     padding: 0.9rem 1rem;
-    font-size: 1rem;
+    font-size: var(--text-md);
     background: var(--surface);
     color: var(--ink);
 }
@@ -1446,7 +1618,7 @@ code.key {
     padding: 0.7rem 1rem;
     margin: 0;
     color: var(--ink-quiet);
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
 }
 
 .palette__hint kbd {

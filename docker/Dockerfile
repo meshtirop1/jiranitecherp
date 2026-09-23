@@ -22,6 +22,14 @@ COPY src/JiranisokoTech.Infrastructure/*.csproj src/JiranisokoTech.Infrastructur
 COPY src/JiranisokoTech.Web/*.csproj src/JiranisokoTech.Web/
 COPY tests/JiranisokoTech.Tests/*.csproj tests/JiranisokoTech.Tests/
 
+# The measurement harness. It is in the solution, so restore needs its project file even
+# though nothing in the image runs it — and when it was added without this line the image
+# stopped building entirely: `dotnet restore` failed on a missing .csproj, and
+# `compose up --build` went on serving the previous image rather than stopping. The local
+# build and the whole test suite stayed green throughout, which is why this was found by
+# looking at a page in a browser and noticing it was the old one.
+COPY tools/JiranisokoTech.ScaleCheck/*.csproj tools/JiranisokoTech.ScaleCheck/
+
 RUN --mount=type=cache,target=/root/.nuget/packages \
     dotnet restore JiranisokoTech.slnx
 

@@ -113,6 +113,12 @@ Each of these cost real time. They are written down so they cost it once.
   artifact, not a missing `@using`. The component's generated type is not there yet
   on that pass. Build a second time before adding a using directive that the
   compiler will then tell you is unnecessary.
+- **A project added to the solution must be added to the Dockerfile too.** The
+  restore layer copies each `.csproj` by name, so a new one makes
+  `dotnet restore JiranisokoTech.slnx` fail *inside the image only*. The local
+  build and the whole suite stay green, and `compose up --build` goes on serving
+  the previous image rather than stopping — so the browser shows yesterday's
+  application and every conclusion drawn from it is wrong.
 - **Page tests in one class share one database** through the class fixture, so
   "nothing has been recorded yet" is true only for whichever test runs first.
   Assert against a state no other test in the class produces.
