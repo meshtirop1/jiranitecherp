@@ -1,0 +1,374 @@
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Documents
+@using JiranisokoTech.Domain.Documents
+@using Microsoft.AspNetCore.Authorization
+@inject DocumentService Files
+@inject NavigationManager Navigation
+
+@*
+    Documents attached to one thing, with their versions and what they are about.
+
+    Its own component because five screens attach documents and each had its own copy of a
+    list and an upload form — so versioning added in one of them would have been missing
+    from the other four.
+*@
+
+@if (Current.Count == 0)
+{
+    <p class="empty">@(Empty ?? "Nothing attached yet.")</p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Attached documents</caption>
+        <thead>
+            <tr>
+                <th scope="col">File</th>
+                <th scope="col">About</th>
+                <th scope="col">Added</th>
+                <th scope="col"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var document in Current)
+            {
+                <tr>
+                    <td>
+                        <a href="/documents/@document.Id">@document.FileName</a>
+                        <span class="subtle">@document.Size</span>
+
+                        @if (Versions.TryGetValue(document.Id, out var history) && history > 1)
+                        {
+                            @*
+                                Said as a count rather than a list, because the current
+                                version is what somebody wants nine times in ten and the
+                                history is what they want on the tenth.
+                            *@
+                            <span class="pill pill--quiet">version @history</span>
+                        }
+                    </td>
+                    <td class="subtle">
+                        @if (document.Tags is { Length: > 0 } tags)
+                        {
+                            @tags
+                        }
+                        else
+                        {
+                            <text>—</text>
+                        }
+                        @if (document.Note is { } note)
+                        {
+                            <span class="subtle">@note</span>
+                        }
+                    </td>
+                    <td>@document.UploadedAt.ToString("d MMM yyyy")</td>
+                    <td>
+                        <AuthorizeView Policy="@ManagePolicy" Context="mayChange">
+                            <EditForm Model="Tagging" method="post"
+                                      FormName="@($"tag-{document.Id}")"
+                                      OnValidSubmit="() => Tag(document.Id)" class="inline">
+                                <InputText @bind-Value="Tagging.Tags"
+                                           placeholder="contract signed 2026" />
+                                <button type="submit" class="button button--quiet">
+                                    Say what it is about
+                                </button>
+                            </EditForm>
+
+                            @*
+                                Removing takes the file with the row, and there is no
+                                confirmation step — the act is on the audit trail with a
+                                name against it, and a dialog everybody clicks through is
+                                ceremony rather than a safeguard.
+                            *@
+                            <EditForm Model="Nothing" method="post"
+                                      FormName="@($"detach-{document.Id}")"
+                                      OnValidSubmit="() => Detach(document.Id)" class="inline">
+                                <button type="submit" class="danger">Remove</button>
+                            </EditForm>
+
+                            <EditForm Model="Nothing" method="post"
+                                      FormName="@($"version-{document.Id}")"
+                                      OnValidSubmit="() => Replace(document.Id)"
+                                      enctype="multipart/form-data" class="inline">
+                                @*
+                                    A new version rather than a replacement. The old file
+                                    stays and is marked superseded, because the question
+                                    asked two years later is "what did we agree in March".
+                                *@
+                                <input type="file" name="version" />
+                                <button type="submit" class="button button--quiet">
+                                    New version
+                                </button>
+                            </EditForm>
+                        </AuthorizeView>
+                    </td>
+                </tr>
+
+                @if (Showing == document.Id && History.Count > 1)
+                {
+                    <tr>
+                        <td colspan="4">
+                            <ul class="plain">
+                                @foreach (var version in History)
+                                {
+                                    <li>
+                                        <a href="/documents/@version.Id">@version.FileName</a>
+                                        <span class="subtle">
+                                            @version.UploadedAt.ToString("d MMM yyyy")
+                                        </span>
+                                        @if (!version.IsCurrent)
+                                        {
+                                            <span class="pill pill--quiet">superseded</span>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+}
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<AuthorizeView Policy="@ManagePolicy" Context="mayAttach">
+    <EditForm Model="Attaching" method="post" OnValidSubmit="Attach" FormName="attach"
+              enctype="multipart/form-data" class="inline">
+        <label>
+            <span class="visually-hidden">A file</span>
+            <input type="file" name="document" />
+        </label>
+        <InputText @bind-Value="Attaching.Note" placeholder="What it is" />
+        <InputText @bind-Value="Attaching.Tags" placeholder="Tags" />
+        <button type="submit" class="button button--quiet">Attach</button>
+    </EditForm>
+</AuthorizeView>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    [Parameter]
+    [EditorRequired]
+    public AttachedTo Kind { get; set; }
+
+    [Parameter]
+    [EditorRequired]
+    public Guid OwnerId { get; set; }
+
+    /// <summary>The permission that may attach one of these.</summary>
+    /// <remarks>
+    /// Passed in rather than derived, because the caller already knows and deriving it here
+    /// would put a second copy of the table in Documents.PermissionToAttach — which is the
+    /// one thing that table exists to prevent.
+    /// </remarks>
+    [Parameter]
+    [EditorRequired]
+    public string ManagePolicy { get; set; } = string.Empty;
+
+    /// <summary>What to say when there is nothing, since it differs per screen.</summary>
+    [Parameter]
+    public string? Empty { get; set; }
+
+    /// <summary>Which document's history is open, if any.</summary>
+    [Parameter]
+    public Guid? Showing { get; set; }
+
+    private object Nothing { get; } = new();
+
+    private AttachInput _attaching = new();
+
+    [SupplyParameterFromForm(FormName = "attach")]
+    private AttachInput Attaching
+    {
+        get => _attaching;
+        set => _attaching = value ?? new AttachInput();
+    }
+
+    private TagInput _tagging = new();
+
+    [SupplyParameterFromForm(FormName = "tag")]
+    private TagInput Tagging
+    {
+        get => _tagging;
+        set => _tagging = value ?? new TagInput();
+    }
+
+    private List<Attachment> Current { get; set; } = [];
+
+    /// <summary>How many versions each current document has behind it.</summary>
+    private Dictionary<Guid, int> Versions { get; set; } = [];
+
+    private List<Attachment> History { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var all = await Files.ForAsync(Kind, OwnerId);
+
+        Current = [.. all.Where(document => document.IsCurrent)];
+
+        /*
+         * Counted from what is already in hand rather than by walking each chain, because
+         * the list has every version of everything on this owner — so the count is a
+         * grouping and not a query per row.
+         */
+        Versions = Current.ToDictionary(
+            document => document.Id,
+            document => 1 + all.Count(other =>
+                other.SupersededById is not null && Leads(all, other, document.Id)));
+
+        History = Showing is { } showing ? await Files.VersionsOfAsync(Oldest(all, showing)) : [];
+    }
+
+    /// <summary>Does this superseded document eventually lead to that current one?</summary>
+    /// <remarks>
+    /// Walked rather than assumed, because a document three versions old points at the next
+    /// one and not at the current one — so counting only direct predecessors would report
+    /// every chain as two versions long.
+    /// </remarks>
+    private static bool Leads(List<Attachment> all, Attachment from, Guid to)
+    {
+        var walking = from;
+        var seen = new HashSet<Guid> { walking.Id };
+
+        while (walking.SupersededById is { } next && seen.Add(next))
+        {
+            if (next == to)
+            {
+                return true;
+            }
+
+            if (all.FirstOrDefault(one => one.Id == next) is not { } found)
+            {
+                return false;
+            }
+
+            walking = found;
+        }
+
+        return false;
+    }
+
+    /// <summary>The first version of whichever chain this document is in.</summary>
+    private static Guid Oldest(List<Attachment> all, Guid anyVersion) =>
+        all.FirstOrDefault(one => one.SupersededById == anyVersion) is { } earlier
+            ? Oldest(all, earlier.Id)
+            : anyVersion;
+
+    private async Task Attach()
+    {
+        Refusal = null;
+
+        var file = Request?.Request.Form.Files["document"];
+
+        if (file is null || file.Length == 0)
+        {
+            Refusal = "Choose a file first.";
+            return;
+        }
+
+        try
+        {
+            await using var contents = file.OpenReadStream();
+
+            var attached = await Files.AttachAsync(
+                Kind, OwnerId, contents, file.FileName, file.Length, null, Attaching.Note);
+
+            if (Attaching.Tags is { Length: > 0 })
+            {
+                await Files.TagAsync(attached.Id, Attaching.Tags);
+            }
+
+            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+        }
+    }
+
+    private async Task Replace(Guid supersedes)
+    {
+        Refusal = null;
+
+        var file = Request?.Request.Form.Files["version"];
+
+        if (file is null || file.Length == 0)
+        {
+            Refusal = "Choose the new version first.";
+            return;
+        }
+
+        try
+        {
+            await using var contents = file.OpenReadStream();
+
+            await Files.AttachVersionAsync(
+                supersedes, contents, file.FileName, file.Length, null);
+
+            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+        }
+    }
+
+    private async Task Detach(Guid attachmentId)
+    {
+        Refusal = null;
+
+        try
+        {
+            await Files.RemoveAsync(attachmentId);
+            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+        }
+    }
+
+    private async Task Tag(Guid attachmentId)
+    {
+        Refusal = null;
+
+        try
+        {
+            await Files.TagAsync(attachmentId, Tagging.Tags);
+            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+        }
+        catch (InvalidOperationException exception)
+        {
+            Refusal = exception.Message;
+        }
+    }
+
+    private sealed class AttachInput
+    {
+        [StringLength(500)]
+        public string? Note { get; set; }
+
+        [StringLength(500)]
+        public string? Tags { get; set; }
+    }
+
+    private sealed class TagInput
+    {
+        [StringLength(500)]
+        public string? Tags { get; set; }
+    }
+}

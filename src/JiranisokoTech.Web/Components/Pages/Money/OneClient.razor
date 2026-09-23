@@ -218,51 +218,14 @@ else
     <section class="standing">
         <h2>Attached</h2>
 
-        @if (Attached.Count == 0)
-        {
-            <p class="empty">Nothing attached. Contracts and signed orders belong here.</p>
-        }
-        else
-        {
-            <ul class="plain">
-                @foreach (var file in Attached)
-                {
-                    <li>
-                        <a href="/documents/@file.Id">@file.FileName</a>
-                        <span class="subtle">
-                            @file.Size, @file.UploadedAt.ToString("d MMM yyyy")@(file.Note is { } note ? $" — {note}" : null)
-                        </span>
+        @*
+            One component, because five screens attach documents and each had its own copy
+            of a list and an upload form — so versioning added in one of them would have
+            been missing from the other four.
+        *@
+        <Attached Kind="AttachedTo.Client" OwnerId="Id" ManagePolicy="@ManagePolicy"
+                  Empty="Nothing attached. Contracts and signed orders belong here." />
 
-                        <AuthorizeView Policy="@ManagePolicy" Context="mayRemove">
-                            @*
-                                Removing takes the file with the row. There is no
-                                confirmation step here and that is deliberate: the
-                                act is on the audit trail with a name against it,
-                                and a dialog that everybody clicks through is
-                                ceremony rather than a safeguard.
-                            *@
-                            <form method="post" @formname="@($"detach-{file.Id}")"
-                                  @onsubmit="() => Detach(file.Id)">
-                                <AntiforgeryToken />
-                                <button type="submit" class="danger">Remove</button>
-                            </form>
-                        </AuthorizeView>
-                    </li>
-                }
-            </ul>
-        }
-
-        <AuthorizeView Policy="@ManagePolicy" Context="mayAttach">
-            <EditForm Model="Attaching" method="post" OnValidSubmit="Attach" FormName="attach"
-                      enctype="multipart/form-data" class="inline">
-                <label>
-                    <span class="visually-hidden">A file</span>
-                    <input type="file" name="document" />
-                </label>
-                <InputText @bind-Value="Attaching.Note" placeholder="What it is" />
-                <button type="submit" class="button button--quiet">Attach</button>
-            </EditForm>
-        </AuthorizeView>
     </section>
 }
 

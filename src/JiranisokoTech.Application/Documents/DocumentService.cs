@@ -202,9 +202,125 @@ public sealed class DocumentService(
         }
     }
 
+    /// <summary>
+    /// Attach a new version of something already here.
+    /// </summary>
+    /// <remarks>
+    /// The old file is kept and marked superseded rather than replaced. Replacing it would
+    /// destroy the evidence of what was agreed before, and the question asked two years
+    /// later is "what did we agree in March" — not "what is current".
+    ///
+    /// The two writes are one save, so a crash between them cannot leave two versions both
+    /// claiming to be current. The alternative — save the new one, then mark the old — has a
+    /// window in which the list shows two contracts and nobody can tell which the client
+    /// signed.
+    /// </remarks>
+    public async Task<Attachment> AttachVersionAsync(
+        Guid supersedes,
+        Stream contents,
+        string fileName,
+        long sizeBytes,
+        Guid? uploadedById,
+        string? note = null,
+        CancellationToken cancellationToken = default)
+    {
+        var previous = await attachments.FindAsync(supersedes, cancellationToken)
+            ?? throw new InvalidOperationException("There is no such document to replace.");
+
+        if (!previous.IsCurrent)
+        {
+            throw new InvalidOperationException(
+                "That version has already been replaced. Add the new one to whichever version "
+                + "is current, so the chain stays a chain rather than a fork.");
+        }
+
+        if (!Documents.Accepts(fileName, sizeBytes, out var why))
+        {
+            throw new InvalidOperationException(why);
+        }
+
+        var stored = await store.SaveAsync(contents, fileName, cancellationToken);
+
+        try
+        {
+            var attachment = Attachment.Of(
+                previous.Kind,
+                previous.OwnerId,
+                fileName,
+                stored,
+                sizeBytes,
+                uploadedById,
+                clock.Now,
+                note);
+
+            // Carried forward, because a new version of a tagged document is about the same
+            // thing — and a version that lost its tags would vanish from every search that
+            // found the one before it.
+            attachment.Tagged(previous.Tags);
+
+            attachments.Add(attachment);
+            previous.SupersededBy(attachment.Id, clock.Now);
+
+            await attachments.SaveAsync(cancellationToken);
+
+            return attachment;
+        }
+        catch
+        {
+            await store.DeleteAsync(stored, cancellationToken);
+
+            throw;
+        }
+    }
+
+    /// <summary>Say what a document is about, for finding it again.</summary>
+    public async Task TagAsync(
+        Guid attachmentId, string? tags, CancellationToken cancellationToken = default)
+    {
+        var attachment = await attachments.FindAsync(attachmentId, cancellationToken)
+            ?? throw new InvalidOperationException("There is no such document.");
+
+        attachment.Tagged(tags);
+        await attachments.SaveAsync(cancellationToken);
+    }
+
     public Task<List<Attachment>> ForAsync(
         AttachedTo kind, Guid ownerId, CancellationToken cancellationToken = default) =>
         attachments.ForAsync(kind, ownerId, cancellationToken);
+
+    /// <summary>
+    /// Every version of one document, oldest first.
+    /// </summary>
+    /// <remarks>
+    /// Walked forwards from whichever version was asked for rather than gathered by a shared
+    /// identifier, because the chain is what exists — there is no "document" row above the
+    /// versions, and inventing one would be a second thing to keep in step with them.
+    /// </remarks>
+    public async Task<List<Attachment>> VersionsOfAsync(
+        Guid attachmentId, CancellationToken cancellationToken = default)
+    {
+        if (await attachments.FindAsync(attachmentId, cancellationToken) is not { } start)
+        {
+            return [];
+        }
+
+        var chain = new List<Attachment> { start };
+        var seen = new HashSet<Guid> { start.Id };
+        var walking = start;
+
+        while (walking.SupersededById is { } next && seen.Add(next))
+        {
+            if (await attachments.FindAsync(next, cancellationToken) is not { } newer)
+            {
+                break;
+            }
+
+            chain.Add(newer);
+            walking = newer;
+        }
+
+        return chain;
+    }
 
     public Task<Attachment?> FindAsync(Guid id, CancellationToken cancellationToken = default) =>
         attachments.FindAsync(id, cancellationToken);

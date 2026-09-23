@@ -148,6 +148,88 @@ public sealed class Attachment : Entity, IAuditable
         _ => $"{SizeBytes / 1024.0 / 1024.0:0.#}MB",
     };
 
+    /// <summary>
+    /// Which version of this document it is.
+    /// </summary>
+    /// <remarks>
+    /// Section 24 had attachments with no versions, so replacing a signed contract meant
+    /// either deleting the old one — destroying the evidence of what was agreed before — or
+    /// attaching a second file with no way to say which was current. Both happen in practice
+    /// and the second is worse, because the list shows two contracts and nobody can tell
+    /// which one the client signed.
+    ///
+    /// Versions are a chain rather than a number on a row: each new version points at the
+    /// one it replaced, and the one it replaced is marked superseded. That keeps every
+    /// version retrievable — which is the whole point, since the question asked two years
+    /// later is "what did we agree in March" and not "what is current".
+    /// </remarks>
+    public Guid? SupersededById { get; private set; }
+
+    /// <summary>When this stopped being the current version.</summary>
+    public DateTimeOffset? SupersededAt { get; private set; }
+
+    /// <summary>Is this the version that counts?</summary>
+    public bool IsCurrent => SupersededAt is null;
+
+    /// <summary>
+    /// What this document is about, for finding it again.
+    /// </summary>
+    /// <remarks>
+    /// A single string of space-separated words rather than a table of tags, and that is a
+    /// judgement about scale rather than about modelling. A tag table buys renaming a tag
+    /// everywhere at once and a list of tags in use; it costs a join on every document read,
+    /// a screen to manage the vocabulary, and a decision about who may invent a tag. For a
+    /// firm whose documents number in the thousands, the string is searchable with the same
+    /// query the file name uses and needs none of that.
+    /// </remarks>
+    public string? Tags { get; private set; }
+
+    /// <summary>Say this has been replaced by a newer version.</summary>
+    /// <remarks>
+    /// Recorded on the old one rather than by a flag on the new, so that finding the current
+    /// version never means reading every version to see which is newest. The chain is walked
+    /// forwards when somebody wants the history and not at all when they want the document.
+    /// </remarks>
+    public void SupersededBy(Guid attachmentId, DateTimeOffset at)
+    {
+        if (!IsCurrent)
+        {
+            return;
+        }
+
+        SupersededById = attachmentId;
+        SupersededAt = at;
+
+        Raise(new DocumentSuperseded(Id, attachmentId, Kind, OwnerId, at));
+    }
+
+    /// <summary>
+    /// Set what this is about.
+    /// </summary>
+    /// <remarks>
+    /// Lower-cased and de-duplicated, because "Contract" and "contract" are one tag to
+    /// everybody except a string comparison — and a document tagged both would appear twice
+    /// in any list built from the words.
+    /// </remarks>
+    public void Tagged(string? tags)
+    {
+        if (string.IsNullOrWhiteSpace(tags))
+        {
+            Tags = null;
+            return;
+        }
+
+        var words = tags
+            .Split([' ', ',', ';'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(word => word.Trim().ToLowerInvariant())
+            .Where(word => word.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .Take(20)
+            .ToList();
+
+        Tags = words.Count == 0 ? null : string.Join(' ', words);
+    }
+
     public void Describe(string? note) =>
         Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
 
@@ -167,4 +249,19 @@ public sealed record DocumentAttached(
     AttachedTo Kind,
     Guid OwnerId,
     string FileName,
+    DateTimeOffset At) : DomainEvent;
+
+/// <summary>
+/// A document has been replaced by a newer version.
+/// </summary>
+/// <remarks>
+/// An event rather than a silent field change, because a superseded contract is a fact the
+/// rest of the firm may care about — the terms somebody is billing against have moved, and
+/// the invoice that quotes the old reference is now quoting a document nobody should act on.
+/// </remarks>
+public sealed record DocumentSuperseded(
+    Guid AttachmentId,
+    Guid ReplacedById,
+    AttachedTo Kind,
+    Guid OwnerId,
     DateTimeOffset At) : DomainEvent;

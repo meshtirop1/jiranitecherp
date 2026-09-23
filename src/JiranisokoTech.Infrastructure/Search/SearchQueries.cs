@@ -1,4 +1,5 @@
 using JiranisokoTech.Application.Authorization;
+using JiranisokoTech.Domain.Documents;
 using JiranisokoTech.Infrastructure.Authorization;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Work;
@@ -16,6 +17,17 @@ public enum ResultKind
     WorkItem = 4,
     Invoice = 5,
     Candidate = 6,
+
+    /// <summary>
+    /// An attached file.
+    /// </summary>
+    /// <remarks>
+    /// Added last and deliberately kept last in the results, because a document is almost
+    /// never what somebody is looking for when they type into a search box — they want the
+    /// client or the project the document is attached to, and the document is how they get
+    /// there when they cannot remember which.
+    /// </remarks>
+    Document = 7,
 }
 
 public sealed record SearchResult(ResultKind Kind, Guid Id, string Title, string? Detail, string Href);
@@ -128,6 +140,53 @@ public sealed class SearchQueries(AppDbContext database, Reaches reaches)
                 project.Name,
                 $"{project.Code} — {Spaced(project.Status.ToString())}",
                 "/projects")));
+        }
+
+        /*
+         * Documents, matched on file name and tags, and narrowed to the kinds this person
+         * may see.
+         *
+         * The narrowing is the whole of the care here. A document inherits the permission of
+         * the thing it is attached to — see Documents.PermissionToSee — so searching them
+         * without that filter would let anybody who can open the search box find the file
+         * name of every contract, payslip and disciplinary letter in the firm. A file name is
+         * not nothing: "grievance-outcome-mwangi.pdf" discloses the whole of its contents.
+         *
+         * Superseded versions are excluded. Somebody searching wants the contract, not the
+         * four drafts of it, and the history is on the thing the document is attached to.
+         */
+        var kinds = Enum.GetValues<AttachedTo>()
+            .Where(kind => permissions.Contains(
+                Application.Documents.Documents.PermissionToSee(kind)))
+            .ToList();
+
+        if (kinds.Count > 0)
+        {
+            var documents = await database.Attachments
+                .AsNoTracking()
+                .Where(document => kinds.Contains(document.Kind)
+                    && document.SupersededAt == null
+                    && (document.FileName.ToLower().Contains(cleaned)
+                        || (document.Tags != null && document.Tags.Contains(cleaned))))
+                .OrderByDescending(document => document.UploadedAt)
+                .Take(PerGroup)
+                .Select(document => new
+                {
+                    document.Id,
+                    document.FileName,
+                    document.Kind,
+                    document.Tags,
+                })
+                .ToListAsync(cancellationToken);
+
+            found.AddRange(documents.Select(document => new SearchResult(
+                ResultKind.Document,
+                document.Id,
+                document.FileName,
+                document.Tags is { Length: > 0 }
+                    ? $"{Spaced(document.Kind.ToString())} — {document.Tags}"
+                    : Spaced(document.Kind.ToString()),
+                $"/documents/{document.Id}")));
         }
 
         if (permissions.Contains(Permissions.TasksViewAll)

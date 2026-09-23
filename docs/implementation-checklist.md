@@ -86,7 +86,7 @@ By section: **34 done, 22 partial, 42 not started, 1 excluded by agreement.**
 | ☐ | 6 | Performance, goals | |
 | ☐ | 6 | Employee announcements | |
 | ✅ | 24 | Employee documents | Narrowed to employees.manage plus the person themselves |
-| ◐ | 24 | Document management | Attachments on six kinds. No versioning, tags, search or relationships |
+| ✅ | 24 | Document management | Attachments on seven kinds, with versions that supersede rather than replace, tags, and search narrowed to the kinds a reader may see |
 | ☐ | 22 | Payroll | |
 | ◐ | 16 | Clients | Record, state, terms, documents, invoices. No leads, contacts, opportunities, pipeline or activities |
 | ✅ | 17 | Client contracts | Draft/active/terminated, expiry by date, signed copy attached |

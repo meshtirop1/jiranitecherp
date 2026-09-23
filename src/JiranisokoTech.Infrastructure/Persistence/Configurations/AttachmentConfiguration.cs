@@ -17,7 +17,16 @@ public sealed class AttachmentConfiguration : IEntityTypeConfiguration<Attachmen
         builder.Property(one => one.StoredName).HasMaxLength(100).IsRequired();
         builder.Property(one => one.Note).HasMaxLength(500);
 
+        builder.Property(one => one.Tags).HasMaxLength(500);
+
         builder.Ignore(one => one.Size);
+        builder.Ignore(one => one.IsCurrent);
+
+        /*
+         * Which version is current, per thing. Every list of documents asks for the current
+         * ones, and without this the query reads every superseded version to discard it.
+         */
+        builder.HasIndex(one => new { one.Kind, one.OwnerId, one.SupersededAt });
 
         // Every read is "what is attached to this one thing", so that is the
         // index. Kind first because it narrows hardest.
