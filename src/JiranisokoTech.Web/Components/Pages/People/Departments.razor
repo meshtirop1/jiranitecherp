@@ -55,6 +55,18 @@ else
                     <AuthorizeView Policy="@ManagePolicy" Context="manage">
                         <td class="row-actions">
                             @*
+                                Renaming reads its value the same way the head
+                                does, and for the same reason: one form per row
+                                means no compile-time form name to bind against.
+                            *@
+                            <form method="post" @formname="@($"rename-{department.Id}")"
+                                  @onsubmit="() => Rename(department.Id)" class="inline">
+                                <AntiforgeryToken />
+                                <input type="text" name="name" value="@department.Name" />
+                                <button type="submit" class="button button--quiet">Rename</button>
+                            </form>
+
+                            @*
                                 The chosen head is read from the posted form
                                 rather than bound. Binding needs a form name
                                 fixed at compile time, and there is one form per
@@ -171,6 +183,24 @@ else
 
     private Task SetHead(Guid departmentId) =>
         Run(() => Service.AppointHeadAsync(departmentId, Chosen));
+
+    /// <summary>
+    /// A department keeps its identity when its name changes.
+    /// </summary>
+    /// <remarks>
+    /// Departments get renamed — Engineering becomes Delivery — and everything
+    /// pointing at one has to follow it. That is why this renames rather than
+    /// closing the old and opening a new one, which would strand every employee
+    /// and every project on a department nobody works in.
+    /// </remarks>
+    private Task Rename(Guid departmentId) =>
+        Run(() => Service.RenameDepartmentAsync(
+            departmentId,
+            Request?.Request.Form["name"].ToString() ?? string.Empty,
+            // The description is left as it is. This form renames and nothing
+            // else, so passing null here would quietly wipe a description
+            // somebody wrote.
+            Rows.FirstOrDefault(row => row.Id == departmentId)?.Description));
 
     private Task Close(Guid departmentId) => Run(() => Service.CloseDepartmentAsync(departmentId));
 

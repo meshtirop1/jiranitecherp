@@ -4,6 +4,7 @@
 @using JiranisokoTech.Application.Approvals
 @using JiranisokoTech.Application.Authorization
 @using JiranisokoTech.Domain.Approvals
+@using JiranisokoTech.Domain.People
 @using JiranisokoTech.Infrastructure.Approvals
 @using JiranisokoTech.Infrastructure.People
 @using JiranisokoTech.Web.Authorization
@@ -107,6 +108,7 @@ else
                     <th scope="col">Asked by</th>
                     <th scope="col">Waiting on</th>
                     <th scope="col">Since</th>
+                    <th scope="col"><span class="visually-hidden">Unstick it</span></th>
                 </tr>
             </thead>
             <tbody>
@@ -122,6 +124,49 @@ else
                         *@
                         <td>@(request.WaitingOnName ?? "Nobody")</td>
                         <td>@Age(request.RequestedAt)</td>
+                        <td class="row-actions">
+                            @*
+                                What to do when a chain is stuck on one person.
+
+                                This is the whole reason the page lists other
+                                people's approvals: seeing that something has
+                                waited three weeks is only useful if there is
+                                something to do about it. Somebody has left, or
+                                is on leave, or was never the right decider —
+                                and until now the answer was to withdraw the
+                                request and raise it again, losing the trail.
+
+                                Both acts are the administrator's, not the
+                                decider's: a person who could reassign a step to
+                                themselves could approve their own request.
+                            *@
+                            @if (Waiting(request) is { } waiting)
+                            {
+                                <EditForm Model="Moving" method="post"
+                                          FormName="@($"reassign-{request.Id}")"
+                                          OnValidSubmit="() => Reassign(request.Id, waiting.Order)"
+                                          class="inline">
+                                    <InputSelect @bind-Value="Moving.EmployeeId">
+                                        <option value="">Somebody else</option>
+                                        @foreach (var person in Staff)
+                                        {
+                                            <option value="@person.Id">@person.FullName</option>
+                                        }
+                                    </InputSelect>
+                                    <button type="submit" class="button button--quiet">Reassign</button>
+                                </EditForm>
+
+                                <EditForm Model="Skipping" method="post"
+                                          FormName="@($"skip-{request.Id}")"
+                                          OnValidSubmit="() => Skip(request.Id, waiting.Order)"
+                                          class="inline">
+                                    <DataAnnotationsValidator />
+                                    <InputText @bind-Value="Skipping.Reason" placeholder="Why skip" />
+                                    <button type="submit" class="danger">Skip</button>
+                                    <ValidationMessage For="() => Skipping.Reason" />
+                                </EditForm>
+                            }
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -132,6 +177,26 @@ else
 @code {
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private List<PersonRow> Staff { get; set; } = [];
+
+    private MoveInput _moving = new();
+
+    [SupplyParameterFromForm(FormName = "reassign")]
+    private MoveInput Moving
+    {
+        get => _moving;
+        set => _moving = value ?? new MoveInput();
+    }
+
+    private SkipInput _skipping = new();
+
+    [SupplyParameterFromForm(FormName = "skip")]
+    private SkipInput Skipping
+    {
+        get => _skipping;
+        set => _skipping = value ?? new SkipInput();
+    }
 
     private RefusalInput _refusing = new();
 
@@ -164,6 +229,11 @@ else
         }
 
         Mine = Me is { } me ? await Queries.WaitingOnAsync(me) : [];
+
+        // Who a stalled step can be moved to. Only people actually working
+        // here: reassigning to somebody who has left moves the chain from one
+        // person who cannot answer it to another.
+        Staff = await People.RosterAsync(status: EmploymentStatus.Active);
         Open = user.HasPermission(Permissions.AuditView) ? await Queries.PendingAsync() : [];
     }
 
@@ -228,6 +298,41 @@ else
             < 14 => $"{days} days",
             _ => $"{days / 7} weeks",
         };
+    }
+
+    /// <summary>The step a stalled chain is sitting on, if it is sitting on one.</summary>
+    /// <remarks>
+    /// Read from the steps rather than from WaitingOnId, because acting on a
+    /// step needs its order and the identifier alone does not carry it.
+    /// </remarks>
+    private static StepRow? Waiting(ApprovalRow request) =>
+        request.Steps.FirstOrDefault(step => step.Status == StepStatus.Waiting);
+
+    private async Task Reassign(Guid id, int order)
+    {
+        if (Moving.EmployeeId is not { } to)
+        {
+            Refusal = "Choose who it should go to.";
+
+            return;
+        }
+
+        await Run(() => Service.ReassignAsync(id, order, to), "Reassigned.");
+    }
+
+    private Task Skip(Guid id, int order) =>
+        Run(() => Service.SkipAsync(id, order, Skipping.Reason), "Skipped.");
+
+    private sealed class MoveInput
+    {
+        public Guid? EmployeeId { get; set; }
+    }
+
+    private sealed class SkipInput
+    {
+        [Required(ErrorMessage = "Say why this step is being skipped. It stays on the trail.")]
+        [StringLength(500)]
+        public string Reason { get; set; } = string.Empty;
     }
 
     private sealed class RefusalInput

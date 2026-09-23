@@ -126,6 +126,7 @@ else
                     <th scope="col">Hours</th>
                     <th scope="col">Against</th>
                     <th scope="col">What</th>
+                    <th scope="col">Correct it</th>
                     <th scope="col">State</th>
                 </tr>
             </thead>
@@ -137,6 +138,33 @@ else
                         <td class="number">@entry.Duration</td>
                         <td>@(entry.ProjectName ?? "—")</td>
                         <td>@(entry.Note ?? "—")</td>
+                        <td>
+                            @if (!entry.IsApproved)
+                            {
+                                @*
+                                    Correctable only until it is approved, which
+                                    is the rule the domain enforces: an approved
+                                    hour may already be on an invoice, and an
+                                    invoice that no longer matches its evidence
+                                    is worse than a wrong hour.
+                                *@
+                                <EditForm Model="Amending" method="post"
+                                          FormName="@($"amend-{entry.Id}")"
+                                          OnValidSubmit="() => Amend(entry.Id)" class="inline">
+                                    <DataAnnotationsValidator />
+                                    <InputNumber @bind-Value="Amending.Hours" min="0" max="16" />
+                                    <span class="subtle">h</span>
+                                    <InputNumber @bind-Value="Amending.Minutes" min="0" max="59" />
+                                    <span class="subtle">m</span>
+                                    <InputText @bind-Value="Amending.Note" placeholder="What you did" />
+                                    <label class="check">
+                                        <InputCheckbox @bind-Value="Amending.IsBillable" />
+                                        <span>Billable</span>
+                                    </label>
+                                    <button type="submit" class="button button--quiet">Correct it</button>
+                                </EditForm>
+                            }
+                        </td>
                         <td>
                             @if (entry.IsInvoiced)
                             {
@@ -166,6 +194,15 @@ else
 @code {
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private AmendInput _amending = new();
+
+    [SupplyParameterFromForm(FormName = "amend")]
+    private AmendInput Amending
+    {
+        get => _amending;
+        set => _amending = value ?? new AmendInput();
+    }
 
     private LogInput _input = new();
 
@@ -257,9 +294,44 @@ else
         }
     }
 
+    private Task Amend(Guid id) => TryAsync(() => Timesheets.AmendAsync(
+        id, (Amending.Hours * 60) + Amending.Minutes, Amending.Note, Amending.IsBillable));
+
+    private async Task TryAsync(Func<Task> act)
+    {
+        Refusal = null;
+
+        try
+        {
+            await act();
+            Navigation.NavigateTo("/time", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException
+                or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
     private static string Total(int minutes) => minutes % 60 == 0
         ? $"{minutes / 60}h"
         : minutes < 60 ? $"{minutes}m" : $"{minutes / 60}h {minutes % 60}m";
+
+    private sealed class AmendInput
+    {
+        [Range(0, 16)]
+        public int Hours { get; set; }
+
+        [Range(0, 59)]
+        public int Minutes { get; set; }
+
+        [StringLength(500)]
+        public string? Note { get; set; }
+
+        public bool IsBillable { get; set; } = true;
+    }
 
     private sealed class LogInput
     {

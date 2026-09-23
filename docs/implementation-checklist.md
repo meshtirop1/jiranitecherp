@@ -15,7 +15,7 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 23 September 2026 · 647 tests · verified against PostgreSQL in
+Last updated: 23 September 2026 · 652 tests · verified against PostgreSQL in
 Docker.
 
 ---
@@ -33,7 +33,7 @@ from repositories, pull requests, CI and deployments. None of that collection
 exists. What is built is an ERP that a software company could run its business
 on; it is not yet the "software company operating system" the brief describes.
 
-By section: **31 done, 22 partial, 45 not started, 1 excluded by agreement.**
+By section: **32 done, 21 partial, 45 not started, 1 excluded by agreement.**
 
 ---
 
@@ -114,7 +114,7 @@ This block is the brief's stated centre of gravity and none of it exists.
 | | § | Item | Note |
 | --- | --- | --- | --- |
 | ✅ | 7 | Job requisitions | With approval chain, headcount, repair paths |
-| ◐ | 7 | Job postings | Backend complete; **no screen can draft, publish or close one**, so the chain is broken |
+| ✅ | 7 | Job postings | Draft, publish, take down. The chain now runs from requisition to advert to application |
 | ✅ | 7 | Public job board | Adverts, applications, CV upload, rate limited |
 | ✅ | 7 | Applications | Readable, movable, CV downloadable |
 | ✅ | 7 | Interviews and scorecards | Panels, four-point scale, one strong no carries |
@@ -207,9 +207,10 @@ not exist.
 
 **§92 Hiring** — Requisition → approval → opening → published → applies →
 screening → interview → assessment → offer → accepted → employee → onboarding.
-**Broken at one link.** Everything exists except a screen to publish the advert,
-so an approved requisition can never become a job anybody can apply to. Offers
-and onboarding are also absent.
+**Runs as far as the offer letter**, and a test drives the whole of it: a
+requisition is raised, approved, advertised and published, and the advert is
+then found on the public careers page by somebody with no account. Technical
+assessments, a real offer object and onboarding are still absent.
 
 **§93 Incident** — **Not started.**
 
@@ -221,11 +222,10 @@ revenue → cost → profitability.
 
 ## What to do next, in order
 
-1. **Publish an advert.** One screen closes the hiring chain and makes four
-   existing modules usable together. It is the cheapest large win here.
-2. **The other thirteen unreachable service methods.** Project hold/cancel/lead,
-   timesheet correction, department rename, approval reassign and skip,
-   attachment removal. All built, none callable.
+1. ~~Publish an advert.~~ Done. The hiring chain runs end to end.
+2. ~~The other thirteen unreachable service methods.~~ Done, and
+   `ReachabilityTests` now fails the build when a service method has no caller,
+   so the class cannot come back quietly.
 3. **Git integration.** The brief's centre. Nothing else changes what this
    system *is* as much as repositories, pull requests and deployments arriving
    on their own.

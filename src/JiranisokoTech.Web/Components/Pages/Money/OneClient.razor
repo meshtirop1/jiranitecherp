@@ -232,6 +232,21 @@ else
                         <span class="subtle">
                             @file.Size, @file.UploadedAt.ToString("d MMM yyyy")@(file.Note is { } note ? $" — {note}" : null)
                         </span>
+
+                        <AuthorizeView Policy="@ManagePolicy" Context="mayRemove">
+                            @*
+                                Removing takes the file with the row. There is no
+                                confirmation step here and that is deliberate: the
+                                act is on the audit trail with a name against it,
+                                and a dialog that everybody clicks through is
+                                ceremony rather than a safeguard.
+                            *@
+                            <form method="post" @formname="@($"detach-{file.Id}")"
+                                  @onsubmit="() => Detach(file.Id)">
+                                <AntiforgeryToken />
+                                <button type="submit" class="danger">Remove</button>
+                            </form>
+                        </AuthorizeView>
                     </li>
                 }
             </ul>
@@ -373,6 +388,8 @@ else
             await LoadAsync();
         }
     }
+
+    private Task Detach(Guid file) => TryAsync(() => Files.RemoveAsync(file));
 
     private Task Attach() => TryAsync(async () =>
     {

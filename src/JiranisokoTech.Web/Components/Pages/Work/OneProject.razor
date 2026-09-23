@@ -4,6 +4,8 @@
 @using JiranisokoTech.Application.Authorization
 @using JiranisokoTech.Application.Documents
 @using JiranisokoTech.Domain.Documents
+@using JiranisokoTech.Application.Work
+@using JiranisokoTech.Domain.People
 @using JiranisokoTech.Domain.Work
 @using JiranisokoTech.Infrastructure.Business
 @using JiranisokoTech.Infrastructure.People
@@ -13,6 +15,7 @@
 @inject WorkQueries Work
 @inject BusinessQueries Business
 @inject DocumentService Files
+@inject WorkService Service
 @inject PeopleQueries People
 @inject NavigationManager Navigation
 
@@ -71,6 +74,62 @@ else
         }
     </dl>
 
+    @*
+        The lifecycle actions live here rather than on the list, because two of
+        the three need a reason written and the third needs a person chosen —
+        none of which fits in a row. The list keeps Start and Delivered, which
+        are single clicks.
+    *@
+    <AuthorizeView Policy="@ManagePolicy" Context="mayRun">
+        <section class="standing">
+            <h2>Running it</h2>
+
+            <EditForm Model="Leading" method="post" OnValidSubmit="SetLead" FormName="lead"
+                      class="inline">
+                <label>
+                    <span>Led by</span>
+                    <InputSelect @bind-Value="Leading.EmployeeId">
+                        <option value="">Nobody</option>
+                        @foreach (var person in Staff)
+                        {
+                            <option value="@person.Id">@person.FullName</option>
+                        }
+                    </InputSelect>
+                </label>
+                <button type="submit" class="button button--quiet">Set</button>
+            </EditForm>
+
+            @if (Project.Status is ProjectStatus.Planned or ProjectStatus.Active)
+            {
+                @*
+                    On hold is not cancelled, and the difference is the reason:
+                    a project waiting on a client decision comes back, and one
+                    that is cancelled does not. Both are recorded so that
+                    somebody reading the history in six months knows which
+                    happened.
+                *@
+                <EditForm Model="Holding" method="post" OnValidSubmit="Hold" FormName="hold"
+                          class="inline">
+                    <DataAnnotationsValidator />
+                    <InputText @bind-Value="Holding.Reason" placeholder="What it is waiting on" />
+                    <button type="submit" class="button button--quiet">Put on hold</button>
+                    <ValidationMessage For="() => Holding.Reason" />
+                </EditForm>
+            }
+
+            @if (!Finished(Project.Status))
+            {
+                <EditForm Model="Cancelling" method="post" OnValidSubmit="Cancel" FormName="cancel"
+                          class="inline">
+                    <DataAnnotationsValidator />
+                    <InputText @bind-Value="Cancelling.Reason" placeholder="Why it is being cancelled" />
+                    <button type="submit" class="danger">Cancel it</button>
+                    <ValidationMessage For="() => Cancelling.Reason" />
+                </EditForm>
+            }
+        </section>
+    </AuthorizeView>
+
     <section class="standing">
         <h2>The work</h2>
 
@@ -128,6 +187,21 @@ else
                         <span class="subtle">
                             @file.Size, @file.UploadedAt.ToString("d MMM yyyy")@(file.Note is { } note ? $" — {note}" : null)
                         </span>
+
+                        <AuthorizeView Policy="@ManagePolicy" Context="mayRemove">
+                            @*
+                                Removing takes the file with the row. There is no
+                                confirmation step here and that is deliberate: the
+                                act is on the audit trail with a name against it,
+                                and a dialog that everybody clicks through is
+                                ceremony rather than a safeguard.
+                            *@
+                            <form method="post" @formname="@($"detach-{file.Id}")"
+                                  @onsubmit="() => Detach(file.Id)">
+                                <AntiforgeryToken />
+                                <button type="submit" class="danger">Remove</button>
+                            </form>
+                        </AuthorizeView>
                     </li>
                 }
             </ul>
@@ -159,6 +233,33 @@ else
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
 
+    private LeadInput _leading = new();
+
+    [SupplyParameterFromForm(FormName = "lead")]
+    private LeadInput Leading
+    {
+        get => _leading;
+        set => _leading = value ?? new LeadInput();
+    }
+
+    private ReasonInput _holding = new();
+
+    [SupplyParameterFromForm(FormName = "hold")]
+    private ReasonInput Holding
+    {
+        get => _holding;
+        set => _holding = value ?? new ReasonInput();
+    }
+
+    private ReasonInput _cancelling = new();
+
+    [SupplyParameterFromForm(FormName = "cancel")]
+    private ReasonInput Cancelling
+    {
+        get => _cancelling;
+        set => _cancelling = value ?? new ReasonInput();
+    }
+
     private AttachInput _attaching = new();
 
     [SupplyParameterFromForm(FormName = "attach")]
@@ -175,6 +276,8 @@ else
     private List<WorkItemRow> Items { get; set; } = [];
 
     private List<Attachment> Attached { get; set; } = [];
+
+    private List<PersonRow> Staff { get; set; } = [];
 
     private int Logged { get; set; }
 
@@ -204,6 +307,7 @@ else
         }
 
         Items = await Work.ItemsAsync(projectId: Id);
+        Staff = await People.RosterAsync(status: EmploymentStatus.Active);
         Attached = await Files.ForAsync(AttachedTo.Project, Id);
 
         // By identifier, not by name. Two projects may share a name, and a
@@ -216,6 +320,17 @@ else
             .Where(entry => entry.IsApproved && entry.IsBillable && !entry.IsInvoiced)
             .Sum(entry => entry.Minutes);
     }
+
+    private Task SetLead() => TryAsync(() => Service.LeadProjectAsync(Id, Leading.EmployeeId));
+
+    private Task Hold() => TryAsync(() => Service.HoldProjectAsync(Id, Holding.Reason));
+
+    private Task Cancel() => TryAsync(() => Service.CancelProjectAsync(Id, Cancelling.Reason));
+
+    private static bool Finished(ProjectStatus status) =>
+        status is ProjectStatus.Delivered or ProjectStatus.Cancelled;
+
+    private Task Detach(Guid file) => TryAsync(() => Files.RemoveAsync(file));
 
     private Task Attach() => TryAsync(async () =>
     {
@@ -266,6 +381,18 @@ else
         ProjectStatus.OnHold => "pill--danger",
         _ => null,
     };
+
+    private sealed class LeadInput
+    {
+        public Guid? EmployeeId { get; set; }
+    }
+
+    private sealed class ReasonInput
+    {
+        [Required(ErrorMessage = "Say why. The history is read by somebody who was not here.")]
+        [StringLength(500)]
+        public string Reason { get; set; } = string.Empty;
+    }
 
     private sealed class AttachInput
     {

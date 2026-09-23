@@ -1,7 +1,10 @@
 using System.Net;
 using JiranisokoTech.Application.Authorization;
 using JiranisokoTech.Application.Business;
+using JiranisokoTech.Application.People;
+using JiranisokoTech.Application.Recruitment;
 using JiranisokoTech.Application.Work;
+using Microsoft.EntityFrameworkCore;
 using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Tests.Identity;
 using Microsoft.AspNetCore.Identity;
@@ -678,6 +681,84 @@ public class BusinessPageTests(ApplicationFactory factory) : IClassFixture<Appli
 
         // Refused before anything is looked up, so the address cannot be used to
         // find out whether a contract with that identifier exists.
+        Assert.Equal(HttpStatusCode.Found, response.StatusCode);
+        Assert.Contains("/denied", response.Headers.Location!.OriginalString);
+    }
+
+    /// <summary>
+    /// An approved requisition can become an advert somebody applies to.
+    /// </summary>
+    /// <remarks>
+    /// The link the hiring chain was missing. Everything either side of it
+    /// existed — requisitions could be approved, applications read, interviews
+    /// scored, the careers site was built to list adverts — and nothing could
+    /// create the advert, so an approved requisition could never become a job
+    /// and the careers page could only ever be empty.
+    ///
+    /// This drives the whole chain through the real services and then asks the
+    /// public careers page for the advert, because the point is not that a page
+    /// renders: it is that the two ends now meet.
+    /// </remarks>
+    [Fact]
+    public async Task An_approved_requisition_becomes_an_advert_on_the_careers_page()
+    {
+        var title = $"Delivery engineer {Guid.CreateVersion7():N}";
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var people = scope.ServiceProvider.GetRequiredService<PeopleService>();
+            var hiring = scope.ServiceProvider.GetRequiredService<RecruitmentService>();
+            var database = scope.ServiceProvider
+                .GetRequiredService<JiranisokoTech.Infrastructure.Persistence.AppDbContext>();
+
+            var head = await people.HireAsync(
+                $"Head {Guid.CreateVersion7():N}", DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-60));
+            await people.StartAsync(head.Id);
+
+            var requisition = await hiring.RaiseRequisitionAsync(
+                title, null, 1, "The team is one short.", head.Id);
+
+            await hiring.SubmitAsync(requisition.Id);
+
+            var stored = await database.Requisitions.FirstAsync(one => one.Id == requisition.Id);
+            stored.Approved(DateTimeOffset.UtcNow);
+            await database.SaveChangesAsync();
+
+            var advert = await hiring.DraftPostingAsync(
+                requisition.Id, title, "Come and build delivery software.", "The long version.");
+
+            await hiring.PublishAsync(advert.Id);
+        }
+
+        // The public page, with no account at all — which is who applies.
+        using var stranger = factory.CreateBrowser();
+
+        var careers = await stranger.GetAsync("/careers");
+        var html = await careers.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, careers.StatusCode);
+        Assert.Contains(title, html);
+    }
+
+    [Fact]
+    public async Task Hr_can_open_the_adverts_screen()
+    {
+        var browser = await SignedInAsync("hr4@jiranisokotech.co.ke", Roles.HumanResources);
+
+        var response = await browser.GetAsync("/hiring/postings");
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("Adverts", html);
+    }
+
+    [Fact]
+    public async Task A_developer_cannot_open_the_adverts_screen()
+    {
+        var browser = await SignedInAsync("dev7@jiranisokotech.co.ke", Roles.Developer);
+
+        var response = await browser.GetAsync("/hiring/postings");
+
         Assert.Equal(HttpStatusCode.Found, response.StatusCode);
         Assert.Contains("/denied", response.Headers.Location!.OriginalString);
     }
