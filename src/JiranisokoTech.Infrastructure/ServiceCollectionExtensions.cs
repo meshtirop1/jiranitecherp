@@ -118,6 +118,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ClientService>();
         services.AddScoped<TimesheetService>();
         services.AddScoped<LeaveService>();
+        services.AddScoped<HolidayService>();
         services.AddScoped<ExpenseService>();
         services.AddScoped<InvoiceService>();
         services.AddScoped<InterviewService>();

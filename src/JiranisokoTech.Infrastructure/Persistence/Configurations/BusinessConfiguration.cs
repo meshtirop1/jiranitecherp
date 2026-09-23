@@ -144,9 +144,19 @@ public sealed class LeaveRequestConfiguration : IEntityTypeConfiguration<LeaveRe
         builder.Property(leave => leave.Reason).HasMaxLength(2000).IsRequired();
         builder.Property(leave => leave.Outcome).HasMaxLength(2000);
 
-        // Counted from the dates rather than stored, so the two can never
-        // disagree.
-        builder.Ignore(leave => leave.Days);
+        /*
+         * Days is a column, and it used to be Ignore'd here with a note saying
+         * that counting it from the dates meant the two could never disagree.
+         * That stopped being available once public holidays came in: deciding
+         * whether a date is a working day now needs the calendar, and an
+         * aggregate cannot have one. The reasoning and what it costs are set out
+         * on LeaveRequest.Days.
+         *
+         * Being a column is the part that earns it back. The leave list selects
+         * it in SQL, which retired the second copy of the counting rule that
+         * lived in the infrastructure's leave query purely to avoid loading
+         * thirty aggregates to print thirty numbers.
+         */
         builder.Ignore(leave => leave.IsLive);
 
         builder.HasOne<Employee>()
@@ -157,6 +167,29 @@ public sealed class LeaveRequestConfiguration : IEntityTypeConfiguration<LeaveRe
         // "Who is off next week?" and the overlap check on submission.
         builder.HasIndex(leave => new { leave.EmployeeId, leave.From });
         builder.HasIndex(leave => new { leave.Status, leave.From });
+    }
+}
+
+public sealed class HolidayConfiguration : IEntityTypeConfiguration<Holiday>
+{
+    public void Configure(EntityTypeBuilder<Holiday> builder)
+    {
+        builder.ToTable("public_holidays");
+
+        builder.HasKey(holiday => holiday.Id);
+
+        builder.Property(holiday => holiday.Name).HasMaxLength(120).IsRequired();
+
+        /*
+         * Unique, and enforced by the database rather than only by the service
+         * that checks for it first. Two rows for one date do not break the day
+         * count — the calendar is read as a set of dates and a set absorbs the
+         * duplicate — but they make the screen misreport what is on the calendar,
+         * and withdrawing the day then only half works. The check in the service
+         * exists to give somebody a sentence rather than a constraint violation;
+         * this is what holds when two people submit the same date at once.
+         */
+        builder.HasIndex(holiday => holiday.On).IsUnique();
     }
 }
 

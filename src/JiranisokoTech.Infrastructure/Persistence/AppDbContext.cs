@@ -54,6 +54,11 @@ public class AppDbContext(
 
     public DbSet<LeaveRequest> Leave => Set<LeaveRequest>();
 
+    /// <summary>
+    /// The public holidays, which are how much leave a week off actually costs.
+    /// </summary>
+    public DbSet<Holiday> Holidays => Set<Holiday>();
+
     public DbSet<Interview> Interviews => Set<Interview>();
 
     public DbSet<JobRequisition> Requisitions => Set<JobRequisition>();

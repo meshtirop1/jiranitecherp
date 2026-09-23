@@ -221,6 +221,11 @@ public sealed class BusinessQueries(AppDbContext database)
                 leave.Status,
                 leave.DecidedAt,
                 leave.Outcome,
+
+                // Selected rather than recomputed. This is the column the
+                // aggregate agreed when the request was made, against the
+                // holiday calendar as it stood.
+                leave.Days,
             })
             .ToListAsync(cancellationToken);
 
@@ -233,36 +238,49 @@ public sealed class BusinessQueries(AppDbContext database)
             leave.Kind,
             leave.From,
             leave.To,
-            WorkingDaysBetween(leave.From, leave.To),
+            leave.Days,
             leave.Reason,
             leave.Status,
             leave.DecidedAt,
             leave.Outcome)).ToList();
     }
 
+    // --- public holidays ----------------------------------------------------
+
     /// <summary>
-    /// The same count the aggregate computes, repeated here rather than loaded.
+    /// The calendar for one year, earliest first.
     /// </summary>
     /// <remarks>
-    /// A list of thirty requests would otherwise have to be materialised as
-    /// thirty aggregates to display one number each. The duplication is small
-    /// and the rule is one line; <see cref="LeaveRequest.Days"/> remains the
-    /// definition, and the domain test for it is what keeps this honest.
+    /// By year because that is how somebody checks it. The question the screen
+    /// exists to answer is "is next year's calendar in yet, and is it right",
+    /// which is asked one year at a time against a printed gazette notice — and a
+    /// single list of every holiday the firm has ever recorded answers it
+    /// considerably less well.
     /// </remarks>
-    private static int WorkingDaysBetween(DateOnly from, DateOnly to)
-    {
-        var days = 0;
+    public async Task<List<HolidayRow>> HolidaysAsync(
+        int year, CancellationToken cancellationToken = default) =>
+        await database.Holidays
+            .AsNoTracking()
+            .Where(holiday => holiday.On.Year == year)
+            .OrderBy(holiday => holiday.On)
+            .Select(holiday => new HolidayRow(holiday.Id, holiday.On, holiday.Name))
+            .ToListAsync(cancellationToken);
 
-        for (var day = from; day <= to; day = day.AddDays(1))
-        {
-            if (day.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday))
-            {
-                days++;
-            }
-        }
-
-        return days;
-    }
+    /// <summary>
+    /// The years the calendar has anything in, newest first.
+    /// </summary>
+    /// <remarks>
+    /// So the year picker offers the years that exist rather than a fixed range
+    /// somebody has to keep widening. Distinct over a table of a dozen rows a
+    /// year costs nothing.
+    /// </remarks>
+    public async Task<List<int>> HolidayYearsAsync(CancellationToken cancellationToken = default) =>
+        await database.Holidays
+            .AsNoTracking()
+            .Select(holiday => holiday.On.Year)
+            .Distinct()
+            .OrderByDescending(year => year)
+            .ToListAsync(cancellationToken);
 
     // --- expenses -----------------------------------------------------------
 
@@ -502,6 +520,8 @@ public sealed record LeaveRow(
     LeaveStatus Status,
     DateTimeOffset? DecidedAt,
     string? Outcome);
+
+public sealed record HolidayRow(Guid Id, DateOnly On, string Name);
 
 public sealed record ClaimRow(
     Guid Id,

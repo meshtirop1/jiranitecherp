@@ -269,6 +269,98 @@ public class BusinessPageTests(ApplicationFactory factory) : IClassFixture<Appli
     }
 
     /// <summary>
+    /// The holiday calendar opens for whoever holds settings.manage, and for
+    /// nobody else.
+    /// </summary>
+    /// <remarks>
+    /// Reusing that permission rather than minting one is a decision this checks
+    /// both halves of. The page is behind a permission somebody already has, so
+    /// the cheap failure would be nobody noticing it is not enforced at all —
+    /// hence the developer, who holds least, being sent to the refusal page.
+    ///
+    /// HR is the interesting negative. They keep the leave book and decide every
+    /// request in it, so they are the role most likely to be handed this by
+    /// somebody reasoning that holidays are a leave matter. They are not, and
+    /// should not be: the calendar changes what every member of staff is charged,
+    /// which is a firm-wide setting rather than a leave decision.
+    /// </remarks>
+    [Fact]
+    public async Task An_administrator_can_manage_the_holiday_calendar()
+    {
+        var admin = await SignedInAsync("admin3@jiranisokotech.co.ke", Roles.Administrator);
+
+        var response = await admin.GetAsync("/settings/holidays");
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("Public holidays", html);
+        Assert.Contains("Declare a day", html);
+    }
+
+    [Theory]
+    [InlineData(Roles.Developer, "dev6@jiranisokotech.co.ke")]
+    [InlineData(Roles.HumanResources, "hr3@jiranisokotech.co.ke")]
+    public async Task The_holiday_calendar_is_not_open_to_everybody(string role, string email)
+    {
+        var browser = await SignedInAsync(email, role);
+
+        var refused = await browser.GetAsync("/settings/holidays");
+
+        Assert.Equal(HttpStatusCode.Found, refused.StatusCode);
+        Assert.Contains("/denied", refused.Headers.Location!.OriginalString);
+    }
+
+    [Fact]
+    public async Task A_stranger_cannot_see_the_holiday_calendar()
+    {
+        using var browser = factory.CreateBrowser();
+
+        var response = await browser.GetAsync("/settings/holidays");
+
+        Assert.Equal(HttpStatusCode.Found, response.StatusCode);
+        Assert.Contains("/sign-in", response.Headers.Location!.OriginalString);
+    }
+
+    /// <summary>
+    /// A day typed into the form actually lands on the calendar.
+    /// </summary>
+    /// <remarks>
+    /// Posted as a browser posts it, because this application renders statically
+    /// and the ways a form silently does nothing here are not ones a unit test can
+    /// see: a handler name that does not match the form's, a model the binder has
+    /// no route to, an antiforgery token that was never emitted. The service
+    /// underneath has tests of its own and they would all pass with a page that
+    /// never reached it.
+    /// </remarks>
+    [Fact]
+    public async Task A_day_declared_on_the_page_appears_on_the_calendar()
+    {
+        var admin = await SignedInAsync("admin4@jiranisokotech.co.ke", Roles.Administrator);
+
+        var page = await admin.GetAsync("/settings/holidays?year=2031");
+
+        var fields = HtmlForm.Fill(
+            await page.Content.ReadAsStringAsync(),
+            new Dictionary<string, string>
+            {
+                // A year of its own, so this test neither reads nor disturbs a
+                // calendar another test in this class put anything in.
+                ["Input.On"] = "2031-12-25",
+                ["Input.Name"] = "Christmas Day",
+            });
+
+        var posted = await admin.PostAsync(
+            "/settings/holidays?year=2031", new FormUrlEncodedContent(fields));
+
+        var html = await posted.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
+        Assert.Contains("Christmas Day", html);
+        Assert.Contains("25 December 2031", html);
+        Assert.Contains("On the calendar", html);
+    }
+
+    /// <summary>
     /// Anybody signed in can search; what they find is another matter.
     /// </summary>
     /// <remarks>

@@ -1,0 +1,299 @@
+@page "/settings/holidays"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Abstractions
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Infrastructure.Business
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.SettingsManage)]
+@inject BusinessQueries Queries
+@inject HolidayService Service
+@inject IClock Clock
+
+@*
+    Behind settings.manage rather than a permission of its own. This is the same
+    kind of act as setting the firm's payment terms — a fact about the whole firm
+    that a couple of people maintain and everybody's leave depends on — and the
+    roles that hold that permission are exactly the ones who would be handed
+    this.
+
+    The year is in the address, as a GET form, so "next year's calendar" is a
+    link somebody can send to whoever is checking it against the gazette.
+*@
+
+<PageTitle>Public holidays — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/settings">Settings</a></nav>
+
+<div class="page-head">
+    <h1>Public holidays</h1>
+    <p class="subtle">
+        What leave costs depends on these. A week off over Christmas is charged
+        as the working days in it that are not on this list.
+    </p>
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Done is not null)
+{
+    <p class="done" role="status">@Done</p>
+}
+
+<form method="get" class="filters">
+    <label>
+        <span>Year</span>
+        <select name="year">
+            @foreach (var year in Years)
+            {
+                <option value="@year" selected="@(year == Showing)">@year</option>
+            }
+        </select>
+    </label>
+
+    <button type="submit">Show</button>
+</form>
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">
+        Nothing is on the calendar for @Showing. Until it is, leave over these
+        dates is charged as ordinary working days.
+    </p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Public holidays in @Showing</caption>
+        <thead>
+            <tr>
+                <th scope="col">Date</th>
+                <th scope="col">Day</th>
+                <th scope="col">What it is</th>
+                <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var holiday in Rows)
+            {
+                <tr class="@(IsWeekend(holiday.On) ? "row--closed" : null)">
+                    <td>@holiday.On.ToString("d MMMM yyyy")</td>
+                    @*
+                        The weekday is shown because it is the first thing worth
+                        knowing about a holiday. One falling on a Saturday costs
+                        nobody any leave — Kenya moves several of them to the
+                        Monday for that reason — and a row that looks like it did
+                        nothing is a row somebody will otherwise report as a bug.
+                    *@
+                    <td>
+                        @holiday.On.ToString("dddd")
+                        @if (IsWeekend(holiday.On))
+                        {
+                            <span class="subtle">already a non-working day</span>
+                        }
+                    </td>
+                    <td>@holiday.Name</td>
+                    <td class="row-actions">
+                        @*
+                            The new name is read from the posted form rather than
+                            bound. Binding wants a form name fixed at compile
+                            time and there is one form per row here, so the value
+                            comes back the plain way, by the name on the element.
+                        *@
+                        <form method="post" @formname="@($"rename-{holiday.Id}")"
+                              @onsubmit="() => Rename(holiday.Id)" class="inline">
+                            <AntiforgeryToken />
+                            <input name="name" value="@holiday.Name"
+                                   aria-label="What @holiday.Name is called" />
+                            <button type="submit">Rename</button>
+                        </form>
+
+                        <form method="post" @formname="@($"withdraw-{holiday.Id}")"
+                              @onsubmit="() => Withdraw(holiday.Id)">
+                            <AntiforgeryToken />
+                            <button type="submit" class="danger">Withdraw</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<EditForm Model="Input" method="post" OnValidSubmit="Declare" FormName="declare"
+          class="panel stack">
+    <DataAnnotationsValidator />
+
+    <h2>Declare a day</h2>
+
+    <div class="fields">
+        <label>
+            <span>Date</span>
+            <InputDate @bind-Value="Input.On" />
+            <ValidationMessage For="() => Input.On" />
+        </label>
+
+        <label>
+            <span>What it is</span>
+            <InputText @bind-Value="Input.Name" placeholder="Idd-ul-Fitr" />
+            <ValidationMessage For="() => Input.Name" />
+        </label>
+    </div>
+
+    @*
+        Said before it happens rather than explained afterwards. Somebody typing
+        a gazetted day into a calendar in December is not expecting to change
+        leave that was approved in October, and finding out from a balance later
+        is the wrong order.
+    *@
+    <p class="subtle">
+        Leave already asked for or approved across the date is recounted, so
+        anybody who was going to be charged for it stops being. Leave that was
+        refused or cancelled is left alone.
+    </p>
+
+    <button type="submit">Declare it</button>
+</EditForm>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    [SupplyParameterFromQuery(Name = "year")]
+    private int? Year { get; set; }
+
+    private DeclareInput _input = new();
+
+    [SupplyParameterFromForm(FormName = "declare")]
+    private DeclareInput Input
+    {
+        get => _input;
+        set => _input = value ?? new DeclareInput();
+    }
+
+    private List<HolidayRow> Rows { get; set; } = [];
+
+    /// <summary>The years offered in the picker, which always include this one.</summary>
+    private List<int> Years { get; set; } = [];
+
+    private int Showing { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Input.On == default)
+        {
+            Input.On = Clock.Today;
+        }
+
+        Showing = Year ?? Clock.Today.Year;
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var stored = await Queries.HolidayYearsAsync();
+
+        /*
+         * This year and the next are always offered, whether or not anything is
+         * on the calendar for them. The one thing somebody comes to this page to
+         * do in November is enter next year, and a picker that cannot reach a
+         * year until it already has a holiday in it cannot be used to put the
+         * first one there.
+         */
+        Years = stored
+            .Append(Clock.Today.Year)
+            .Append(Clock.Today.Year + 1)
+            .Append(Showing)
+            .Distinct()
+            .OrderByDescending(year => year)
+            .ToList();
+
+        Rows = await Queries.HolidaysAsync(Showing);
+    }
+
+    /// <summary>The name typed into the row that was submitted.</summary>
+    private string NewName => Request?.Request.Form["name"].ToString() ?? string.Empty;
+
+    private Task Declare() => Run(async () =>
+    {
+        var recounted = await Service.DeclareAsync(Input.On, Input.Name);
+
+        // Moved to the year the day landed in rather than the one that was being
+        // shown. Somebody entering next year's calendar from this year's view
+        // would otherwise save a row and see no change, which reads as a failure.
+        Showing = Input.On.Year;
+
+        Input = new DeclareInput { On = Clock.Today };
+
+        return Said("On the calendar", recounted);
+    });
+
+    private Task Rename(Guid holidayId) => Run(async () =>
+    {
+        await Service.RenameAsync(holidayId, NewName);
+
+        return "Renamed.";
+    });
+
+    private Task Withdraw(Guid holidayId) => Run(async () =>
+    {
+        var recounted = await Service.WithdrawAsync(holidayId);
+
+        return Said("Off the calendar", recounted);
+    });
+
+    /// <summary>
+    /// What was done, and how much leave it moved.
+    /// </summary>
+    /// <remarks>
+    /// The count is on the screen because the recount is the part of this that
+    /// is not obvious. Somebody who declares Boxing Day and is told it changed
+    /// four requests knows both that it worked and that four colleagues' leave
+    /// is now shorter; being told nothing leaves them to find out from a balance
+    /// in March.
+    /// </remarks>
+    private static string Said(string what, int recounted) => recounted switch
+    {
+        0 => $"{what}. No leave was asked for across it.",
+        1 => $"{what}. One leave request across it has been counted again.",
+        _ => $"{what}. {recounted} leave requests across it have been counted again.",
+    };
+
+    private static bool IsWeekend(DateOnly on) =>
+        on.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+
+    private async Task Run(Func<Task<string>> work)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            Done = await work();
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private sealed class DeclareInput
+    {
+        public DateOnly On { get; set; }
+
+        [Required(ErrorMessage = "Name it. A bare date on this list is one nobody can check.")]
+        [StringLength(120)]
+        public string Name { get; set; } = string.Empty;
+    }
+}
