@@ -28,6 +28,22 @@ public enum WorkItemStatus
 
     /// <summary>Dropped. Kept, because "why did we not do that?" is a real question.</summary>
     Cancelled = 6,
+
+    /// <summary>Accepted work that has been released, and is now in use.</summary>
+    /// <remarks>
+    /// The seventh state, added against the rule above that every extra column
+    /// is one more decision on a board. It earns the place because the firm
+    /// already runs this step: in the system this replaces a head of department
+    /// releases what their team finishes, and a build with no state for it had a
+    /// tasks.deploy permission naming nothing, which is why that permission was
+    /// deleted rather than guessed at.
+    ///
+    /// Distinct from Done on purpose. Done is the firm's own judgement that the
+    /// work is right; this says it has left the building. Between the two sits
+    /// the only gate anybody outside the team cares about, and a single state
+    /// cannot be gated twice.
+    /// </remarks>
+    Deployed = 7,
 }
 
 /// <summary>

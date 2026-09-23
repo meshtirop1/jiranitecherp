@@ -41,6 +41,11 @@ public class WorkItemTests
         WorkItemStatus.Done =>
             [WorkItemStatus.InProgress, WorkItemStatus.InReview, WorkItemStatus.Done],
         WorkItemStatus.Cancelled => [WorkItemStatus.Cancelled],
+        WorkItemStatus.Deployed =>
+        [
+            WorkItemStatus.InProgress, WorkItemStatus.InReview, WorkItemStatus.Done,
+            WorkItemStatus.Deployed,
+        ],
         _ => [],
     };
 
@@ -70,6 +75,7 @@ public class WorkItemTests
     [InlineData(WorkItemStatus.InReview, WorkItemStatus.InProgress)]
     [InlineData(WorkItemStatus.Blocked, WorkItemStatus.InProgress)]
     [InlineData(WorkItemStatus.Done, WorkItemStatus.InProgress)]
+    [InlineData(WorkItemStatus.Done, WorkItemStatus.Deployed)]
     public void An_allowed_move_is_made(WorkItemStatus from, WorkItemStatus to)
     {
         var item = At(from);
@@ -99,6 +105,81 @@ public class WorkItemTests
     }
 
     /// <summary>
+    /// Nothing is released that has not been accepted first.
+    /// </summary>
+    /// <remarks>
+    /// Done is the only way in. A release straight from in progress is a release
+    /// nobody reviewed, and the state exists precisely so that the two decisions
+    /// are made by two people.
+    /// </remarks>
+    [Theory]
+    [InlineData(WorkItemStatus.Todo)]
+    [InlineData(WorkItemStatus.InProgress)]
+    [InlineData(WorkItemStatus.InReview)]
+    [InlineData(WorkItemStatus.Blocked)]
+    public void Nothing_is_released_before_it_is_accepted(WorkItemStatus from)
+    {
+        var item = At(from);
+
+        var refused = Assert.Throws<InvalidOperationException>(
+            () => item.MoveTo(WorkItemStatus.Deployed, Now));
+
+        Assert.Contains("cannot go from", refused.Message);
+        Assert.Equal(from, item.Status);
+    }
+
+    /// <summary>
+    /// A release is a statement about the world outside the firm, so the row
+    /// stands.
+    /// </summary>
+    /// <remarks>
+    /// Moving it back would leave the system claiming a release never happened
+    /// while the release is still out there. A fault found afterwards, or a
+    /// rollback, is new work with its own reason — the same rule as cancelled
+    /// work, reached from the opposite direction.
+    /// </remarks>
+    [Theory]
+    [InlineData(WorkItemStatus.InProgress)]
+    [InlineData(WorkItemStatus.Todo)]
+    [InlineData(WorkItemStatus.Done)]
+    [InlineData(WorkItemStatus.Cancelled)]
+    public void Nothing_comes_back_from_deployed(WorkItemStatus to)
+    {
+        var item = At(WorkItemStatus.Deployed);
+
+        var refused = Assert.Throws<InvalidOperationException>(() => item.MoveTo(to, Now));
+
+        Assert.Contains("stays deployed", refused.Message);
+        Assert.Equal(WorkItemStatus.Deployed, item.Status);
+    }
+
+    /// <summary>
+    /// Released work is finished work, and the reporting figures read this.
+    /// </summary>
+    /// <remarks>
+    /// Every count of open work asks this question, in SQL, in five places. If a
+    /// released item reads as open, the firm is told it has more work in flight
+    /// than it has and that things it shipped are overdue.
+    /// </remarks>
+    [Fact]
+    public void Released_work_is_not_open_and_keeps_the_date_it_was_accepted()
+    {
+        var item = Raised();
+
+        item.MoveTo(WorkItemStatus.InProgress, Now);
+        item.MoveTo(WorkItemStatus.InReview, Now);
+        item.MoveTo(WorkItemStatus.Done, Now.AddDays(1));
+        item.MoveTo(WorkItemStatus.Deployed, Now.AddDays(4));
+
+        Assert.False(item.IsOpen);
+        Assert.Contains(WorkItemStatus.Deployed, WorkItem.Finished);
+
+        // The release does not overwrite when the work was accepted: that is the
+        // date the delivery figures are worked out from.
+        Assert.Equal(Now.AddDays(1), item.CompletedAt);
+    }
+
+    /// <summary>
     /// Work picked up again is new work with a new decision behind it. Reviving
     /// the old row silently rewrites why it was dropped.
     /// </summary>
@@ -106,6 +187,7 @@ public class WorkItemTests
     [InlineData(WorkItemStatus.Todo)]
     [InlineData(WorkItemStatus.InProgress)]
     [InlineData(WorkItemStatus.Done)]
+    [InlineData(WorkItemStatus.Deployed)]
     public void Nothing_comes_back_from_cancelled(WorkItemStatus to)
     {
         var item = At(WorkItemStatus.Cancelled);

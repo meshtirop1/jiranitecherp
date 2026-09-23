@@ -18,7 +18,9 @@ namespace JiranisokoTech.Tests.Authorization;
 /// tasks.update_own, tasks.submit and tasks.review were checked nowhere, while
 /// the work item page put every transition behind tasks.assign — so an engineer
 /// could open their own work and not start it or submit it. tasks.deploy named
-/// a state the state machine does not have at all. time.view_all was granted to
+/// a state the state machine did not have at all, and was deleted rather than
+/// guessed at; it is back, with a Deployed state under it and the state machine
+/// refusing to reach that state without it. time.view_all was granted to
 /// HR while the timesheet page asked for time.approve, which HR do not hold, so
 /// HR could not see a timesheet. And expenses.approve was checked nowhere, so
 /// the separation between approving a claim and paying it — which has a test of

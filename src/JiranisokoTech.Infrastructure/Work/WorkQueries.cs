@@ -27,8 +27,11 @@ public sealed class WorkQueries(AppDbContext database)
 
         if (openOnly)
         {
-            query = query.Where(item =>
-                item.Status != WorkItemStatus.Done && item.Status != WorkItemStatus.Cancelled);
+            // The domain's list of finished states rather than a pair of
+            // comparisons written out here. The pair was the bug waiting to
+            // happen: when a seventh state arrived, every copy of it went on
+            // reporting released work as open.
+            query = query.Where(item => !WorkItem.Finished.Contains(item.Status));
         }
 
         var rows = await query
@@ -106,8 +109,7 @@ public sealed class WorkQueries(AppDbContext database)
             .Select(group => new
             {
                 ProjectId = group.Key,
-                Open = group.Count(item =>
-                    item.Status != WorkItemStatus.Done && item.Status != WorkItemStatus.Cancelled),
+                Open = group.Count(item => !WorkItem.Finished.Contains(item.Status)),
                 Total = group.Count(),
             })
             .ToDictionaryAsync(row => row.ProjectId, row => row, cancellationToken);
@@ -139,6 +141,12 @@ public sealed class WorkQueries(AppDbContext database)
     /// Cancelled work is left out. It is kept in the table because "why did we
     /// not do that?" is a real question, but a board is about what is in front
     /// of people now.
+    ///
+    /// Deployed work is not left out, although it is just as finished. The
+    /// release is the last thing that happens to a piece of work and the column
+    /// is the only place anybody can see what went out this week; a head who has
+    /// just released four things and sees no trace of them assumes the button
+    /// did nothing.
     /// </remarks>
     public async Task<Dictionary<WorkItemStatus, List<WorkItemRow>>> BoardAsync(
         Guid? projectId = null,

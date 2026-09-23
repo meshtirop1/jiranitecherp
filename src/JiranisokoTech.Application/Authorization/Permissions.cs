@@ -128,6 +128,22 @@ public static class Permissions
     public const string TasksSubmit = "tasks.submit";
     public const string TasksReview = "tasks.review";
 
+    /// <summary>
+    /// Release accepted work, which puts it in front of the client.
+    /// </summary>
+    /// <remarks>
+    /// Separate from reviewing it, for the reason that separates sending an
+    /// invoice from drafting one: review is the team's own judgement that the
+    /// work is right, and a release is the firm acting on the outside world with
+    /// something that cannot be taken back quietly.
+    ///
+    /// This constant existed once before and was deleted, because it named a
+    /// state the work state machine did not have — a permission guarding
+    /// nothing, granted to roles, and asserted by the matrix tests. It is back
+    /// with the state under it, and the state machine will not move without it.
+    /// </remarks>
+    public const string TasksDeploy = "tasks.deploy";
+
     // --- approvals and reporting -------------------------------------------
     public const string ApprovalsDecide = "approvals.decide";
     public const string ReportsView = "reports.view";
@@ -154,7 +170,7 @@ public static class Permissions
 
         ProjectsViewAll, ProjectsViewMember, ProjectsManage,
         TasksViewAll, TasksViewOwn, TasksCreate, TasksAssign, TasksUpdateOwn, TasksSubmit,
-        TasksReview,
+        TasksReview, TasksDeploy,
 
         ApprovalsDecide, ReportsView,
     ];
@@ -230,8 +246,13 @@ public static class Roles
                 // A head gives their own team work and releases what it
                 // finishes. Review without create means they can only ever react
                 // to work somebody else set.
+                //
+                // The release is theirs alone among the delivery roles, which is
+                // how the firm already works: a delivery manager runs the board
+                // and bills the work, and a head of department says what goes
+                // out. The same split as drafting an invoice and sending it.
                 Permissions.TasksViewAll, Permissions.TasksViewOwn, Permissions.TasksCreate,
-                Permissions.TasksAssign, Permissions.TasksReview,
+                Permissions.TasksAssign, Permissions.TasksReview, Permissions.TasksDeploy,
 
                 Permissions.ApprovalsDecide,
                 Permissions.RequisitionsCreate, Permissions.RequisitionsView,
