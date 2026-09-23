@@ -23,11 +23,20 @@
 
 # Messages the file mailer writes in development. Correspondence, and not
 # something to commit.
-mail/
+#
+# Anchored with a leading slash, which is the whole point of this line. Written
+# as "mail/" it matched any directory of that name at any depth, and on Windows
+# git folds case when it matches an ignore pattern — so it swallowed
+# src/JiranisokoTech.Application/Mail and src/JiranisokoTech.Infrastructure/Mail
+# along with their tests. Nothing complained: the working copy built and every
+# test passed, while the commit went out without two modules in it and the
+# repository could not be built from a fresh clone.
+/mail/
 
 # Candidate CVs written by the file store. Documents belonging to people
-# outside this firm, and not something to commit.
-cvs/
+# outside this firm, and not something to commit. Anchored for the same reason
+# as above, before somebody adds a Cvs folder to the source.
+/cvs/
 
 # Worktrees the agent tooling creates. Not part of the project.
 .claude/worktrees/
