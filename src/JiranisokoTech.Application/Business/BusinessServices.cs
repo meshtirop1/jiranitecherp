@@ -2,6 +2,7 @@ using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Application.People;
 using JiranisokoTech.Domain.Clients;
 using JiranisokoTech.Domain.Common;
+using JiranisokoTech.Domain.Contracts;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Recruitment;
 using JiranisokoTech.Domain.Time;
@@ -24,6 +25,11 @@ public interface IBusinessRepository
     Task<bool> ClientCodeTakenAsync(string code, CancellationToken cancellationToken = default);
 
     Task<int> LiveProjectsForAsync(Guid clientId, CancellationToken cancellationToken = default);
+
+    Task<Contract?> FindContractAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<bool> ContractReferenceTakenAsync(
+        string reference, CancellationToken cancellationToken = default);
 
     Task<Invoice?> FindInvoiceAsync(Guid id, CancellationToken cancellationToken = default);
 
@@ -70,6 +76,8 @@ public interface IBusinessRepository
         Guid id, CancellationToken cancellationToken = default);
 
     void Add(Client client);
+
+    void Add(Contract contract);
 
     void Add(Invoice invoice);
 
@@ -164,6 +172,133 @@ public sealed class ClientService(IBusinessRepository business)
     private async Task<Client> Required(Guid id, CancellationToken cancellationToken) =>
         await business.FindClientAsync(id, cancellationToken)
         ?? throw new InvalidOperationException("There is no client with that identifier.");
+}
+
+/// <summary>Contracts, and what says a client may be billed at all.</summary>
+/// <remarks>
+/// The rules that live here rather than on the aggregate are the ones that need
+/// another row to answer: whether the reference is already somebody else's, and
+/// whether the client is still a client. A contract cannot see either from
+/// inside itself.
+/// </remarks>
+public sealed class ContractService(
+    IBusinessRepository business, Settings.SettingsService settings, IClock clock)
+{
+    /// <summary>
+    /// Open a contract record. Nothing is agreed yet.
+    /// </summary>
+    /// <remarks>
+    /// The currency comes from the firm's settings rather than from a field on
+    /// the form. A contract is in one currency and every figure entered against
+    /// it has to be in that one; offering a choice per contract would mean the
+    /// day somebody picked the wrong one, the value could never be typed at all.
+    /// </remarks>
+    public async Task<Contract> DraftAsync(
+        Guid clientId,
+        string reference,
+        string title,
+        CancellationToken cancellationToken = default)
+    {
+        var client = await business.FindClientAsync(clientId, cancellationToken)
+            ?? throw new InvalidOperationException("There is no client with that identifier.");
+
+        if (!client.IsCurrent)
+        {
+            throw new InvalidOperationException(
+                $"{client.Name} is a former client. Agreeing new terms with them means taking "
+                + "them back on first.");
+        }
+
+        var trimmed = (reference ?? string.Empty).Trim();
+
+        if (await business.ContractReferenceTakenAsync(trimmed, cancellationToken))
+        {
+            throw new InvalidOperationException(
+                $"Another contract already uses the reference '{trimmed}'. It is what both sides "
+                + "quote at each other, so it has to be unique.");
+        }
+
+        var firm = await settings.CurrentAsync(cancellationToken);
+
+        var contract = Contract.Draft(clientId, trimmed, title, firm.Currency);
+
+        business.Add(contract);
+        await business.SaveAsync(cancellationToken);
+
+        return contract;
+    }
+
+    /// <summary>What was agreed: the figure, the span, and what it is called.</summary>
+    public async Task AgreeAsync(
+        Guid contractId,
+        string title,
+        Domain.Common.Money value,
+        DateOnly startsOn,
+        DateOnly endsOn,
+        CancellationToken cancellationToken = default)
+    {
+        var contract = await Required(contractId, cancellationToken);
+
+        /*
+         * Value and dates before the title, so that a contract whose terms are
+         * frozen is refused with nothing applied. The other order would rename
+         * an active contract and then throw over the figure, leaving a change
+         * nobody asked for and no record of what was attempted.
+         */
+        contract.WorthUpTo(value);
+        contract.Runs(startsOn, endsOn);
+        contract.Retitle(title);
+
+        await business.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Signed.
+    /// </summary>
+    /// <remarks>
+    /// Refused for a former client, which the contract cannot check for itself.
+    /// Activating terms with somebody the firm has stopped working for is either
+    /// a mistake or the client should be taken back on — and that is the
+    /// conversation this refusal starts, the same one invoicing them starts.
+    /// </remarks>
+    public async Task ActivateAsync(Guid contractId, CancellationToken cancellationToken = default)
+    {
+        var contract = await Required(contractId, cancellationToken);
+
+        var client = await business.FindClientAsync(contract.ClientId, cancellationToken);
+
+        if (client is { IsCurrent: false })
+        {
+            throw new InvalidOperationException(
+                $"{client.Name} is a former client, so terms cannot be brought into force with "
+                + "them.");
+        }
+
+        contract.Activate(clock.Now);
+        await business.SaveAsync(cancellationToken);
+    }
+
+    public async Task ExtendAsync(
+        Guid contractId, DateOnly endsOn, CancellationToken cancellationToken = default)
+    {
+        var contract = await Required(contractId, cancellationToken);
+
+        contract.Extend(endsOn, clock.Now);
+        await business.SaveAsync(cancellationToken);
+    }
+
+    public async Task TerminateAsync(
+        Guid contractId, string reason, CancellationToken cancellationToken = default)
+    {
+        var contract = await Required(contractId, cancellationToken);
+
+        contract.Terminate(reason, clock.Now);
+        await business.SaveAsync(cancellationToken);
+    }
+
+    private async Task<Contract> Required(Guid id, CancellationToken cancellationToken) =>
+        await business.FindContractAsync(id, cancellationToken)
+        ?? throw new InvalidOperationException("There is no contract with that identifier.");
 }
 
 /// <summary>Timesheets, and the day that will not hold more hours.</summary>
@@ -396,6 +531,28 @@ public sealed class ExpenseService(IBusinessRepository business, IClock clock)
 public sealed class InvoiceService(
     IBusinessRepository business, Settings.SettingsService settings, IClock clock)
 {
+    /// <summary>
+    /// Start a bill for a client.
+    /// </summary>
+    /// <remarks>
+    /// An active contract is deliberately not required here, and the decision is
+    /// worth writing down because the opposite one looks more rigorous.
+    ///
+    /// Every client in this database predates contracts existing, so the check
+    /// would refuse the first invoice raised after it shipped — including for
+    /// work already delivered — and go on refusing until somebody had typed up
+    /// the paper for all of them. A system that will not invoice does not make
+    /// the firm careful; it stops the firm being paid, and what it actually
+    /// produces is a contract row typed in a hurry to get past the refusal,
+    /// which is worse evidence than no row at all.
+    ///
+    /// Small jobs are also genuinely done on an email or a purchase order, and
+    /// the written agreement arrives afterwards. So the gap is surfaced rather
+    /// than blocked: the client page says when nothing covers today, and the
+    /// contract page says what has been billed against it. If that turns out to
+    /// be ignored, the refusal becomes a defensible next step — with a backfill
+    /// behind it, which is the part that has to exist first.
+    /// </remarks>
     public async Task<Invoice> DraftAsync(
         Guid clientId, CancellationToken cancellationToken = default)
     {

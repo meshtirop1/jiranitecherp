@@ -1,4 +1,5 @@
 using JiranisokoTech.Domain.Clients;
+using JiranisokoTech.Domain.Contracts;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Time;
 
@@ -8,8 +9,9 @@ namespace JiranisokoTech.Web;
 /// What the business states are called on screen.
 /// </summary>
 /// <remarks>
-/// One place, because the same six enums appear across the time, leave, expense,
-/// client and invoice screens, and a switch copied onto each of them drifts: one
+/// One place, because the same handful of enums appear across the time, leave,
+/// expense, client, contract and invoice screens, and a switch copied onto each
+/// of them drifts: one
 /// page ends up saying "Awaiting approval" while the next says "Pending", and
 /// people reasonably conclude they are different things.
 ///
@@ -71,6 +73,24 @@ public static class Words
         InvoiceStatus.Paid => "Paid",
         InvoiceStatus.Void => "Voided",
         _ => status.ToString(),
+    };
+
+    /// <summary>
+    /// What a contract's state is called on screen.
+    /// </summary>
+    /// <remarks>
+    /// There is no word here for expired, because there is no state for it. A
+    /// contract past its end date is still recorded as active and is shown as
+    /// expired beside that, the same way an overdue invoice is shown as sent and
+    /// overdue — the state is what somebody decided, and expiry is what the
+    /// calendar has since done to it.
+    /// </remarks>
+    public static string For(ContractState state) => state switch
+    {
+        ContractState.Draft => "Being agreed",
+        ContractState.Active => "In force",
+        ContractState.Terminated => "Terminated",
+        _ => state.ToString(),
     };
 
     public static string For(ClientStatus status) => status switch

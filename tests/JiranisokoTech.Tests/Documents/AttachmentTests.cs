@@ -74,6 +74,11 @@ public class AttachmentTests
 
         public ClientService Clients => new(new BusinessRepository(_context));
 
+        public ContractService Contracts => new(
+            new BusinessRepository(_context),
+            new SettingsService(new SettingsRepository(_context)),
+            db.Clock);
+
         public InvoiceService Invoices => new(
             new BusinessRepository(_context),
             new SettingsService(new SettingsRepository(_context)),
@@ -245,6 +250,46 @@ public class AttachmentTests
         Assert.Empty(await module.Documents.ForAsync(AttachedTo.Client, client.Id));
         Assert.Empty(module.Store.Files);
         Assert.Equal(1, module.Store.Deleted);
+    }
+
+    /// <summary>
+    /// The signed copy hangs on the contract, and only on a contract that exists.
+    /// </summary>
+    /// <remarks>
+    /// The second half is the half worth testing. The owner is not a foreign key,
+    /// so nothing in the database refuses a contract attachment pointing at
+    /// nothing — the branch added to the repository for this kind is the only
+    /// thing that does, and a kind left out of that switch throws at the moment
+    /// somebody first tries to use it rather than when it was added.
+    /// </remarks>
+    [Fact]
+    public async Task A_contract_holds_the_signed_copy_and_only_a_real_one_does()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var client = await module.Clients.TakeOnAsync("Acme Logistics");
+        var contract = await module.Contracts.DraftAsync(
+            client.Id, "JTS-C-2026-011", "Fleet tracking");
+
+        await using var signed = Contents("the signed one");
+
+        await module.Documents.AttachAsync(
+            AttachedTo.Contract, contract.Id, signed, "signed.pdf", 14, null, "Countersigned");
+
+        var found = Assert.Single(await module.Documents.ForAsync(AttachedTo.Contract, contract.Id));
+
+        Assert.Equal("Countersigned", found.Note);
+
+        // The client's own attachments are a different list, so the signature
+        // cannot be mistaken for a contract the relationship has since replaced.
+        Assert.Empty(await module.Documents.ForAsync(AttachedTo.Client, client.Id));
+
+        await using var orphan = Contents();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => module.Documents.AttachAsync(
+                AttachedTo.Contract, Guid.CreateVersion7(), orphan, "signed.pdf", 14, null));
     }
 
     /// <summary>

@@ -166,9 +166,16 @@ public sealed class ExpenseClaim : Entity, IAuditable
     {
         Awaiting();
 
+        // Checked before the status moves, for the reason written out on
+        // Invoice.Void: assigning it afterwards leaves a blank reason having
+        // already refused the claim in memory, and whichever caller catches the
+        // refusal and saves anyway writes a refusal nobody can explain to the
+        // person who is now out of pocket.
+        var why = Require(reason, nameof(reason));
+
         Status = ClaimStatus.Refused;
         DecidedAt = at;
-        Outcome = Require(reason, nameof(reason));
+        Outcome = why;
 
         Raise(new ExpenseRefused(Id, EmployeeId, Outcome, at));
     }

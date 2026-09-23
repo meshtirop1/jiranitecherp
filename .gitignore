@@ -21,13 +21,21 @@
 .idea/
 *.swp
 
-# Messages the file mailer writes in development. Correspondence, and not
-# something to commit.
-mail/
-
-# Candidate CVs written by the file store. Documents belonging to people
-# outside this firm, and not something to commit.
-cvs/
+# Messages the file mailer writes in development, and the CVs the file store
+# keeps. Correspondence and documents belonging to people outside this firm, and
+# not something to commit.
+#
+# Anchored to where they are actually written: beside the application's content
+# root when it is run from the repository, and at the root of a published tree.
+# These rules used to read "mail/" and "cvs/", which git matches at any depth —
+# so they also matched src/JiranisokoTech.Application/Mail,
+# src/JiranisokoTech.Infrastructure/Mail and tests/JiranisokoTech.Tests/Mail,
+# and the entire mail module was silently unaddable. Nothing complained,
+# because the files were on the disk of the machine they were written on.
+/mail/
+/cvs/
+src/JiranisokoTech.Web/mail/
+src/JiranisokoTech.Web/cvs/
 
 # Worktrees the agent tooling creates. Not part of the project.
 .claude/worktrees/

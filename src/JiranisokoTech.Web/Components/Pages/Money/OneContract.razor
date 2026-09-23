@@ -1,0 +1,514 @@
+@page "/contracts/{Id:guid}"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Abstractions
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Application.Documents
+@using JiranisokoTech.Domain.Contracts
+@using JiranisokoTech.Domain.Documents
+@using JiranisokoTech.Domain.Money
+@using JiranisokoTech.Infrastructure.Business
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@using Cash = JiranisokoTech.Domain.Common.Money
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ContractsView)]
+@inject BusinessQueries Queries
+@inject ContractService Service
+@inject DocumentService Files
+@inject PeopleQueries People
+@inject IClock Clock
+@inject NavigationManager Navigation
+
+@*
+    One contract, with what was agreed on it and the signed copy attached to it.
+
+    The signature is attached here rather than to the client, because a
+    relationship runs through several contracts and a pile of PDFs on the client
+    cannot say which one signed what.
+*@
+
+@if (Contract is null)
+{
+    <PageTitle>Contract not found — Jiranisoko Delivery</PageTitle>
+
+    <h1>No such contract</h1>
+    <p>Nothing here has that identifier. <a href="/clients">Back to clients</a>.</p>
+}
+else
+{
+    <PageTitle>@Contract.Reference — Jiranisoko Delivery</PageTitle>
+
+    <nav class="crumbs">
+        <a href="/clients">Clients</a>
+        <a href="/clients/@Contract.ClientId">@ClientName</a>
+    </nav>
+
+    <div class="page-head">
+        <h1>@Contract.Reference</h1>
+        <span class="pill @PillFor(Contract.State)">@Words.For(Contract.State)</span>
+
+        @*
+            Shown beside the state rather than instead of it, because it is not
+            one. The state is what somebody decided; expiry is what the calendar
+            has since done, and both are true at once.
+        *@
+        @if (Contract.HasExpiredOn(Today))
+        {
+            <span class="pill pill--quiet">Expired</span>
+        }
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    <dl class="facts">
+        <dt>Client</dt>
+        <dd><a href="/clients/@Contract.ClientId">@ClientName</a></dd>
+
+        <dt>What it is for</dt>
+        <dd>@Contract.Title</dd>
+
+        <dt>Worth</dt>
+        <dd class="number">@(Contract.Value?.ToString() ?? "Not agreed yet")</dd>
+
+        <dt>Runs</dt>
+        <dd>
+            @if (Contract.StartsOn is { } from && Contract.EndsOn is { } to)
+            {
+                @($"{from:d MMMM yyyy} to {to:d MMMM yyyy}")
+            }
+            else
+            {
+                @("No dates agreed yet")
+            }
+        </dd>
+
+        @if (Contract.ActivatedAt is { } signed)
+        {
+            <dt>In force since</dt>
+            <dd>@signed.ToString("d MMMM yyyy")</dd>
+        }
+
+        @if (Contract.State == ContractState.Terminated && Contract.Outcome is { } why)
+        {
+            <dt>Terminated because</dt>
+            <dd>@why</dd>
+        }
+    </dl>
+
+    @if (Contract.State == ContractState.Draft)
+    {
+        <AuthorizeView Policy="@ManagePolicy" Context="mayAgree">
+            <Authorized>
+                <EditForm Model="Terms" method="post" OnValidSubmit="Agree" FormName="terms"
+                          class="panel stack">
+                    <DataAnnotationsValidator />
+
+                    <h3>What was agreed</h3>
+
+                    <label>
+                        <span>What it is for</span>
+                        <InputText @bind-Value="Terms.Title" />
+                        <ValidationMessage For="() => Terms.Title" />
+                    </label>
+
+                    <div class="fields">
+                        <label>
+                            <span>Worth (@Contract.Currency)</span>
+                            <InputNumber @bind-Value="Terms.Value" step="0.01" min="0.01" />
+                            <ValidationMessage For="() => Terms.Value" />
+                        </label>
+
+                        <label>
+                            <span>From</span>
+                            <InputDate @bind-Value="Terms.StartsOn" />
+                        </label>
+
+                        <label>
+                            <span>To</span>
+                            <InputDate @bind-Value="Terms.EndsOn" />
+                        </label>
+                    </div>
+
+                    <button type="submit">Record it</button>
+                </EditForm>
+
+                <section class="actions actions--page">
+                    @*
+                        A button and nothing else, because everything it needs is
+                        already recorded. What it refuses is a contract missing
+                        the figure or the dates: one with no figure authorises any
+                        amount and one with no dates authorises it for ever, and
+                        both read on this page as a contract in good order.
+                    *@
+                    <form method="post" @formname="activate" @onsubmit="Activate">
+                        <AntiforgeryToken />
+                        <button type="submit">Bring it into force</button>
+                    </form>
+
+                    <p class="subtle">
+                        From then the terms are frozen: an active contract is
+                        extended or terminated, not rewritten, because the client
+                        is holding a signed copy of it.
+                    </p>
+                </section>
+            </Authorized>
+            <NotAuthorized>
+                <p class="subtle">
+                    Still being agreed. Agreeing terms and billing against them are
+                    separate permissions, so somebody else settles this.
+                </p>
+            </NotAuthorized>
+        </AuthorizeView>
+    }
+
+    @if (Contract.State == ContractState.Active)
+    {
+        <AuthorizeView Policy="@ManagePolicy" Context="mayEnd">
+            <section class="actions actions--page">
+                <EditForm Model="Extension" method="post" OnValidSubmit="Extend"
+                          FormName="extend" class="inline">
+                    <label>
+                        <span>Extend to</span>
+                        <InputDate @bind-Value="Extension.EndsOn" />
+                    </label>
+                    <button type="submit" class="button button--quiet">Extend it</button>
+                </EditForm>
+
+                <EditForm Model="Ending" method="post" OnValidSubmit="Terminate"
+                          FormName="terminate" class="inline">
+                    <DataAnnotationsValidator />
+                    <InputText @bind-Value="Ending.Reason" placeholder="Why it is ending" />
+                    <button type="submit" class="danger">Terminate it</button>
+                    <ValidationMessage For="() => Ending.Reason" />
+                </EditForm>
+            </section>
+        </AuthorizeView>
+    }
+
+    @if (Contract.StartsOn is not null)
+    {
+        <section class="standing">
+            <h2>Billed while it ran</h2>
+
+            @*
+                Read by date and client, not by a link: an invoice does not carry
+                a contract identifier. So this is the invoices issued inside the
+                span rather than the invoices raised under this agreement, and the
+                two differ whenever two contracts overlap. Saying so here is
+                cheaper than a number nobody can account for; linking an invoice
+                to its contract is the honest next step and is not done yet.
+
+                Voided invoices are left out because nothing was billed on them,
+                and a foreign-currency one is left out because Money refuses to
+                add two currencies — and a contract agreed in one cannot be
+                checked against a bill in another anyway.
+            *@
+            @if (Within.Count == 0)
+            {
+                <p class="empty">Nothing was invoiced to this client while it ran.</p>
+            }
+            else
+            {
+                <p class="subtle">
+                    @Billed of @(Contract.Value?.ToString() ?? "an unagreed figure"),
+                    across @Within.Count invoice(s).
+                </p>
+
+                <table class="grid">
+                    <caption class="visually-hidden">Invoices issued while this contract ran</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Number</th>
+                            <th scope="col">Issued</th>
+                            <th scope="col">Total</th>
+                            <th scope="col">Outstanding</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var invoice in Within)
+                        {
+                            <tr>
+                                <td><a href="/invoices/@invoice.Id"><code>@invoice.Number</code></a></td>
+                                <td>@invoice.IssuedOn.ToString("d MMM yyyy")</td>
+                                <td class="number">@invoice.Total</td>
+                                <td class="number">@invoice.Outstanding</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    }
+
+    <section class="standing">
+        <h2>Attached</h2>
+
+        @if (Attached.Count == 0)
+        {
+            <p class="empty">Nothing attached. The signed copy belongs here.</p>
+        }
+        else
+        {
+            <ul class="plain">
+                @foreach (var file in Attached)
+                {
+                    <li>
+                        <a href="/documents/@file.Id">@file.FileName</a>
+                        <span class="subtle">
+                            @file.Size, @file.UploadedAt.ToString("d MMM yyyy")@(file.Note is { } note ? $" — {note}" : null)
+                        </span>
+                    </li>
+                }
+            </ul>
+        }
+
+        <AuthorizeView Policy="@ManagePolicy" Context="mayAttach">
+            @*
+                A plain file input in a multipart form. Blazor's InputFile needs
+                an interactive circuit and this page has none; the file arrives
+                on HttpContext.Request.Form instead.
+            *@
+            <EditForm Model="Attaching" method="post" OnValidSubmit="Attach" FormName="attach"
+                      enctype="multipart/form-data" class="inline">
+                <label>
+                    <span class="visually-hidden">A file</span>
+                    <input type="file" name="document" />
+                </label>
+                <InputText @bind-Value="Attaching.Note" placeholder="What it is" />
+                <button type="submit" class="button button--quiet">Attach</button>
+            </EditForm>
+        </AuthorizeView>
+    </section>
+}
+
+@code {
+    private const string ManagePolicy = PermissionClaim.PolicyPrefix + Permissions.ContractsManage;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private TermsInput _terms = new();
+
+    [SupplyParameterFromForm(FormName = "terms")]
+    private TermsInput Terms
+    {
+        get => _terms;
+        set => _terms = value ?? new TermsInput();
+    }
+
+    private ExtensionInput _extension = new();
+
+    [SupplyParameterFromForm(FormName = "extend")]
+    private ExtensionInput Extension
+    {
+        get => _extension;
+        set => _extension = value ?? new ExtensionInput();
+    }
+
+    private EndingInput _ending = new();
+
+    [SupplyParameterFromForm(FormName = "terminate")]
+    private EndingInput Ending
+    {
+        get => _ending;
+        set => _ending = value ?? new EndingInput();
+    }
+
+    private AttachInput _attaching = new();
+
+    [SupplyParameterFromForm(FormName = "attach")]
+    private AttachInput Attaching
+    {
+        get => _attaching;
+        set => _attaching = value ?? new AttachInput();
+    }
+
+    private Contract? Contract { get; set; }
+
+    private string ClientName { get; set; } = string.Empty;
+
+    private Guid? Me { get; set; }
+
+    private List<InvoiceRow> Within { get; set; } = [];
+
+    private Cash? Billed { get; set; }
+
+    private List<Attachment> Attached { get; set; } = [];
+
+    private DateOnly Today { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Today = Clock.Today;
+
+        var state = await AuthenticationState;
+
+        if (Guid.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            Me = await People.EmployeeForAccountAsync(account);
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Contract = await Queries.ContractAsync(Id);
+
+        if (Contract is null)
+        {
+            return;
+        }
+
+        ClientName = (await Queries.ClientAsync(Contract.ClientId))?.Name
+            ?? "A client since removed";
+
+        Attached = await Files.ForAsync(AttachedTo.Contract, Id);
+
+        await BilledAsync();
+
+        // Only before a form has been posted, or a refused change would show the
+        // stored figures back rather than the ones somebody typed.
+        if (!_loaded)
+        {
+            Terms.Title = Contract.Title;
+            Terms.Value = Contract.Value is { } worth ? worth.MinorUnits / 100m : 0m;
+            Terms.StartsOn = Contract.StartsOn ?? Today;
+            Terms.EndsOn = Contract.EndsOn ?? Today.AddYears(1);
+            Extension.EndsOn = Contract.EndsOn?.AddMonths(3) ?? Today.AddMonths(3);
+
+            _loaded = true;
+        }
+    }
+
+    private async Task BilledAsync()
+    {
+        if (Contract is not { StartsOn: { } from })
+        {
+            return;
+        }
+
+        // Open-ended if the end date has somehow gone missing, which only a draft
+        // can be. Counting to the start date alone would report nothing billed.
+        var to = Contract.EndsOn ?? DateOnly.MaxValue;
+
+        Within = (await Queries.InvoicesAsync(clientId: Contract.ClientId))
+            .Where(invoice => invoice.IssuedOn >= from && invoice.IssuedOn <= to)
+            .Where(invoice => invoice.Status != InvoiceStatus.Void)
+            .Where(invoice => invoice.Total.Currency == Contract.Currency)
+            .ToList();
+
+        Billed = Within.Count == 0
+            ? null
+            : Within.Aggregate(
+                Cash.Zero(Contract.Currency), (running, invoice) => running + invoice.Total);
+    }
+
+    private Task Agree() => TryAsync(() => Service.AgreeAsync(
+        Id, Terms.Title, Minor(Terms.Value), Terms.StartsOn, Terms.EndsOn));
+
+    private Task Activate() => TryAsync(() => Service.ActivateAsync(Id));
+
+    private Task Extend() => TryAsync(() => Service.ExtendAsync(Id, Extension.EndsOn));
+
+    private Task Terminate() => TryAsync(() => Service.TerminateAsync(Id, Ending.Reason));
+
+    private Task Attach() => TryAsync(async () =>
+    {
+        var file = Request?.Request.Form.Files["document"];
+
+        if (file is not { Length: > 0 })
+        {
+            throw new InvalidOperationException("Choose a file first.");
+        }
+
+        await using var contents = file.OpenReadStream();
+
+        await Files.AttachAsync(
+            AttachedTo.Contract, Id, contents, file.FileName, file.Length, Me, Attaching.Note);
+    });
+
+    /// <summary>
+    /// Shillings as typed, into the integer count of cents Money holds.
+    /// </summary>
+    /// <remarks>
+    /// Banker's rounding on the half, which is what accounting expects and what
+    /// the invoice page does with the same figure. The currency comes from the
+    /// contract rather than the form: one contract is in one currency and the
+    /// aggregate refuses a figure in any other, so a choice here would only
+    /// produce a refusal.
+    /// </remarks>
+    private Cash Minor(decimal shillings) => Cash.Of(
+        (long)Math.Round(shillings * 100m, MidpointRounding.ToEven), Contract!.Currency);
+
+    private async Task TryAsync(Func<Task> act)
+    {
+        Refusal = null;
+
+        try
+        {
+            await act();
+            Navigation.NavigateTo($"/contracts/{Id}", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException
+                or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string? PillFor(ContractState state) => state switch
+    {
+        ContractState.Active => "pill--done",
+        ContractState.Terminated => "pill--quiet",
+        _ => null,
+    };
+
+    private sealed class TermsInput
+    {
+        [Required(ErrorMessage = "Say what the agreement is for.")]
+        [StringLength(300)]
+        public string Title { get; set; } = string.Empty;
+
+        [Range(0.01, 1_000_000_000, ErrorMessage = "A figure above zero.")]
+        public decimal Value { get; set; }
+
+        public DateOnly StartsOn { get; set; }
+
+        public DateOnly EndsOn { get; set; }
+    }
+
+    private sealed class ExtensionInput
+    {
+        public DateOnly EndsOn { get; set; }
+    }
+
+    private sealed class EndingInput
+    {
+        [Required(ErrorMessage = "Say why. A contract that stopped for no recorded reason is one nobody can explain later.")]
+        [StringLength(500)]
+        public string Reason { get; set; } = string.Empty;
+    }
+
+    private sealed class AttachInput
+    {
+        [StringLength(500)]
+        public string? Note { get; set; }
+    }
+}

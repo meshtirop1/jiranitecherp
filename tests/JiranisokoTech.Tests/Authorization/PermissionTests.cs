@@ -182,6 +182,70 @@ public class PermissionTests
     }
 
     /// <summary>
+    /// Agreeing what a client may be billed and billing them are separate hands.
+    /// </summary>
+    /// <remarks>
+    /// The third pair, and the same reasoning as the two above: a contract is the
+    /// authority for an invoice, so one person holding both can write the
+    /// authority for their own bill and nothing in the record shows they did. The
+    /// delivery manager therefore reads contracts and does not write them.
+    /// </remarks>
+    [Fact]
+    public void Agreeing_terms_and_invoicing_against_them_are_not_the_same_hands()
+    {
+        var both = Roles.All
+            .Where(role => role is not (Roles.Owner or Roles.Administrator))
+            .Where(role => Roles.PermissionsFor(role).Contains(Permissions.ContractsManage)
+                && Roles.PermissionsFor(role).Contains(Permissions.InvoicesManage))
+            .ToList();
+
+        Assert.Empty(both);
+    }
+
+    /// <summary>
+    /// Anybody who may agree terms can read them back.
+    /// </summary>
+    /// <remarks>
+    /// The tasks.view_own mistake in another costume: a permission to change a
+    /// thing, held by somebody with no permission to open the page it is on.
+    /// </remarks>
+    [Fact]
+    public void Nobody_can_agree_a_contract_they_cannot_read()
+    {
+        foreach (var role in Roles.All)
+        {
+            var held = Roles.PermissionsFor(role);
+
+            if (held.Contains(Permissions.ContractsManage))
+            {
+                Assert.Contains(Permissions.ContractsView, held);
+            }
+        }
+    }
+
+    /// <summary>
+    /// And anybody who may read a contract can open the client it belongs to.
+    /// </summary>
+    /// <remarks>
+    /// The only way in is the client page, so a role holding contracts.view
+    /// without clients.view has been given a capability with no door — which is
+    /// this codebase's recurring fault.
+    /// </remarks>
+    [Fact]
+    public void Nobody_holds_contracts_without_a_way_to_reach_them()
+    {
+        foreach (var role in Roles.All)
+        {
+            var held = Roles.PermissionsFor(role);
+
+            if (held.Contains(Permissions.ContractsView))
+            {
+                Assert.Contains(Permissions.ClientsView, held);
+            }
+        }
+    }
+
+    /// <summary>
     /// Anybody who can submit a scorecard can open the interview it is for.
     /// </summary>
     [Fact]

@@ -118,6 +118,7 @@ public static class Documents
         AttachedTo.Invoice => Permissions.InvoicesView,
         AttachedTo.ExpenseClaim => Permissions.ExpensesViewAll,
         AttachedTo.Employee => Permissions.EmployeesView,
+        AttachedTo.Contract => Permissions.ContractsView,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown attachment kind."),
     };
 
@@ -129,6 +130,11 @@ public static class Documents
         AttachedTo.Invoice => Permissions.InvoicesManage,
         AttachedTo.ExpenseClaim => Permissions.ExpensesClaim,
         AttachedTo.Employee => Permissions.EmployeesManage,
+
+        // Attaching the signed copy is part of agreeing the thing, so it is the
+        // same permission. Anybody who may put a signature into the record may
+        // also have agreed what it signs.
+        AttachedTo.Contract => Permissions.ContractsManage,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown attachment kind."),
     };
 }

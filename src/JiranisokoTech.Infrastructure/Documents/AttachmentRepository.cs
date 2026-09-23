@@ -22,7 +22,7 @@ public sealed class AttachmentRepository(AppDbContext database) : IAttachmentRep
     /// Does the thing being attached to actually exist?
     /// </summary>
     /// <remarks>
-    /// Asked because the owner is not a foreign key — it points at one of five
+    /// Asked because the owner is not a foreign key — it points at one of six
     /// tables depending on the kind, so the database cannot refuse a row that
     /// points at nothing. This is that check, done in the one place that knows
     /// which table each kind means.
@@ -41,6 +41,8 @@ public sealed class AttachmentRepository(AppDbContext database) : IAttachmentRep
                 database.Expenses.AnyAsync(one => one.Id == ownerId, cancellationToken),
             AttachedTo.Employee =>
                 database.Employees.AnyAsync(one => one.Id == ownerId, cancellationToken),
+            AttachedTo.Contract =>
+                database.Contracts.AnyAsync(one => one.Id == ownerId, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(kind), kind, "Unknown attachment kind."),
         };

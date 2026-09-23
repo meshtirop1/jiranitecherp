@@ -4,6 +4,7 @@ using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Domain.Api;
 using JiranisokoTech.Domain.Approvals;
 using JiranisokoTech.Domain.Clients;
+using JiranisokoTech.Domain.Contracts;
 using JiranisokoTech.Domain.Documents;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Time;
@@ -45,6 +46,8 @@ public class AppDbContext(
     public DbSet<ApprovalRequest> Approvals => Set<ApprovalRequest>();
 
     public DbSet<Client> Clients => Set<Client>();
+
+    public DbSet<Contract> Contracts => Set<Contract>();
 
     public DbSet<Invoice> Invoices => Set<Invoice>();
 

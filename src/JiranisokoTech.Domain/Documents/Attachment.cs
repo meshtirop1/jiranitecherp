@@ -16,6 +16,17 @@ public enum AttachedTo
     Invoice = 3,
     ExpenseClaim = 4,
     Employee = 5,
+
+    /// <summary>
+    /// The signed agreement itself.
+    /// </summary>
+    /// <remarks>
+    /// Its own kind rather than a file on the client, because the client record
+    /// holds however many contracts the relationship has run through and a pile
+    /// of PDFs on the client cannot say which is which. The signature belongs
+    /// with the terms it signed.
+    /// </remarks>
+    Contract = 6,
 }
 
 /// <summary>
@@ -77,14 +88,14 @@ public sealed class Attachment : Entity, IAuditable
 
     public AttachedTo Kind { get; private init; }
 
-    /// <summary>The client, project, invoice, claim or person this belongs to.</summary>
+    /// <summary>The client, contract, project, invoice, claim or person this belongs to.</summary>
     /// <remarks>
-    /// Not a foreign key, because it points at one of five tables depending on
+    /// Not a foreign key, because it points at one of six tables depending on
     /// <see cref="Kind"/>. The trade is real and is made deliberately: the
     /// database cannot stop a row pointing at nothing, so deleting an aggregate
     /// has to take its attachments with it rather than relying on a cascade.
-    /// Five nullable foreign keys would let the database enforce it and would
-    /// mean a schema change for the sixth kind, and four nulls on every row.
+    /// Six nullable foreign keys would let the database enforce it and would
+    /// mean a schema change for the seventh kind, and five nulls on every row.
     /// </remarks>
     public Guid OwnerId { get; private init; }
 
