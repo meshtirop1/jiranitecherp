@@ -52,8 +52,22 @@ public static class WebhookEndpoints
             .RequireRateLimiting(Policy)
             .ExcludeFromDescription();
 
-        hooks.MapPost("/github", (HttpContext context, WebhookInbox inbox, CancellationToken token)
-            => ReceiveAsync(GitProvider.GitHub, context, inbox, token));
+        /*
+         * A route per provider rather than one route that works out which it is.
+         * The provider decides which secret to verify against and which adapter
+         * reads the body, and guessing that from the payload would mean reading an
+         * unverified body to decide how to verify it — the exact inversion this
+         * endpoint exists to avoid.
+         */
+        foreach (var provider in Enum.GetValues<GitProvider>())
+        {
+            var path = "/" + provider.ToString().ToLowerInvariant();
+
+            hooks.MapPost(
+                path,
+                (HttpContext context, WebhookInbox inbox, CancellationToken token)
+                    => ReceiveAsync(provider, context, inbox, token));
+        }
 
         return endpoints;
     }

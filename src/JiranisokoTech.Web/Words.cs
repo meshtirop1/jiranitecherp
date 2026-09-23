@@ -1,6 +1,7 @@
 using JiranisokoTech.Domain.Clients;
 using JiranisokoTech.Domain.Contracts;
 using JiranisokoTech.Domain.Engineering;
+using JiranisokoTech.Domain.Integrations;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Time;
 
@@ -123,6 +124,21 @@ public static class Words
         DeliveryStatus.Ignored => "Nothing for us",
         DeliveryStatus.Failed => "Failed, will retry",
         DeliveryStatus.DeadLettered => "Gave up",
+        _ => status.ToString(),
+    };
+
+    /// <summary>What became of a notification this system sent.</summary>
+    /// <remarks>
+    /// "Gave up" rather than "dead lettered", because the person reading it has to
+    /// decide whether to chase somebody at the far end, and the jargon does not help
+    /// them do that.
+    /// </remarks>
+    public static string For(OutboundStatus status) => status switch
+    {
+        OutboundStatus.Waiting => "Queued",
+        OutboundStatus.Sent => "Sent",
+        OutboundStatus.Failed => "Failed, will retry",
+        OutboundStatus.DeadLettered => "Gave up",
         _ => status.ToString(),
     };
 

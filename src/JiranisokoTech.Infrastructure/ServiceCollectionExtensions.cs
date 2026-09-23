@@ -12,6 +12,11 @@ using JiranisokoTech.Application.People;
 using JiranisokoTech.Application.Engineering;
 using JiranisokoTech.Domain.Engineering;
 using JiranisokoTech.Infrastructure.Engineering;
+using JiranisokoTech.Application.Integrations;
+using JiranisokoTech.Domain.Integrations;
+using JiranisokoTech.Infrastructure.Integrations;
+using JiranisokoTech.Domain.Money;
+using JiranisokoTech.Domain.Clients;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Infrastructure.Messaging;
 using JiranisokoTech.Infrastructure.Approvals;
@@ -176,6 +181,9 @@ public static class ServiceCollectionExtensions
         services.Configure<GitOptions>(configuration.GetSection(GitOptions.Section));
         services.AddSingleton<IWebhookSecrets, WebhookSecrets>();
         services.AddSingleton<IGitProvider, GitHubProvider>();
+        services.AddSingleton<IGitProvider, GitLabProvider>();
+        services.AddSingleton<IGitProvider, BitbucketProvider>();
+        services.AddSingleton<IGitProvider, AzureDevOpsProvider>();
         services.AddScoped<IEngineeringRepository, EngineeringRepository>();
         services.AddScoped<EngineeringService>();
         services.AddScoped<EngineeringQueries>();
@@ -188,6 +196,62 @@ public static class ServiceCollectionExtensions
         // have to say it again on a board.
         services.AddScoped<IDomainEventHandler<PullRequestMerged>,
             SubmitWorkWhenPullRequestMerges>();
+
+        /*
+         * Outgoing webhooks. The fan-out handler is generic and registered once per
+         * event in OutboundEvents.Offered, so what may leave the building is a list in
+         * one file plus these registrations — and adding a domain event somewhere else
+         * cannot quietly begin sending it to third parties.
+         */
+        services.AddSingleton<ISecretStore, DataProtectionSecretStore>();
+        services.AddScoped<IIntegrationRepository, IntegrationRepository>();
+        services.AddScoped<SubscriptionService>();
+        services.AddScoped<IntegrationQueries>();
+        services.AddScoped<IOutboundSender, HttpOutboundSender>();
+        services.AddScoped<OutboundDispatcher>();
+        services.AddHostedService<OutboundProcessor>();
+
+        services.AddHttpClient(HttpOutboundSender.ClientName, client =>
+        {
+            /*
+             * Ten seconds, and it is a deliberate figure. A receiver that needs longer
+             * than that to acknowledge a notification is doing its work inside the
+             * request instead of queueing it, and waiting for them would let one slow
+             * endpoint set the pace of every notification behind it.
+             */
+            client.Timeout = TimeSpan.FromSeconds(10);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("JiranisokoTech-Delivery/1.0");
+        });
+
+        services.AddScoped<IDomainEventHandler<PullRequestOpened>,
+            PublishToSubscribers<PullRequestOpened>>();
+        services.AddScoped<IDomainEventHandler<CommitRecorded>,
+            PublishToSubscribers<CommitRecorded>>();
+        services.AddScoped<IDomainEventHandler<InvoiceSent>,
+            PublishToSubscribers<InvoiceSent>>();
+        services.AddScoped<IDomainEventHandler<InvoiceSettled>,
+            PublishToSubscribers<InvoiceSettled>>();
+        services.AddScoped<IDomainEventHandler<PaymentRecorded>,
+            PublishToSubscribers<PaymentRecorded>>();
+        services.AddScoped<IDomainEventHandler<ClientTakenOn>,
+            PublishToSubscribers<ClientTakenOn>>();
+        services.AddScoped<IDomainEventHandler<ClientStatusChanged>,
+            PublishToSubscribers<ClientStatusChanged>>();
+        services.AddScoped<IDomainEventHandler<PostingPublished>,
+            PublishToSubscribers<PostingPublished>>();
+        services.AddScoped<IDomainEventHandler<ApplicationReceived>,
+            PublishToSubscribers<ApplicationReceived>>();
+        services.AddScoped<IDomainEventHandler<CandidateHired>,
+            PublishToSubscribers<CandidateHired>>();
+        services.AddScoped<IDomainEventHandler<EmployeeStarted>,
+            PublishToSubscribers<EmployeeStarted>>();
+        services.AddScoped<IDomainEventHandler<EmployeeLeft>,
+            PublishToSubscribers<EmployeeLeft>>();
+
+        // PullRequestMerged already has a handler above; a second one for the same
+        // event is fine and expected — the outbox runs every handler registered for it.
+        services.AddScoped<IDomainEventHandler<PullRequestMerged>,
+            PublishToSubscribers<PullRequestMerged>>();
 
         return services;
     }

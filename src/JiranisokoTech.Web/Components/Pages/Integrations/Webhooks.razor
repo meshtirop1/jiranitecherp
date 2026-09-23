@@ -1,0 +1,369 @@
+@page "/settings/webhooks"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Integrations
+@using JiranisokoTech.Domain.Integrations
+@using JiranisokoTech.Infrastructure.Integrations
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.SettingsManage)]
+@inject SubscriptionService Subscriptions
+@inject IntegrationQueries Queries
+@inject NavigationManager Navigation
+
+<PageTitle>Outgoing webhooks — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/settings">Settings</a></nav>
+
+<div class="page-head">
+    <h1>Outgoing webhooks</h1>
+</div>
+
+<p class="instructions">
+    Where this system tells somebody else that something happened. Each
+    notification is signed the same way GitHub signs its own, so the receiving end
+    can verify it with anything written for a GitHub webhook.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Failing > 0)
+{
+    <p class="refusal" role="alert">
+        @Failing @(Failing == 1 ? "notification has" : "notifications have") given up.
+        Somebody outside this firm is missing something they were promised.
+    </p>
+}
+
+@if (Issued is not null)
+{
+    <section class="panel stack">
+        <h2>Here is the signing secret. It will not be shown again.</h2>
+
+        <p><code class="secret">@Issued</code></p>
+
+        <p class="subtle">
+            Paste it into the receiving system now. Notifications carry
+            <code>@HttpOutboundSender.SignatureHeader</code>, which is
+            <code>sha256=</code> followed by an HMAC-SHA256 of the exact body
+            computed with this value — the same scheme as a GitHub webhook.
+            It is stored encrypted here because signing needs it back, but showing
+            it a second time would only put it in a browser's history.
+        </p>
+    </section>
+}
+
+<EditForm Model="Input" method="post" OnValidSubmit="Add" FormName="add" class="panel stack">
+    <DataAnnotationsValidator />
+
+    <h2>Add a subscription</h2>
+
+    <label>
+        <span>What it is</span>
+        <InputText @bind-Value="Input.Name" placeholder="Accounts system" />
+        <ValidationMessage For="() => Input.Name" />
+    </label>
+
+    <label>
+        <span>Where to post</span>
+        <InputText @bind-Value="Input.Endpoint" placeholder="https://accounts.example.com/hooks/erp" />
+        <ValidationMessage For="() => Input.Endpoint" />
+        <span class="subtle">
+            Must be https. The payload describes invoices, pay and clients, and
+            plain http shows all of it to everything in between.
+        </span>
+    </label>
+
+    <fieldset class="scopes">
+        <legend>What to send</legend>
+
+        @*
+            An explicit list rather than "everything". A subscription built to watch
+            invoices must not silently begin receiving employee records the day
+            somebody adds a new event type.
+        *@
+        @foreach (var (name, description) in OutboundEvents.Offered)
+        {
+            <label class="check">
+                <input type="checkbox" name="Input.Events" value="@name" />
+                <span><code>@name</code> — @description</span>
+            </label>
+        }
+
+        <ValidationMessage For="() => Input.Events" />
+    </fieldset>
+
+    <button type="submit">Add it</button>
+</EditForm>
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">Nothing outside this system is being told anything.</p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Outgoing webhook subscriptions</caption>
+        <thead>
+            <tr>
+                <th scope="col">What it is</th>
+                <th scope="col">Events</th>
+                <th scope="col">Queued</th>
+                <th scope="col">Last sent</th>
+                <th scope="col">State</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Rows)
+            {
+                <tr class="@(row.IsActive ? null : "row--closed")">
+                    <td>
+                        <strong>@row.Name</strong>
+                        <span class="subtle">@row.Endpoint</span>
+                    </td>
+                    <td class="subtle">@string.Join(", ", row.Events)</td>
+                    <td class="number">
+                        @row.Waiting
+                        @if (row.Failing > 0)
+                        {
+                            <span class="pill pill--danger">@row.Failing gave up</span>
+                        }
+                    </td>
+                    <td>
+                        @if (row.LastDeliveryAt is { } sent)
+                        {
+                            @sent.ToString("d MMM yyyy HH:mm")
+                        }
+                        else
+                        {
+                            <span class="subtle">Never</span>
+                        }
+                    </td>
+                    <td>
+                        @if (row.IsActive)
+                        {
+                            <span class="pill pill--done">On</span>
+
+                            @if (row.ConsecutiveFailures > 0)
+                            {
+                                @* Said before it switches itself off, so somebody has
+                                   a chance to fix the endpoint first. *@
+                                <span class="pill pill--danger">
+                                    @row.ConsecutiveFailures of
+                                    @Subscription.MaximumConsecutiveFailures failed
+                                </span>
+                            }
+
+                            <EditForm Model="Nothing" method="post"
+                                      FormName="@($"disable-{row.Id}")"
+                                      OnValidSubmit="() => Disable(row.Id)" class="inline">
+                                <button type="submit" class="danger">Switch off</button>
+                            </EditForm>
+                        }
+                        else
+                        {
+                            <span class="pill pill--quiet">Off</span>
+                            <span class="subtle">@row.DisabledReason</span>
+
+                            <EditForm Model="Nothing" method="post"
+                                      FormName="@($"enable-{row.Id}")"
+                                      OnValidSubmit="() => Enable(row.Id)" class="inline">
+                                <button type="submit">Switch on</button>
+                            </EditForm>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <h2>Recent notifications</h2>
+
+    @if (Deliveries.Count == 0)
+    {
+        <p class="empty">None of the subscribed events has happened yet.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Recent outgoing notifications</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Queued</th>
+                    <th scope="col">Event</th>
+                    <th scope="col">To</th>
+                    <th scope="col">State</th>
+                    <th scope="col">Why</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var delivery in Deliveries)
+                {
+                    <tr>
+                        <td>@delivery.QueuedAt.ToString("d MMM HH:mm:ss")</td>
+                        <td><code>@delivery.Event</code></td>
+                        <td>@(delivery.Subscription ?? "—")</td>
+                        <td>
+                            <span class="pill @PillFor(delivery.Status)">
+                                @Words.For(delivery.Status)
+                            </span>
+                            @if (delivery.Attempts > 0)
+                            {
+                                <span class="subtle">
+                                    @delivery.Attempts of @OutboundDelivery.MaximumAttempts
+                                </span>
+                            }
+                        </td>
+                        <td>
+                            @*
+                                Not named "code": @code is Razor's own directive, and a
+                                variable by that name is a compile error several lines
+                                away from anything that looks like the cause.
+                            *@
+                            @if (delivery.ResponseCode is { } answered)
+                            {
+                                <span class="subtle">answered @answered</span>
+                            }
+                            @if (delivery.Error is { Length: > 0 } why)
+                            {
+                                <span class="subtle">@why</span>
+                            }
+                            @if (delivery.Status == OutboundStatus.DeadLettered)
+                            {
+                                <EditForm Model="Nothing" method="post"
+                                          FormName="@($"retry-{delivery.Id}")"
+                                          OnValidSubmit="() => Retry(delivery.Id)" class="inline">
+                                    <button type="submit">Try it again</button>
+                                </EditForm>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    private AddInput _input = new();
+
+    [SupplyParameterFromForm(FormName = "add")]
+    private AddInput Input
+    {
+        get => _input;
+        set => _input = value ?? new AddInput();
+    }
+
+    /// <summary>A model for the forms that carry no fields.</summary>
+    /// <remarks>
+    /// These pages are statically rendered, so a button outside a form does nothing
+    /// at all, and EditForm insists on a model even when the only thing being said
+    /// is that the button was pressed.
+    /// </remarks>
+    private object Nothing { get; } = new();
+
+    private List<SubscriptionRow> Rows { get; set; } = [];
+
+    private List<OutboundRow> Deliveries { get; set; } = [];
+
+    private int Failing { get; set; }
+
+    private string? Issued { get; set; }
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Rows = await Queries.SubscriptionsAsync();
+        Deliveries = await Queries.DeliveriesAsync();
+        Failing = await Queries.FailingAsync();
+    }
+
+    private async Task Add()
+    {
+        Refusal = null;
+
+        try
+        {
+            // Read from the posted form rather than bound: a set of checkboxes under
+            // one name is a list, and the binder hands back only what was ticked.
+            var events = Request?.Request.Form["Input.Events"].ToArray() ?? [];
+
+            if (events.Length == 0)
+            {
+                Refusal =
+                    "Choose at least one event. A subscription that named none would either "
+                    + "send nothing or send everything, and neither is something you chose.";
+
+                await LoadAsync();
+                return;
+            }
+
+            var (_, secret) = await Subscriptions.AddAsync(
+                Input.Name, Input.Endpoint, [.. events!]);
+
+            Issued = secret;
+            Input = new AddInput();
+
+            await LoadAsync();
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private async Task Disable(Guid id) => await Act(() => Subscriptions.DisableAsync(
+        id, "Switched off by hand."));
+
+    private async Task Enable(Guid id) => await Act(() => Subscriptions.EnableAsync(id));
+
+    private async Task Retry(Guid id) => await Act(() => Subscriptions.RetryAsync(id));
+
+    private async Task Act(Func<Task> what)
+    {
+        Refusal = null;
+
+        try
+        {
+            await what();
+            Navigation.NavigateTo("/settings/webhooks", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string PillFor(OutboundStatus status) => status switch
+    {
+        OutboundStatus.Sent => "pill--done",
+        OutboundStatus.DeadLettered => "pill--danger",
+        OutboundStatus.Failed => "pill--danger",
+        _ => "pill--quiet",
+    };
+
+    private sealed class AddInput
+    {
+        [Required(ErrorMessage = "Say what this is. In a year it is the only clue.")]
+        [StringLength(200)]
+        public string Name { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Where should the notifications be posted?")]
+        [StringLength(2000)]
+        public string Endpoint { get; set; } = string.Empty;
+
+        public List<string> Events { get; set; } = [];
+    }
+}

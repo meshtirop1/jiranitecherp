@@ -37,11 +37,28 @@ public interface IGitProvider
     /// </remarks>
     bool IsSigned(ReadOnlySpan<byte> body, string? signature, string secret);
 
-    /// <summary>The provider's identifier for this delivery, from the headers.</summary>
-    string? DeliveryIdIn(IReadOnlyDictionary<string, string> headers);
+    /// <summary>
+    /// The provider's own identifier for this delivery.
+    /// </summary>
+    /// <remarks>
+    /// Given the payload as well as the headers, because Azure DevOps puts it in
+    /// the body where the other three use a header. That is not a detail worth
+    /// leaking upwards: this identifier is what makes every delivery idempotent
+    /// and what refuses a replay, so a provider that could not supply one would
+    /// have to be refused outright.
+    /// </remarks>
+    string? DeliveryIdIn(IReadOnlyDictionary<string, string> headers, string payload);
 
-    /// <summary>What the provider calls this event, from the headers.</summary>
-    string? EventIn(IReadOnlyDictionary<string, string> headers);
+    /// <summary>
+    /// What the provider calls this event.
+    /// </summary>
+    /// <remarks>
+    /// Also given the payload, because GitLab's header and its object_kind do not
+    /// always agree and the body is the one that decides — a "Merge Request Hook"
+    /// header sits above an object_kind that distinguishes an approval from a
+    /// merge.
+    /// </remarks>
+    string? EventIn(IReadOnlyDictionary<string, string> headers, string payload);
 
     /// <summary>The signature the body should carry, from the headers.</summary>
     string? SignatureIn(IReadOnlyDictionary<string, string> headers);

@@ -102,12 +102,23 @@ public sealed class WebhookInbox(
             return new Receipt(Reception.Unsigned, "The signature did not match.");
         }
 
-        if (adapter.DeliveryIdIn(headers) is not { Length: > 0 } externalId)
+        /*
+         * Decoded here rather than after the duplicate check, because two of the
+         * four providers keep something the inbox needs in the body: Azure
+         * DevOps puts the delivery identifier there, and GitLab names the event
+         * inside the payload as well as in a header. The signature has already
+         * been verified against the raw bytes, so decoding at this point is safe
+         * — doing it any earlier would mean deciding how to trust a body from
+         * the body itself.
+         */
+        var payload = System.Text.Encoding.UTF8.GetString(body.Span);
+
+        if (adapter.DeliveryIdIn(headers, payload) is not { Length: > 0 } externalId)
         {
             return new Receipt(Reception.Malformed, "The delivery carried no identifier.");
         }
 
-        if (adapter.EventIn(headers) is not { Length: > 0 } eventName)
+        if (adapter.EventIn(headers, payload) is not { Length: > 0 } eventName)
         {
             return new Receipt(Reception.Malformed, "The delivery did not say what it was.");
         }
@@ -123,7 +134,6 @@ public sealed class WebhookInbox(
             return new Receipt(Reception.Duplicate, "Already received.");
         }
 
-        var payload = System.Text.Encoding.UTF8.GetString(body.Span);
         var named = adapter.RepositoryIn(payload);
 
         var repository = named is { Length: > 0 }

@@ -14,6 +14,7 @@ using JiranisokoTech.Domain.People;
 using JiranisokoTech.Domain.Settings;
 using JiranisokoTech.Domain.Recruitment;
 using JiranisokoTech.Domain.Engineering;
+using JiranisokoTech.Domain.Integrations;
 using JiranisokoTech.Domain.Work;
 using JiranisokoTech.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -94,6 +95,19 @@ public class AppDbContext(
     public DbSet<PullRequest> PullRequests => Set<PullRequest>();
 
     public DbSet<Commit> Commits => Set<Commit>();
+
+    public DbSet<Subscription> Subscriptions => Set<Subscription>();
+
+    /// <summary>
+    /// Notifications queued for systems outside this one.
+    /// </summary>
+    /// <remarks>
+    /// A queue of its own rather than a use of the outbox. The outbox runs this
+    /// system's own handlers after a commit; this one waits on third-party servers over
+    /// the internet, and one unreachable customer endpoint must not delay the firm's
+    /// own email.
+    /// </remarks>
+    public DbSet<OutboundDelivery> OutboundDeliveries => Set<OutboundDelivery>();
 
     /// <summary>
     /// The firm's own details. One row, and the key is a constant.
