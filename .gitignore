@@ -21,13 +21,24 @@
 .idea/
 *.swp
 
-# Messages the file mailer writes in development. Correspondence, and not
+# Messages the file mailer writes in development, and the candidate CVs the file
+# CV store writes. Correspondence and other people's documents, and not
 # something to commit.
-mail/
-
-# Candidate CVs written by the file store. Documents belonging to people
-# outside this firm, and not something to commit.
-cvs/
+#
+# Anchored to the two places they are actually written: the web project, which is
+# the content root both options are relative to, and the repository root for
+# anything run from there. They were written as bare "mail/" and "cvs/", which
+# match a directory of that name at any depth — and because a checkout on a
+# case-insensitive filesystem matches these rules without regard to case, "mail/"
+# silently swallowed src/JiranisokoTech.Application/Mail,
+# src/JiranisokoTech.Infrastructure/Mail and tests/JiranisokoTech.Tests/Mail. The
+# mail increment therefore compiled on the machine that wrote it and in no fresh
+# clone of it, and nothing said so, because git does not report an ignored file
+# as missing. "cvs/" was the same trap with no source folder in it yet.
+/mail/
+/cvs/
+src/JiranisokoTech.Web/mail/
+src/JiranisokoTech.Web/cvs/
 
 # Worktrees the agent tooling creates. Not part of the project.
 .claude/worktrees/
