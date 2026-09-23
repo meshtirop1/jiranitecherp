@@ -168,6 +168,17 @@ h1:focus {
     font-size: 0.9rem;
 }
 
+/* The same shape as a refusal and the opposite colour, because it arrives in
+   the same place and must not be mistaken for one at a glance. */
+.signin__done {
+    margin-bottom: 1rem;
+    padding: 0.6rem 0.75rem;
+    border-left: 3px solid #1e6b32;
+    background-color: #e6f4ea;
+    color: #1e6b32;
+    font-size: 0.9rem;
+}
+
 .signin__note {
     margin-top: 1.5rem;
     font-size: 0.8rem;

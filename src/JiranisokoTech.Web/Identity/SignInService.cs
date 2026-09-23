@@ -18,7 +18,8 @@ public sealed class SignInService(
     ApplicationSignInManager signInManager,
     UserManager<ApplicationUser> users,
     AppDbContext database,
-    IClock clock)
+    IClock clock,
+    ILogger<SignInService> logger)
 {
     /// <summary>
     /// Attempt a password sign-in.
@@ -118,6 +119,44 @@ public sealed class SignInService(
             .ToListAsync(cancellationToken);
 
     public Task SignOutAsync() => signInManager.SignOutAsync();
+
+    /// <summary>
+    /// End every session this account has, including the one asking.
+    /// </summary>
+    /// <remarks>
+    /// Rolling the security stamp is the entire mechanism, and it is the only
+    /// one available: a session is a signed cookie held by a browser, nothing in
+    /// this system knows how many exist or where they are, and there is no list
+    /// to walk. Every cookie already issued carries the old stamp, so each one
+    /// dies the next time it is validated against the database — which the
+    /// interval in <c>IdentityConfiguration</c> bounds. That is why a page
+    /// offering this cannot promise the sessions are gone by the time it has
+    /// finished rendering.
+    ///
+    /// This browser is signed out here and now rather than left to notice on its
+    /// own. Identity can carry the current session across a stamp roll by
+    /// re-issuing its cookie, and most systems do exactly that, but then the
+    /// page has to promise "everywhere except the browser you happen to be
+    /// holding" — and somebody who has just seen a sign-in from an address they
+    /// do not recognise is the last person who should have to work out which
+    /// browser that sentence excludes. Ending it also proves the button did
+    /// something, because they land on the sign-in page, and signing back in
+    /// answers the question they ask next: whether their password still works.
+    /// </remarks>
+    public async Task EndEverySessionAsync(ApplicationUser user)
+    {
+        await users.UpdateSecurityStampAsync(user);
+        await signInManager.SignOutAsync();
+
+        /*
+         * The only trace this leaves. A stamp is excluded from the audit trail
+         * because it also moves on every password change, and the sessions it
+         * kills were never recorded anywhere to begin with — so somebody asking
+         * next week why the whole office was signed out at four o'clock has this
+         * line or has nothing.
+         */
+        logger.LogInformation("Ended every session for account {UserId}.", user.Id);
+    }
 
     private async Task RecordAsync(
         Guid? userId,

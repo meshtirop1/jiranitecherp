@@ -38,10 +38,11 @@ public sealed class ApplicationSignInManager(
     /// the difference matters: lockout expires on its own, and this does not.
     ///
     /// Because it is enforced here, an existing session is also ended the next
-    /// time the principal is validated, which is within the five minute window
-    /// the security stamp is checked on. Deactivating somebody is therefore a
-    /// single action with a bounded effect, rather than a flag that only
-    /// applies at the next login they might never attempt.
+    /// time the principal is validated, and how soon that is is the interval set
+    /// on <c>SecurityStampValidatorOptions</c> in <c>IdentityConfiguration</c>.
+    /// Deactivating somebody is therefore a single action with a bounded effect,
+    /// rather than a flag that only applies at the next login they might never
+    /// attempt.
     /// </remarks>
     public override async Task<bool> CanSignInAsync(ApplicationUser user)
     {

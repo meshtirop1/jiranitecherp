@@ -23,6 +23,25 @@
 <h1 class="signin__title">Sign in</h1>
 <p class="signin__sub">Jiranisoko Tech Solutions delivery system</p>
 
+@if (EndedEverywhere && Refusal is null)
+{
+    @*
+        Where somebody lands after signing out everywhere from their account
+        page. It travels in the address because a redirect has nowhere else to
+        put a sentence, and it is only a sentence: anybody can paste this link to
+        a colleague, and all they achieve is a message. The sessions were ended
+        by the post that redirected here, not by this page saying so.
+
+        Hidden once a sign-in has been refused, because "every session was
+        ended" over "those details do not match an account" reads, to somebody
+        already worried, like the two facts are connected.
+    *@
+    <p class="signin__done" role="status">
+        Every session was ended, this browser's included. Other devices stop
+        working within a minute. Your password has not changed — sign in with it.
+    </p>
+}
+
 <EditForm Model="Input" method="post" OnValidSubmit="Submit" FormName="sign-in" class="signin__form">
     <DataAnnotationsValidator />
 
@@ -81,6 +100,11 @@
 
     [SupplyParameterFromQuery(Name = "returnUrl")]
     private string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery(Name = "ended")]
+    private string? Ended { get; set; }
+
+    private bool EndedEverywhere => Ended == "everywhere";
 
     private string? Refusal { get; set; }
 
