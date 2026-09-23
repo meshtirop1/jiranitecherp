@@ -17,6 +17,8 @@ using JiranisokoTech.Domain.Integrations;
 using JiranisokoTech.Infrastructure.Integrations;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Clients;
+using JiranisokoTech.Application.Currencies;
+using JiranisokoTech.Infrastructure.Currencies;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Infrastructure.Messaging;
 using JiranisokoTech.Infrastructure.Approvals;
@@ -153,6 +155,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<WorkQueries>();
         services.AddScoped<BusinessQueries>();
         services.AddScoped<ReportingQueries>();
+        services.AddScoped<ProjectMoneyQueries>();
+        services.AddScoped<IExchangeRateRepository, ExchangeRateRepository>();
+        services.AddScoped<ExchangeRateService>();
         services.AddScoped<SearchQueries>();
         services.AddScoped<AuditQueries>();
 

@@ -102,6 +102,51 @@ public sealed class FirmSettings : Entity, IAuditable
     /// <summary>The terms a new client starts on.</summary>
     public int PaymentTermDays { get; private set; } = 30;
 
+    /// <summary>
+    /// What an hour of anybody's time costs the firm, in minor units of
+    /// <see cref="Currency"/>.
+    /// </summary>
+    /// <remarks>
+    /// One blended rate for everybody, and that is a deliberate refusal to do the more
+    /// obvious thing. The system now knows what each person is paid, so a project's cost
+    /// could be computed from the actual salary of whoever logged the hours — and that
+    /// would be more accurate and would also publish everybody's pay.
+    ///
+    /// A delivery manager holds projects.manage and time.view_all and not employees.pay.
+    /// Show them a per-project cost derived from individual salaries and they can
+    /// recover any one person's rate by dividing: one project, one person, one month.
+    /// The permission would be intact and the information would be out.
+    ///
+    /// So project costing uses a standard rate, which is what firms use anyway for
+    /// exactly this reason. It is less precise about one project and does not leak
+    /// anything about one person.
+    /// </remarks>
+    public long? StandardCostPerHourMinorUnits { get; private set; }
+
+    /// <summary>What an hour costs, when a rate has been set.</summary>
+    public Common.Money? StandardCostPerHour => StandardCostPerHourMinorUnits is { } minor
+        ? Common.Money.Of(minor, Currency)
+        : null;
+
+    /// <summary>
+    /// Set what an hour of time costs the firm.
+    /// </summary>
+    /// <remarks>
+    /// Salaries, national insurance, an allocation of rent and software — whatever the
+    /// firm decides. Nothing here computes it, because the inputs are a management
+    /// decision rather than a sum this system holds all the parts of.
+    /// </remarks>
+    public void CostAnHourAt(long? minorUnits)
+    {
+        if (minorUnits is < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(minorUnits), "An hour cannot cost less than nothing.");
+        }
+
+        StandardCostPerHourMinorUnits = minorUnits;
+    }
+
     /// <summary>Whether enough is filled in for an invoice to be sent out.</summary>
     /// <remarks>
     /// Not enforced as a refusal, because a firm may genuinely want to draft

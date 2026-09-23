@@ -154,6 +154,24 @@ else
                 <InputNumber @bind-Value="Billing.PaymentTermDays" min="0" max="365" />
                 <ValidationMessage For="() => Billing.PaymentTermDays" />
             </label>
+
+            <label>
+                <span>What an hour costs the firm</span>
+                <InputNumber @bind-Value="Billing.CostPerHour" min="0" />
+                <ValidationMessage For="() => Billing.CostPerHour" />
+                @*
+                    One rate for everybody, and that is deliberate. A project cost worked
+                    out from real salaries would let anybody who can read a project
+                    recover a colleague's pay by dividing — one project, one person, one
+                    month — without holding the permission for it.
+                *@
+                <span class="subtle">
+                    Salaries, statutory contributions and an allocation of rent and
+                    software, in minor units of @Billing.Currency. Used to cost projects.
+                    One blended rate for everybody, so no project report can reveal what
+                    any one person earns.
+                </span>
+            </label>
         </div>
 
         <p class="subtle">
@@ -181,6 +199,11 @@ else
     <p>
         <a href="/settings/webhooks">Outgoing webhooks</a> — what this system tells
         other systems, without waiting to be asked.
+    </p>
+
+    <p>
+        <a href="/settings/rates">Exchange rates</a> — what a currency was worth on a
+        day, for reporting across more than one.
     </p>
 
     <p>
@@ -254,6 +277,7 @@ else
             Billing.InvoicePrefix = Firm.InvoicePrefix;
             Billing.Currency = Firm.Currency;
             Billing.PaymentTermDays = Firm.PaymentTermDays;
+            Billing.CostPerHour = Firm.StandardCostPerHourMinorUnits;
         }
 
         AnyInvoices = await Service.HasInvoicedAsync();
@@ -268,8 +292,13 @@ else
         await Service.ExplainPaymentAsync(Where.PaymentInstructions);
     });
 
-    private Task SaveBilling() => TryAsync(() => Service.BillAsAsync(
-        Billing.InvoicePrefix, Billing.Currency, Billing.PaymentTermDays));
+    private Task SaveBilling() => TryAsync(async () =>
+    {
+        await Service.BillAsAsync(
+            Billing.InvoicePrefix, Billing.Currency, Billing.PaymentTermDays);
+
+        await Service.CostAnHourAtAsync(Billing.CostPerHour);
+    });
 
     private async Task TryAsync(Func<Task> act)
     {
@@ -363,6 +392,17 @@ else
 
     private sealed class BillingInput
     {
+        /// <summary>
+        /// What an hour of anybody's time costs the firm, in minor units.
+        /// </summary>
+        /// <remarks>
+        /// One blended rate rather than each person's pay. A per-project cost derived
+        /// from real salaries would let a delivery manager — who holds projects.manage
+        /// and not employees.pay — recover any one person's rate by dividing.
+        /// </remarks>
+        [Range(0, long.MaxValue, ErrorMessage = "An hour cannot cost less than nothing.")]
+        public long? CostPerHour { get; set; }
+
         [Required(ErrorMessage = "Invoices need something to start with.")]
         [StringLength(8)]
         [RegularExpression(

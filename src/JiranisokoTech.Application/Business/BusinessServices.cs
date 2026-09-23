@@ -666,10 +666,18 @@ public sealed class ExpenseService(IBusinessRepository business, IClock clock)
         ExpenseCategory category,
         DateOnly spentOn,
         string description,
+        Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
         var claim = ExpenseClaim.For(
             employeeId, amount, category, spentOn, description, clock.Today);
+
+        /*
+         * Charged to a project by whoever claims it rather than by whoever approves it.
+         * A taxi to a client site is a cost of that project and a new keyboard is a cost
+         * of the firm, and the person who was there is the one who knows which.
+         */
+        claim.ChargeTo(projectId);
 
         business.Add(claim);
         await business.SaveAsync(cancellationToken);
@@ -745,6 +753,24 @@ public sealed class InvoiceService(
     /// be ignored, the refusal becomes a defensible next step — with a backfill
     /// behind it, which is the part that has to exist first.
     /// </remarks>
+    /// <summary>
+    /// Say which project an invoice bills for, or that it bills for none.
+    /// </summary>
+    /// <remarks>
+    /// Without this, a project could never show what it earned: an invoice knew its
+    /// client, and a client has four projects running. Nullable because a retainer or a
+    /// licence renewal is billed to a client and not to a project.
+    /// </remarks>
+    public async Task BillForAsync(
+        Guid invoiceId, Guid? projectId, CancellationToken cancellationToken = default)
+    {
+        var invoice = await business.FindInvoiceAsync(invoiceId, cancellationToken)
+            ?? throw new InvalidOperationException("There is no invoice with that identifier.");
+
+        invoice.BillsFor(projectId);
+        await business.SaveAsync(cancellationToken);
+    }
+
     public async Task<Invoice> DraftAsync(
         Guid clientId, CancellationToken cancellationToken = default)
     {

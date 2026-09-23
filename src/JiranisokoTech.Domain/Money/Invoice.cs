@@ -58,6 +58,25 @@ public sealed class Invoice : Entity, IAuditable
 
     public Guid ClientId { get; private init; }
 
+    /// <summary>
+    /// Which project this bills for, when it bills for one.
+    /// </summary>
+    /// <remarks>
+    /// Added because section 10 asked what a project earned and nothing could answer it:
+    /// an invoice knew its client and the client had four projects running.
+    ///
+    /// Nullable, because a retainer or a licence renewal is billed to a client and not to
+    /// a project, and forcing one would mean inventing a project to hold the invoices
+    /// that do not belong to any. One project per invoice rather than a split, because a
+    /// split needs a rule for apportioning the total that nobody has agreed — and an
+    /// invoice covering two projects can be issued as two invoices, which is what a
+    /// client would rather receive anyway.
+    /// </remarks>
+    public Guid? ProjectId { get; private set; }
+
+    /// <summary>Say which project this bills for, or that it bills for none.</summary>
+    public void BillsFor(Guid? projectId) => ProjectId = projectId;
+
     /// <summary>What the client quotes back at us. Unique, and never reused.</summary>
     public string Number { get; private init; }
 

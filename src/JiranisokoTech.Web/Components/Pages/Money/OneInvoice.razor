@@ -105,6 +105,32 @@ else
         }
     </dl>
 
+    @*
+        Which project this bills for. Without it a project can never show what it
+        earned: the invoice knows its client, and a client has four projects running.
+    *@
+    <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.InvoicesManage)"
+                   Context="mayBill">
+        <EditForm Model="Billing" method="post" OnValidSubmit="SetProject" FormName="project"
+                  class="inline">
+            <label>
+                <span>Bills for</span>
+                <select name="Against.ProjectId" aria-label="Project">
+                    <option value="" selected="@(Invoice!.ProjectId is null)">
+                        The client, not a project
+                    </option>
+                    @foreach (var project in Projects)
+                    {
+                        <option value="@project.Id" selected="@(Invoice.ProjectId == project.Id)">
+                            @project.Name
+                        </option>
+                    }
+                </select>
+            </label>
+            <button type="submit" class="button button--quiet">Set</button>
+        </EditForm>
+    </AuthorizeView>
+
     <section>
         <h2>Lines</h2>
 
@@ -459,6 +485,15 @@ else
 
     private List<ProjectRow> Projects { get; set; } = [];
 
+    private ProjectInput _against = new();
+
+    [SupplyParameterFromForm(FormName = "project")]
+    private ProjectInput Against
+    {
+        get => _against;
+        set => _against = value ?? new ProjectInput();
+    }
+
     private List<Attachment> Attached { get; set; } = [];
 
     private string? Refusal { get; set; }
@@ -497,6 +532,18 @@ else
         Projects = await Work.ProjectsAsync(runningOnly: true);
         Attached = await Files.ForAsync(AttachedTo.Invoice, Id);
     }
+
+    /// <summary>
+    /// Point the invoice at a project, or at none.
+    /// </summary>
+    /// <remarks>
+    /// A plain select rather than InputSelect, so the currently-set project can be
+    /// marked selected without binding — the same reason the repositories screen uses
+    /// one for its project column.
+    /// </remarks>
+    private Task SetProject() => TryAsync(() => Service.BillForAsync(
+        Id,
+        string.IsNullOrWhiteSpace(Against.ProjectId) ? null : Guid.Parse(Against.ProjectId)));
 
     private Task AddLine() => TryAsync(() => Service.AddLineAsync(
         Id, Line.Description, Line.Quantity, Minor(Line.UnitPrice)));
@@ -562,6 +609,11 @@ else
         InvoiceStatus.Void => "pill--quiet",
         _ => null,
     };
+
+    private sealed class ProjectInput
+    {
+        public string? ProjectId { get; set; }
+    }
 
     private sealed class LineInput
     {

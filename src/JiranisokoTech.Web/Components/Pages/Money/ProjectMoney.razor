@@ -1,0 +1,208 @@
+@page "/projects/money"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Work
+@using JiranisokoTech.Infrastructure.Reporting
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ProjectsViewAll)]
+@inject ProjectMoneyQueries Queries
+@inject WorkService Work
+@inject NavigationManager Navigation
+
+<PageTitle>What projects cost — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/projects">Projects</a></nav>
+
+<div class="page-head">
+    <h1>What projects cost</h1>
+</div>
+
+<p class="instructions">
+    Only the budget is recorded. What a project earned and what it took are worked
+    out from the invoices, the approved hours and the paid expenses every time this
+    page is opened — so they cannot drift away from the records they come from.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">No projects yet.</p>
+}
+else
+{
+    @if (Rows.Any(row => !row.HasCostRate))
+    {
+        @*
+            Said once at the top rather than as a dash in every row. Without an hourly
+            cost, labour is unknown, so cost and margin are unknown too — and a page
+            full of dashes does not explain itself.
+        *@
+        <p class="refusal" role="alert">
+            No hourly cost has been set for the firm, so labour cannot be costed and no
+            margin can be worked out.
+            <a href="/settings">Set one in settings</a>.
+        </p>
+    }
+
+    <table class="grid">
+        <caption class="visually-hidden">What each project cost and earned</caption>
+        <thead>
+            <tr>
+                <th scope="col">Project</th>
+                <th scope="col">Budget</th>
+                <th scope="col">Invoiced</th>
+                <th scope="col">Hours</th>
+                <th scope="col">Cost</th>
+                <th scope="col">Margin</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Rows)
+            {
+                <tr class="@(row.Status == Domain.Work.ProjectStatus.Active ? null : "row--closed")">
+                    <td>
+                        <a href="/projects/@row.Id">@row.Name</a>
+                        <span class="subtle">@row.Status</span>
+                    </td>
+                    <td class="number">
+                        @(row.Budget?.ToString() ?? "—")
+
+                        @if (row.BudgetUsedShare is { } used)
+                        {
+                            <span class="subtle @(row.IsOverBudget ? "over" : null)">
+                                @used% used
+                            </span>
+                        }
+                    </td>
+                    <td class="number">@(row.Invoiced?.ToString() ?? Dash(row))</td>
+                    <td class="number">@Words.Hours(row.ApprovedMinutes)</td>
+                    <td class="number">@(row.Cost?.ToString() ?? Dash(row))</td>
+                    <td class="number">
+                        @if (row.Margin is { } margin)
+                        {
+                            <span class="@(margin.MinorUnits < 0 ? "over" : null)">
+                                @margin.ToString()
+                            </span>
+
+                            @if (row.MarginShare is { } share)
+                            {
+                                <span class="subtle">@share%</span>
+                            }
+                        }
+                        else
+                        {
+                            @Dash(row)
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ProjectsManage)"
+                   Context="mayBudget">
+        <EditForm Model="Input" method="post" OnValidSubmit="SetBudget" FormName="budget"
+                  class="panel stack">
+            <DataAnnotationsValidator />
+
+            <h2>Agree a budget</h2>
+
+            <div class="fields">
+                <label>
+                    <span>Project</span>
+                    <InputSelect @bind-Value="Input.ProjectId">
+                        <option value="">Choose one</option>
+                        @foreach (var row in Rows)
+                        {
+                            <option value="@row.Id">@row.Name</option>
+                        }
+                    </InputSelect>
+                </label>
+
+                <label>
+                    <span>Budget</span>
+                    <InputNumber @bind-Value="Input.Amount" min="0" />
+                    <span class="subtle">Leave empty to clear it.</span>
+                </label>
+
+                <label>
+                    <span>Currency</span>
+                    <InputText @bind-Value="Input.Currency" maxlength="3" placeholder="KES" />
+                </label>
+            </div>
+
+            <button type="submit">Set it</button>
+        </EditForm>
+    </AuthorizeView>
+}
+
+@code {
+    private BudgetInput _input = new();
+
+    [SupplyParameterFromForm(FormName = "budget")]
+    private BudgetInput Input
+    {
+        get => _input;
+        set => _input = value ?? new BudgetInput();
+    }
+
+    private List<Infrastructure.Reporting.ProjectMoney> Rows { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync() => Rows = await Queries.AllAsync();
+
+    /// <summary>
+    /// Why a figure is missing, rather than a bare dash.
+    /// </summary>
+    /// <remarks>
+    /// Three different situations produce no number here, and reporting zero for any of
+    /// them would be a lie somebody would act on: no hourly cost has been set, the
+    /// project's money is in more than one currency, or there is simply nothing yet.
+    /// </remarks>
+    private static string Dash(Infrastructure.Reporting.ProjectMoney row) =>
+        row.HasMixedCurrencies ? "mixed currencies" : "—";
+
+    private async Task SetBudget()
+    {
+        Refusal = null;
+
+        try
+        {
+            if (!Guid.TryParse(Input.ProjectId, out var project))
+            {
+                Refusal = "Choose a project.";
+                await LoadAsync();
+                return;
+            }
+
+            await Work.BudgetAsync(project, Input.Amount, Input.Currency);
+
+            Navigation.NavigateTo("/projects/money", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException
+                or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private sealed class BudgetInput
+    {
+        public string? ProjectId { get; set; }
+
+        [Range(0, long.MaxValue, ErrorMessage = "A budget cannot be less than nothing.")]
+        public long? Amount { get; set; }
+
+        [StringLength(3, MinimumLength = 3, ErrorMessage = "Three letters, such as KES.")]
+        public string? Currency { get; set; } = "KES";
+    }
+}

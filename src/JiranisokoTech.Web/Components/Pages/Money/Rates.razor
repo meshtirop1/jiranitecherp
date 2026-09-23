@@ -1,0 +1,341 @@
+@page "/settings/rates"
+@using System.ComponentModel.DataAnnotations
+@using System.Globalization
+@using JiranisokoTech.Application.Abstractions
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Currencies
+@using JiranisokoTech.Domain.Money
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.SettingsManage)]
+@inject ExchangeRateService Service
+@inject IExchangeRateRepository Store
+@inject IClock Clock
+@inject NavigationManager Navigation
+
+<PageTitle>Exchange rates — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/settings">Settings</a></nav>
+
+<div class="page-head">
+    <h1>Exchange rates</h1>
+</div>
+
+<p class="instructions">
+    What a currency was worth on a day. Typed in from a published figure rather than
+    fetched from a feed, so a report produces the same numbers twice and an auditor
+    can be told where each one came from.
+</p>
+
+<p class="subtle">
+    Nothing stored here is ever converted. An invoice in dollars stays an amount in
+    dollars, because that is what the client owes; a shilling figure exists only in
+    the report that asked for one, at the rate for the date that report is about.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<EditForm Model="Input" method="post" OnValidSubmit="Record" FormName="rate" class="panel stack">
+    <DataAnnotationsValidator />
+
+    <h2>Record a rate</h2>
+
+    <div class="fields">
+        <label>
+            <span>From</span>
+            <InputText @bind-Value="Input.From" maxlength="3" placeholder="USD" />
+            <ValidationMessage For="() => Input.From" />
+        </label>
+
+        <label>
+            <span>To</span>
+            <InputText @bind-Value="Input.To" maxlength="3" placeholder="KES" />
+            <ValidationMessage For="() => Input.To" />
+        </label>
+
+        <label>
+            <span>One From buys</span>
+            <InputText @bind-Value="Input.Rate" placeholder="129.45" />
+            <ValidationMessage For="() => Input.Rate" />
+            @*
+                Said in words as well as in labels, because getting the direction
+                backwards is the classic mistake with a rate and the result is wrong by
+                a factor of sixteen thousand rather than by a rounding.
+            *@
+            <span class="subtle">
+                How many of the second currency one of the first is worth.
+            </span>
+        </label>
+
+        <label>
+            <span>On</span>
+            <InputDate @bind-Value="Input.On" max="@Clock.Today.ToString("yyyy-MM-dd")" />
+            <ValidationMessage For="() => Input.On" />
+        </label>
+    </div>
+
+    <label>
+        <span>Where it came from</span>
+        <InputText @bind-Value="Input.Source" placeholder="Central Bank of Kenya, mean rate" />
+        <span class="subtle">
+            The difference between a number an auditor accepts and one somebody has to
+            justify from memory in two years.
+        </span>
+    </label>
+
+    <button type="submit">Record it</button>
+</EditForm>
+
+@*
+    A conversion, shown here rather than only inside a report.
+
+    Whoever has just typed a rate in wants to know it is the right way round, and the
+    consequence of having it backwards is a figure wrong by a factor of sixteen thousand.
+    This is also the only place in the system that converts anything: an invoice in
+    dollars stays an amount in dollars, and a converted figure exists only where somebody
+    asked for one.
+*@
+<EditForm Model="Check" method="post" OnValidSubmit="Convert" FormName="convert"
+          class="panel stack">
+    <h2>Check a conversion</h2>
+
+    <div class="fields">
+        <label>
+            <span>Amount, in minor units</span>
+            <InputNumber @bind-Value="Check.Amount" min="0" />
+        </label>
+
+        <label>
+            <span>From</span>
+            <InputText @bind-Value="Check.From" maxlength="3" placeholder="USD" />
+        </label>
+
+        <label>
+            <span>Into</span>
+            <InputText @bind-Value="Check.To" maxlength="3" placeholder="KES" />
+        </label>
+
+        <label>
+            <span>As at</span>
+            <InputDate @bind-Value="Check.On" />
+        </label>
+    </div>
+
+    <button type="submit">Work it out</button>
+
+    @if (Answer is not null)
+    {
+        <p class="done" role="status">@Answer</p>
+    }
+</EditForm>
+
+@if (Recorded.Count == 0)
+{
+    <p class="empty">
+        No rates recorded. Anything invoiced in a second currency cannot be reported
+        alongside the rest until there is one.
+    </p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Recorded exchange rates</caption>
+        <thead>
+            <tr>
+                <th scope="col">On</th>
+                <th scope="col">Pair</th>
+                <th scope="col">Rate</th>
+                <th scope="col">Source</th>
+                <th scope="col"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var rate in Recorded)
+            {
+                <tr>
+                    <td>@rate.On.ToString("d MMM yyyy")</td>
+                    <td><code>@rate.From → @rate.To</code></td>
+                    <td class="number">@rate.Rate.ToString("0.########")</td>
+                    <td class="subtle">@(rate.Source ?? "Not said")</td>
+                    <td>
+                        <EditForm Model="Nothing" method="post"
+                                  FormName="@($"forget-{rate.Id}")"
+                                  OnValidSubmit="() => Forget(rate.Id)" class="inline">
+                            <button type="submit" class="button button--quiet">Remove</button>
+                        </EditForm>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private RateInput _input = new();
+
+    [SupplyParameterFromForm(FormName = "rate")]
+    private RateInput Input
+    {
+        get => _input;
+        set => _input = value ?? new RateInput();
+    }
+
+    private object Nothing { get; } = new();
+
+    private CheckInput _check = new();
+
+    [SupplyParameterFromForm(FormName = "convert")]
+    private CheckInput Check
+    {
+        get => _check;
+        set => _check = value ?? new CheckInput();
+    }
+
+    private string? Answer { get; set; }
+
+    private List<ExchangeRate> Recorded { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Input.On == default)
+        {
+            Input.On = Clock.Today;
+        }
+
+        if (Check.On == default)
+        {
+            Check.On = Clock.Today;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => Recorded = await Store.RecentAsync();
+
+    private async Task Record()
+    {
+        Refusal = null;
+
+        try
+        {
+            /*
+             * Parsed with the invariant culture, so the decimal separator is a point
+             * whatever the browser's locale would rather send. A rate read as 12945
+             * because a comma was treated as a thousands separator is a hundred times
+             * wrong and looks like a plausible number.
+             */
+            if (!decimal.TryParse(
+                    Input.Rate,
+                    NumberStyles.Number,
+                    CultureInfo.InvariantCulture,
+                    out var rate))
+            {
+                Refusal = "That is not a number. Use a point for the decimal, as in 129.45.";
+                await LoadAsync();
+                return;
+            }
+
+            await Service.RecordAsync(Input.From!, Input.To!, rate, Input.On, Input.Source);
+
+            Navigation.NavigateTo("/settings/rates", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException
+                or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    /// <summary>
+    /// Convert an amount and say exactly how.
+    /// </summary>
+    /// <remarks>
+    /// The rate and its date are quoted back, because a converted figure with no
+    /// provenance is a number somebody has to take on trust and the first question anyone
+    /// asks of one is "at what rate?".
+    /// </remarks>
+    private async Task Convert()
+    {
+        Answer = null;
+        Refusal = null;
+
+        try
+        {
+            var amount = Domain.Common.Money.Of(
+                Check.Amount ?? 0, (Check.From ?? "KES").Trim().ToUpperInvariant());
+
+            var converted = await Service.ConvertAsync(
+                amount, (Check.To ?? "KES").Trim().ToUpperInvariant(), Check.On);
+
+            if (converted is null)
+            {
+                Refusal =
+                    $"No rate is recorded for {Check.From} into {Check.To} on or before "
+                    + $"{Check.On:d MMMM yyyy}. Record one above — nothing here guesses, "
+                    + "because a figure converted at a rate nobody supplied is wrong by "
+                    + "orders of magnitude and looks plausible.";
+
+                await LoadAsync();
+                return;
+            }
+
+            Answer = converted.IsExactDate(Check.On)
+                ? $"{converted.From} is {converted.To} at {converted.Rate:0.########}."
+                : $"{converted.From} is {converted.To} at {converted.Rate:0.########}, "
+                  + $"the rate of {converted.RateOn:d MMMM yyyy} — the most recent recorded "
+                  + "on or before that day.";
+
+            await LoadAsync();
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private async Task Forget(Guid id)
+    {
+        await Service.ForgetAsync(id);
+        Navigation.NavigateTo("/settings/rates", forceLoad: true);
+    }
+
+    private sealed class CheckInput
+    {
+        public long? Amount { get; set; }
+
+        [StringLength(3, MinimumLength = 3)]
+        public string? From { get; set; }
+
+        [StringLength(3, MinimumLength = 3)]
+        public string? To { get; set; }
+
+        public DateOnly On { get; set; }
+    }
+
+    private sealed class RateInput
+    {
+        [Required(ErrorMessage = "Which currency?")]
+        [StringLength(3, MinimumLength = 3, ErrorMessage = "Three letters, such as USD.")]
+        public string? From { get; set; }
+
+        [Required(ErrorMessage = "Into which currency?")]
+        [StringLength(3, MinimumLength = 3, ErrorMessage = "Three letters, such as KES.")]
+        public string? To { get; set; }
+
+        [Required(ErrorMessage = "What was one worth?")]
+        public string? Rate { get; set; }
+
+        public DateOnly On { get; set; }
+
+        [StringLength(200)]
+        public string? Source { get; set; }
+    }
+}

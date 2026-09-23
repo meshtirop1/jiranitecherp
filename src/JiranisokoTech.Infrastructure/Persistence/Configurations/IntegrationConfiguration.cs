@@ -1,4 +1,5 @@
 using JiranisokoTech.Domain.Integrations;
+using JiranisokoTech.Domain.Money;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -79,5 +80,37 @@ public sealed class OutboundDeliveryConfiguration : IEntityTypeConfiguration<Out
             .WithMany()
             .HasForeignKey(one => one.SubscriptionId)
             .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class ExchangeRateConfiguration : IEntityTypeConfiguration<ExchangeRate>
+{
+    public void Configure(EntityTypeBuilder<ExchangeRate> builder)
+    {
+        builder.ToTable("exchange_rates");
+
+        builder.HasKey(one => one.Id);
+
+        builder.Property(one => one.From).HasMaxLength(3).IsRequired();
+        builder.Property(one => one.To).HasMaxLength(3).IsRequired();
+        builder.Property(one => one.Source).HasMaxLength(200);
+
+        /*
+         * Eighteen digits with eight after the point. A decimal rather than a double for
+         * the same reason money counts minor units: 129.45 is not representable in binary
+         * floating point, and a rate applied across a year of invoices compounds the
+         * error into a figure somebody has to reconcile by hand.
+         *
+         * Eight decimal places because a weak currency against a strong one needs them —
+         * one shilling in dollars is 0.0077, and two places would round it to nothing.
+         */
+        builder.Property(one => one.Rate).HasPrecision(18, 8).IsRequired();
+
+        /*
+         * One rate per pair per day. Two would mean a report picking whichever the query
+         * returned first and producing a different total on a second reading, which is
+         * the single most corrosive thing a financial report can do.
+         */
+        builder.HasIndex(one => new { one.From, one.To, one.On }).IsUnique();
     }
 }

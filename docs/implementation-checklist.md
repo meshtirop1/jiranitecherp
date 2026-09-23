@@ -92,7 +92,7 @@ By section: **34 done, 22 partial, 42 not started, 1 excluded by agreement.**
 | ✅ | 17 | Client contracts | Draft/active/terminated, expiry by date, signed copy attached |
 | ☐ | 17 | Employee, vendor contracts, NDAs, renewal reminders | |
 | ✅ | 10 | Projects | Lead, dates, state, documents, hours |
-| ◐ | 10 | Project fields | No budget, revenue, costs or profitability |
+| ✅ | 10 | Project fields | Budget recorded; revenue, cost and margin derived from invoices, approved hours and paid expenses. Costed at a blended rate so no project report reveals a salary |
 | ✅ | 11 | Tasks | State machine, per-transition permissions, release gate |
 | ☐ | 11 | Epics, features, stories, subtasks, sprints, backlog | |
 | ☐ | 11 | Task labels, dependencies, comments, checklists, acceptance criteria | |
@@ -138,7 +138,7 @@ This block is the brief's stated centre of gravity and none of it exists.
 | --- | --- | --- | --- |
 | ✅ | 18 | Invoices and payments | Numbered, frozen on send, overpayment refused, voidable before payment |
 | ✅ | 20 | Expenses | Claim, approve, pay — approval and payment deliberately separate |
-| ◐ | 57 | Multi-currency | Money refuses cross-currency arithmetic and totals say so. No exchange rates or conversion |
+| ✅ | 57 | Multi-currency | Money refuses cross-currency arithmetic; dated rates recorded by hand, conversion available and never stored |
 | ☐ | 18 | Chart of accounts, recurring expenses, financial reports | |
 | ☐ | 19 | Project profitability | |
 | ☐ | 61 | Procurement — purchase requests, orders, receiving | |

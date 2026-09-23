@@ -21,6 +21,11 @@ public sealed class ProjectConfiguration : IEntityTypeConfiguration<Project>
 
         builder.Ignore(project => project.IsRunning);
 
+        // Money is what the code works with; the column is a count of minor units
+        // beside its currency, as a contract's value is.
+        builder.Ignore(project => project.Budget);
+        builder.Property(project => project.BudgetCurrency).HasMaxLength(3);
+
         // The code is what people type and quote, so two projects cannot share
         // one.
         builder.HasIndex(project => project.Code).IsUnique();

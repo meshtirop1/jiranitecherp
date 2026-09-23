@@ -745,6 +745,14 @@ code.key {
     color: #6c757d;
 }
 
+/* A figure that has gone the wrong way — over budget, or a negative margin. Colour
+   and weight together rather than colour alone, because roughly one man in twelve
+   cannot tell this red from the surrounding text. */
+.over {
+    color: #b02a37;
+    font-weight: 600;
+}
+
 /* Somebody's photograph, beside their name. Fixed square rather than intrinsic
    size, because a portrait uploaded from a phone is four thousand pixels wide and
    would otherwise push the whole page sideways on a small screen. */

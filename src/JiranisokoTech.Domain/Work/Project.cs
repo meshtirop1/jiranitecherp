@@ -77,6 +77,48 @@ public sealed class Project : Entity, IAuditable
 
     public DateTimeOffset? DeliveredAt { get; private set; }
 
+    /// <summary>
+    /// What the project was agreed to cost, as minor units.
+    /// </summary>
+    /// <remarks>
+    /// Stored as a number beside its currency, like a contract's value and a claim's
+    /// amount, so a report can sum the column.
+    ///
+    /// A budget and not a forecast. It is the figure agreed with the client or set by the
+    /// firm at the start, and it does not move as the work does — the whole use of it is
+    /// comparing what was agreed against what happened, and a budget that drifted to
+    /// match the spending would always be met.
+    /// </remarks>
+    public long? BudgetMinorUnits { get; private set; }
+
+    public string? BudgetCurrency { get; private set; }
+
+    /// <summary>The agreed budget, when both halves are present.</summary>
+    public Common.Money? Budget =>
+        BudgetMinorUnits is { } minor && BudgetCurrency is { Length: 3 } currency
+            ? Common.Money.Of(minor, currency)
+            : null;
+
+    /// <summary>
+    /// Set or clear what this was agreed to cost.
+    /// </summary>
+    /// <remarks>
+    /// Refuses a negative budget, because a project cannot be agreed to earn the firm
+    /// money by existing, and a negative here would make every margin calculation report
+    /// a profit.
+    /// </remarks>
+    public void Budgeted(Common.Money? budget)
+    {
+        if (budget is { MinorUnits: < 0 })
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(budget), "A budget cannot be less than nothing.");
+        }
+
+        BudgetMinorUnits = budget?.MinorUnits;
+        BudgetCurrency = budget?.Currency;
+    }
+
     public bool IsRunning => Status is ProjectStatus.Planned or ProjectStatus.Active
         or ProjectStatus.OnHold;
 

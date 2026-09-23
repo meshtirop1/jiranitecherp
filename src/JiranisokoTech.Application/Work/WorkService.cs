@@ -258,6 +258,35 @@ public sealed class WorkService(IWorkRepository work, IPeopleRepository people, 
         await work.FindAsync(id, cancellationToken)
         ?? throw new InvalidOperationException("There is no work with that identifier.");
 
+    /// <summary>
+    /// Set or clear what a project was agreed to cost.
+    /// </summary>
+    /// <remarks>
+    /// A budget and not a forecast: it is what was agreed at the start, and it does not
+    /// move as the work does. The whole use of it is comparing what was agreed against
+    /// what happened, and a budget that drifted to match the spending would always be met.
+    /// </remarks>
+    public async Task BudgetAsync(
+        Guid projectId,
+        long? minorUnits,
+        string? currency,
+        CancellationToken cancellationToken = default)
+    {
+        var project = await RequiredProject(projectId, cancellationToken);
+
+        if (minorUnits is not null && string.IsNullOrWhiteSpace(currency))
+        {
+            throw new InvalidOperationException(
+                "A budget needs a currency. A bare number is not an amount of money.");
+        }
+
+        project.Budgeted(minorUnits is { } amount
+            ? Domain.Common.Money.Of(amount, currency!.Trim().ToUpperInvariant())
+            : null);
+
+        await work.SaveAsync(cancellationToken);
+    }
+
     private async Task<Project> RequiredProject(Guid id, CancellationToken cancellationToken) =>
         await work.FindProjectAsync(id, cancellationToken)
         ?? throw new InvalidOperationException("There is no project with that identifier.");

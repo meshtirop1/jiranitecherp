@@ -10,9 +10,11 @@
 @using Microsoft.AspNetCore.Authorization
 @using Cash = JiranisokoTech.Domain.Common.Money
 @attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ExpensesClaim)]
+@using JiranisokoTech.Infrastructure.Work
 @inject BusinessQueries Queries
 @inject PeopleQueries People
 @inject ExpenseService Service
+@inject WorkQueries Work
 @inject IClock Clock
 @inject NavigationManager Navigation
 
@@ -75,6 +77,22 @@ else
                     @foreach (var category in Enum.GetValues<ExpenseCategory>())
                     {
                         <option value="@category">@Words.For(category)</option>
+                    }
+                </InputSelect>
+            </label>
+
+            <label>
+                <span>For which project</span>
+                @*
+                    Chosen by whoever claims it rather than by whoever approves it. A taxi
+                    to a client site is a cost of that project and a new keyboard is a cost
+                    of the firm, and the person who was there is the one who knows which.
+                *@
+                <InputSelect @bind-Value="Input.ProjectId">
+                    <option value="">The firm, not a project</option>
+                    @foreach (var project in Projects)
+                    {
+                        <option value="@project.Id">@project.Name</option>
                     }
                 </InputSelect>
             </label>
@@ -177,6 +195,7 @@ else
     private async Task LoadAsync()
     {
         Mine = await Queries.ClaimsAsync(employeeId: Me);
+        Projects = await Work.ProjectsAsync(runningOnly: true);
 
         var approved = Mine.Where(claim => claim.Status == ClaimStatus.Approved).ToList();
 
@@ -196,7 +215,8 @@ else
                 Cash.Of((long)Math.Round(Input.Amount * 100m, MidpointRounding.ToEven), "KES"),
                 Input.Category,
                 Input.SpentOn,
-                Input.Description);
+                Input.Description,
+                string.IsNullOrWhiteSpace(Input.ProjectId) ? null : Guid.Parse(Input.ProjectId));
 
             await Service.SubmitAsync(claim.Id);
         });
@@ -229,8 +249,12 @@ else
         _ => null,
     };
 
+    private List<ProjectRow> Projects { get; set; } = [];
+
     private sealed class ClaimInput
     {
+        public string? ProjectId { get; set; }
+
         [Required(ErrorMessage = "Say what the money went on.")]
         [StringLength(300)]
         public string Description { get; set; } = string.Empty;

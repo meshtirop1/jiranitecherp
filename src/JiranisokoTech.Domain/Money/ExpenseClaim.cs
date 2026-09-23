@@ -88,6 +88,40 @@ public sealed class ExpenseClaim : Entity, IAuditable
     public Guid EmployeeId { get; private init; }
 
     /// <summary>
+    /// Which project this was spent on, when it was spent on one.
+    /// </summary>
+    /// <remarks>
+    /// The other half of what section 10 needed. A taxi to a client site is a cost of
+    /// that project; a new keyboard is a cost of the firm. Without this every expense was
+    /// the firm's and no project ever showed a true cost.
+    ///
+    /// Set by whoever claims it, not by whoever approves it, because the person who was
+    /// there is the one who knows.
+    /// </remarks>
+    public Guid? ProjectId { get; private set; }
+
+    /// <summary>
+    /// Say which project this was spent on.
+    /// </summary>
+    /// <remarks>
+    /// Allowed only while the claim is still the claimant's to change. Once it has been
+    /// approved, moving the cost to another project would alter a decided figure on
+    /// somebody else's project without their approver having seen it.
+    /// </remarks>
+    public void ChargeTo(Guid? projectId)
+    {
+        if (Status is not (ClaimStatus.Draft or ClaimStatus.AwaitingApproval))
+        {
+            throw new InvalidOperationException(
+                "This claim has already been decided, so the project it is charged to cannot "
+                + "change. A cost moved after approval is a figure altered on somebody else's "
+                + "project without their approver seeing it.");
+        }
+
+        ProjectId = projectId;
+    }
+
+    /// <summary>
     /// Stored as its parts, and rebuilt as <see cref="Amount"/>.
     /// </summary>
     /// <remarks>

@@ -112,4 +112,28 @@ public sealed class SettingsService(ISettingsRepository settings)
 
         await settings.SaveAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// Set what an hour of anybody's time costs the firm.
+    /// </summary>
+    /// <remarks>
+    /// One blended rate rather than each person's actual pay, and the reason is a
+    /// permission boundary. A delivery manager holds projects.manage and time.view_all
+    /// and not employees.pay; a project cost derived from real salaries would let them
+    /// recover any one person's rate by dividing — one project, one person, one month —
+    /// with the permission intact and the information out.
+    ///
+    /// Nothing computes this. Salaries, statutory contributions, an allocation of rent
+    /// and software are a management decision rather than a sum this system holds all
+    /// the parts of.
+    /// </remarks>
+    public async Task CostAnHourAtAsync(
+        long? minorUnits, CancellationToken cancellationToken = default)
+    {
+        var current = await CurrentAsync(cancellationToken);
+
+        current.CostAnHourAt(minorUnits);
+
+        await settings.SaveAsync(cancellationToken);
+    }
 }

@@ -240,6 +240,19 @@ public sealed class ExpenseClaimConfiguration : IEntityTypeConfiguration<Expense
 
         builder.HasKey(claim => claim.Id);
 
+        /*
+         * The project a cost belongs to, so a project can show what it really took. Set
+         * to null rather than cascading when a project is deleted: the money left the
+         * firm and the claim is the record of that, whatever happens to the project it
+         * was spent on.
+         */
+        builder.HasOne<Project>()
+            .WithMany()
+            .HasForeignKey(claim => claim.ProjectId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasIndex(claim => new { claim.ProjectId, claim.Status });
+
         builder.Property(claim => claim.Currency).HasMaxLength(3).IsRequired();
         builder.Property(claim => claim.Description).HasMaxLength(2000).IsRequired();
         builder.Property(claim => claim.Category).HasConversion<int>().IsRequired();
@@ -271,6 +284,15 @@ public sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
         builder.ToTable("invoices");
 
         builder.HasKey(invoice => invoice.Id);
+
+        // Which project this bills for, so a project can show what it earned. Set to
+        // null on delete, for the same reason a claim's is: the client was invoiced.
+        builder.HasOne<Project>()
+            .WithMany()
+            .HasForeignKey(invoice => invoice.ProjectId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasIndex(invoice => new { invoice.ProjectId, invoice.Status });
 
         builder.Property(invoice => invoice.Number).HasMaxLength(40).IsRequired();
         builder.Property(invoice => invoice.Currency).HasMaxLength(3).IsRequired();

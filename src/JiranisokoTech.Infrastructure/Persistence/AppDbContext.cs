@@ -99,6 +99,15 @@ public class AppDbContext(
     /// <summary>Which provider login belongs to which member of staff.</summary>
     public DbSet<Contributor> Contributors => Set<Contributor>();
 
+    /// <summary>
+    /// What one currency was worth in another, on a day.
+    /// </summary>
+    /// <remarks>
+    /// Rates are recorded, never fetched, and conversions are computed in reports rather
+    /// than stored. See ExchangeRate for why both of those are deliberate.
+    /// </remarks>
+    public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
+
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
 
     /// <summary>
