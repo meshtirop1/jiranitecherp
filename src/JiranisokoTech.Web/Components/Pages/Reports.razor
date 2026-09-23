@@ -41,7 +41,7 @@
     <section class="standing">
         <h2>Money owed to us</h2>
 
-        @if (State.Outstanding is { } outstanding)
+        @if (State.Outstanding.Amount is { } outstanding)
         {
             <p class="standing__figure">@outstanding</p>
             <p>
@@ -49,7 +49,7 @@
                 @if (State.OverdueCount > 0)
                 {
                     <strong>
-                        @State.Overdue of it is overdue, across
+                        @State.Overdue.Amount of it is overdue, across
                         @State.OverdueCount @(State.OverdueCount == 1 ? "invoice" : "invoices")
                     </strong>
 
@@ -64,6 +64,21 @@
                 }
             </p>
             <p><a href="/invoices">Go to invoices</a></p>
+        }
+        else if (State.Outstanding.Mixed)
+        {
+            @*
+                Said rather than skipped. This page used to render the sentence
+                below for this case too, because the query answered "nothing to
+                total" and "cannot be totalled" with the same null — so a firm
+                holding unpaid invoices in two currencies was told every invoice
+                had been paid.
+            *@
+            <p class="refusal" role="alert">
+                There are unpaid invoices in more than one currency, so there is
+                no single figure to show. <a href="/invoices">Go to invoices</a>
+                to see them.
+            </p>
         }
         else
         {
@@ -144,7 +159,7 @@
     <section class="standing">
         <h2>Money we owe our own people</h2>
 
-        @if (State.OwedToStaff is { } owing)
+        @if (State.OwedToStaff.Amount is { } owing)
         {
             <p class="standing__figure">@owing</p>
             <p>
@@ -153,6 +168,13 @@
                 out of pocket for this.
             </p>
             <p><a href="/expenses/claims">Go to claims</a></p>
+        }
+        else if (State.OwedToStaff.Mixed)
+        {
+            <p class="refusal" role="alert">
+                There are approved claims in more than one currency, so there is
+                no single figure. <a href="/expenses/claims">Go to claims</a>.
+            </p>
         }
         else
         {
@@ -229,7 +251,7 @@
     /// makes this page interactive, it renders empty rather than throwing.
     /// </remarks>
     private static readonly FirmState Empty = new(
-        null, null, 0, null, 0, 0, 0, null, 0, 0, 0, [], 0, 0, 0);
+        Tally.Nothing, Tally.Nothing, 0, null, 0, 0, 0, Tally.Nothing, 0, 0, 0, [], 0, 0, 0);
 
     protected override async Task OnInitializedAsync()
     {

@@ -144,7 +144,7 @@ public class ReportingTests
 
         var state = await module.Reporting.StateAsync(db.Clock.Today);
 
-        Assert.Equal(Money.Of(4_000_00, "KES"), state.Outstanding);
+        Assert.Equal(Money.Of(4_000_00, "KES"), state.Outstanding.Amount);
     }
 
     /// <summary>
@@ -166,7 +166,7 @@ public class ReportingTests
 
         var state = await module.Reporting.StateAsync(db.Clock.Today);
 
-        Assert.Equal(Money.Of(4_000_00, "KES"), state.Outstanding);
+        Assert.Equal(Money.Of(4_000_00, "KES"), state.Outstanding.Amount);
     }
 
     /// <summary>
@@ -191,7 +191,7 @@ public class ReportingTests
         await module.Invoices.AddLineAsync(invoice.Id, "Work", 1, Money.Of(1_000_00, "KES"));
         await module.Invoices.SendAsync(invoice.Id);
 
-        var due = (await module.Reporting.StateAsync(db.Clock.Today)).Outstanding;
+        var due = (await module.Reporting.StateAsync(db.Clock.Today)).Outstanding.Amount;
         Assert.Equal(Money.Of(1_000_00, "KES"), due);
 
         var today = await module.Reporting.StateAsync(db.Clock.Today);
@@ -202,7 +202,7 @@ public class ReportingTests
         var later = await module.Reporting.StateAsync(db.Clock.Today.AddDays(31));
 
         Assert.Equal(1, later.OverdueCount);
-        Assert.Equal(Money.Of(1_000_00, "KES"), later.Overdue);
+        Assert.Equal(Money.Of(1_000_00, "KES"), later.Overdue.Amount);
     }
 
     /// <summary>
@@ -236,7 +236,7 @@ public class ReportingTests
 
         var state = await module.Reporting.StateAsync(db.Clock.Today);
 
-        Assert.Equal(Money.Of(3_500_00, "KES"), state.OwedToStaff);
+        Assert.Equal(Money.Of(3_500_00, "KES"), state.OwedToStaff.Amount);
         Assert.Equal(1, state.OwedToStaffCount);
         Assert.Equal(1, state.ClaimsWaiting);
     }
@@ -277,6 +277,53 @@ public class ReportingTests
     }
 
     /// <summary>
+    /// Invoices in two currencies report that there is no single figure, not
+    /// that everything has been paid.
+    /// </summary>
+    /// <remarks>
+    /// The query used to answer "nothing to total" and "cannot be totalled"
+    /// with the same null, so the page rendered "Nothing is outstanding. Every
+    /// invoice sent has been paid." for a firm holding unpaid invoices in two
+    /// currencies — false, and false in the direction that stops somebody
+    /// chasing money. The comment on the helper claimed the page said so
+    /// instead of lying; it could not, because it had not been told.
+    /// </remarks>
+    [Fact]
+    public async Task Two_currencies_are_reported_as_untotallable_rather_than_paid()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var client = await module.Clients.TakeOnAsync("Acme Logistics");
+
+        await module.Settings.BillAsAsync("JTS", "KES", 30);
+        var shillings = await module.Invoices.DraftAsync(client.Id);
+        await module.Invoices.AddLineAsync(shillings.Id, "Work", 1, Money.Of(1_000_00, "KES"));
+        await module.Invoices.SendAsync(shillings.Id);
+
+        // The firm changing currency is refused once it has invoiced, so the
+        // only way a second currency reaches the books is an invoice raised
+        // before that rule existed. Written directly for that reason.
+        await using (var write = db.NewContext())
+        {
+            var dollars = Invoice.Draft(client.Id, "USD-0001", "USD", db.Clock.Today, 30);
+
+            dollars.AddLine("Work", 1, Money.Of(500_00, "USD"));
+            dollars.Send(db.Clock.Now);
+
+            write.Invoices.Add(dollars);
+            await write.SaveChangesAsync();
+        }
+
+        var state = await module.Reporting.StateAsync(db.Clock.Today);
+
+        Assert.Null(state.Outstanding.Amount);
+        Assert.True(
+            state.Outstanding.Mixed,
+            "Two currencies were reported as nothing outstanding rather than as untotallable.");
+    }
+
+    /// <summary>
     /// An empty firm reports nothing rather than zero.
     /// </summary>
     /// <remarks>
@@ -293,8 +340,8 @@ public class ReportingTests
 
         var state = await module.Reporting.StateAsync(db.Clock.Today);
 
-        Assert.Null(state.Outstanding);
-        Assert.Null(state.OwedToStaff);
+        Assert.Null(state.Outstanding.Amount);
+        Assert.Null(state.OwedToStaff.Amount);
         Assert.Empty(state.AwaySoon);
         Assert.True(state.NothingIsWaiting);
     }

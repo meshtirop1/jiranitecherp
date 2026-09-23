@@ -109,16 +109,19 @@ public static class StandingCsv
     /// statement of where the firm stands, and that is worth more than a cell
     /// that arithmetic can be done on.
     ///
-    /// An absent figure is left blank rather than described. The query returns
-    /// nothing both when there is nothing outstanding and when the amounts are
-    /// in more than one currency and cannot be totalled, and the page's sentence
-    /// for that case — every invoice sent has been paid — is true of the first
-    /// and false of the second. An empty cell claims neither.
+    /// A total that cannot be taken says so in the cell rather than being left
+    /// blank. The query distinguishes having nothing to add from holding
+    /// amounts in two currencies that cannot be added; blank is honest for the
+    /// first and evasive for the second, because a reader scanning a column of
+    /// figures reads an empty money cell as zero.
     /// </remarks>
-    private static string? Figure(Money? amount) => amount is { } value
-        ? string.Create(
-            CultureInfo.InvariantCulture, $"{value.Currency} {value.MinorUnits / 100m:0.00}")
-        : null;
+    private static string? Figure(Tally tally) => tally switch
+    {
+        { Amount: { } value } => string.Create(
+            CultureInfo.InvariantCulture, $"{value.Currency} {value.MinorUnits / 100m:0.00}"),
+        { Mixed: true } => "in more than one currency",
+        _ => null,
+    };
 
     /// <summary>
     /// A date as the calendar, not as a locale.

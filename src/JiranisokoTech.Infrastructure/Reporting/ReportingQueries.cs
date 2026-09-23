@@ -138,39 +138,64 @@ public sealed class ReportingQueries(AppDbContext database)
     /// Adds money that may be in more than one currency.
     /// </summary>
     /// <remarks>
-    /// Money refuses to add across currencies, which is correct and is why this
-    /// returns null rather than a figure when it finds two. A total that
-    /// silently adds shillings to dollars is worse than no total: somebody acts
-    /// on it. The firm bills in one currency today, so in practice this returns
-    /// a figure; the day it does not, the page says so instead of lying.
+    /// Money refuses to add across currencies, which is correct: a total that
+    /// silently adds shillings to dollars is worse than no total, because
+    /// somebody acts on it.
+    ///
+    /// The first version of this returned null for that case AND for having
+    /// nothing to add, and its own comment claimed the page would "say so
+    /// instead of lying". The page could not — both arrived as null, so it
+    /// rendered "Nothing is outstanding. Every invoice sent has been paid." for
+    /// a firm holding unpaid invoices in two currencies. False, and false in
+    /// the direction that stops somebody chasing money.
+    ///
+    /// So the two are different answers now and the caller has to handle both.
     /// </remarks>
-    private static Money? Total(IEnumerable<Money> amounts)
+    private static Tally Total(IEnumerable<Money> amounts)
     {
         var list = amounts.ToList();
 
         if (list.Count == 0)
         {
-            return null;
+            return Tally.Nothing;
         }
 
         var currency = list[0].Currency;
 
         return list.Any(amount => amount.Currency != currency)
-            ? null
-            : list.Aggregate(Money.Zero(currency), (running, amount) => running + amount);
+            ? Tally.AcrossCurrencies
+            : new Tally(list.Aggregate(Money.Zero(currency), (running, amount) => running + amount));
     }
+}
+
+/// <summary>
+/// A total, or the reason there is not one.
+/// </summary>
+/// <remarks>
+/// Three states, because "nothing to add" and "cannot be added" are different
+/// facts and only one of them is reassuring. A page given a bare null cannot
+/// tell them apart and will pick the wrong sentence.
+/// </remarks>
+public readonly record struct Tally(Money? Amount, bool Mixed = false)
+{
+    public static Tally Nothing => new(null);
+
+    public static Tally AcrossCurrencies => new(null, true);
+
+    /// <summary>There is a figure, and it can be shown.</summary>
+    public bool HasFigure => Amount is not null;
 }
 
 /// <summary>Where the firm stands, in the figures somebody acts on.</summary>
 public sealed record FirmState(
-    Money? Outstanding,
-    Money? Overdue,
+    Tally Outstanding,
+    Tally Overdue,
     int OverdueCount,
     DateOnly? OldestOverdue,
     int UnbilledMinutes,
     int UnapprovedMinutes,
     int UnapprovedEntries,
-    Money? OwedToStaff,
+    Tally OwedToStaff,
     int OwedToStaffCount,
     int LeaveWaiting,
     int ClaimsWaiting,
