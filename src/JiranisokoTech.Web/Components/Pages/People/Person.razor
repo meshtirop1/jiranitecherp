@@ -1,13 +1,18 @@
 @page "/people/{id:guid}"
 @using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
 @using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Documents
 @using JiranisokoTech.Application.People
+@using JiranisokoTech.Domain.Documents
 @using JiranisokoTech.Domain.People
 @using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Web.Authorization
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.EmployeesView)]
 @inject PeopleQueries People
 @inject PeopleService Service
+@inject DocumentService Files
 
 @*
     Static, like everything that changes something.
@@ -167,6 +172,66 @@ else
         </EditForm>
     </AuthorizeView>
 
+    @*
+        The personnel file is not drawn for everybody who can open this page.
+
+        The page asks for employees.view, which HR, every department head, every
+        delivery manager, the administrator and the owner hold, because a roster
+        is meant to be read widely. What gets attached to a person is not: a
+        contract with a salary on it, a disciplinary letter, a scan of a
+        passport. Copying the client page as it stands would have drawn that list
+        for every delivery manager in the firm, so it is drawn instead for
+        employees.manage and for the person the record is about — the same rule
+        the download endpoint applies, and it is the endpoint that is the
+        protection. Hiding the list is only so that nobody is shown a column of
+        links that all answer "no such document".
+
+        Reaching your own file this way still means getting through the door
+        first, and the door is employees.view, which an engineer does not hold.
+        So self-access works at the endpoint and is linked from no page they can
+        open. It wants a page about yourself rather than about somebody, and
+        there is not one yet.
+    *@
+    @if (MayReadTheFile)
+    {
+        <section class="standing">
+            <h2>Attached</h2>
+
+            @if (Attached.Count == 0)
+            {
+                <p class="empty">
+                    Nothing attached. A contract, a certificate or an identity document belongs here.
+                </p>
+            }
+            else
+            {
+                <ul class="plain">
+                    @foreach (var file in Attached)
+                    {
+                        <li>
+                            <a href="/documents/@file.Id">@file.FileName</a>
+                            <span class="subtle">
+                                @file.Size, @file.UploadedAt.ToString("d MMM yyyy")@(file.Note is { } note ? $" — {note}" : null)
+                            </span>
+                        </li>
+                    }
+                </ul>
+            }
+
+            <AuthorizeView Policy="@ManagePolicy" Context="mayAttach">
+                <EditForm Model="Attaching" method="post" OnValidSubmit="Attach" FormName="attach"
+                          enctype="multipart/form-data" class="inline">
+                    <label>
+                        <span class="visually-hidden">A file</span>
+                        <input type="file" name="document" />
+                    </label>
+                    <InputText @bind-Value="Attaching.Note" placeholder="What it is" />
+                    <button type="submit" class="button button--quiet">Attach</button>
+                </EditForm>
+            </AuthorizeView>
+        </section>
+    }
+
     <p><a href="/people">Back to people</a></p>
 }
 
@@ -178,9 +243,23 @@ else
     public Guid Id { get; set; }
 
     /*
+     * The upload is read off the request rather than from a bound model.
+     *
+     * This page is statically rendered, so InputFile never runs and @onchange
+     * never fires — there is no circuit to fire them on. A plain file input
+     * inside a multipart form posts the bytes with everything else, and this is
+     * where they arrive.
+     */
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    /*
      * Each of these is backed by a field whose setter refuses null.
      *
-     * The binder assigns every form model on every post, including the three
+     * The binder assigns every form model on every post, including the four
      * that were not the one submitted, and for those it assigns null. A plain
      * auto-property with an initializer is therefore null exactly when another
      * form on the page was used, and the page throws while rendering.
@@ -189,6 +268,7 @@ else
     private LeavingInput _leaving = new();
     private LineInput _line = new();
     private PlacementInput _placement = new();
+    private AttachInput _attaching = new();
 
     [SupplyParameterFromForm(FormName = "suspend")]
     private SuspensionInput Suspension
@@ -218,6 +298,13 @@ else
         set => _placement = value ?? new PlacementInput();
     }
 
+    [SupplyParameterFromForm(FormName = "attach")]
+    private AttachInput Attaching
+    {
+        get => _attaching;
+        set => _attaching = value ?? new AttachInput();
+    }
+
     private PersonRow? Row { get; set; }
 
     private List<PersonRow> Reports { get; set; } = [];
@@ -226,13 +313,43 @@ else
 
     private Dictionary<Guid, string> Departments { get; set; } = [];
 
+    private List<Attachment> Attached { get; set; } = [];
+
+    /// <summary>The staff record behind the sign-in reading this page, if any.</summary>
+    private Guid? Me { get; set; }
+
+    private bool MayReadTheFile { get; set; }
+
     private string? Refusal { get; set; }
 
     private string? Done { get; set; }
 
     private bool _loaded;
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        if (Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account))
+        {
+            Me = await People.EmployeeForAccountAsync(account);
+        }
+
+        /*
+         * Both sides have to be a real person.
+         *
+         * An account with no staff record resolves to nobody, and nobody is not
+         * the person this page is about. Written out rather than left to a
+         * lifted comparison happening to be false, because the work item page
+         * made the same mistake in the shape where it does not: two nullable
+         * identifiers, null matching null, and every engineer could read every
+         * unassigned card.
+         */
+        MayReadTheFile = user.HasPermission(Permissions.EmployeesManage)
+            || (Me is { } me && me == Id);
+
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {
@@ -241,6 +358,12 @@ else
         Row = roster.FirstOrDefault(person => person.Id == Id);
         Reports = roster.Where(person => person.ReportsToId == Id).ToList();
         Departments = await People.DepartmentNamesAsync();
+
+        // Read only when it is going to be drawn. The query is cheap, but this
+        // is a personnel file, and holding one in the state of a page rendered
+        // for somebody who may not see it is one careless @Attached away from
+        // putting a disciplinary letter on a colleague's screen.
+        Attached = MayReadTheFile ? await Files.ForAsync(AttachedTo.Employee, Id) : [];
 
         // Somebody who has left cannot be given reports or a post, so they are
         // not offered. A refusal after the click is a worse way to say so.
@@ -281,6 +404,27 @@ else
 
     private Task Move() =>
         Run(() => Service.MoveAsync(Id, Placement.DepartmentId), "Moved.");
+
+    private Task Attach() => Run(
+        async () =>
+        {
+            var file = Request?.Request.Form.Files["document"];
+
+            if (file is not { Length: > 0 })
+            {
+                throw new InvalidOperationException("Choose a file first.");
+            }
+
+            await using var contents = file.OpenReadStream();
+
+            // Recorded against the staff record of whoever is signed in, not
+            // their account, so a personnel file says which colleague put the
+            // contract there in the words the rest of the system uses. Null when
+            // the account has no staff record, which the column allows.
+            await Files.AttachAsync(
+                AttachedTo.Employee, Id, contents, file.FileName, file.Length, Me, Attaching.Note);
+        },
+        "Attached.");
 
     private async Task Run(Func<Task> work, string? done)
     {
@@ -325,5 +469,11 @@ else
     private sealed class PlacementInput
     {
         public Guid? DepartmentId { get; set; }
+    }
+
+    private sealed class AttachInput
+    {
+        [StringLength(500)]
+        public string? Note { get; set; }
     }
 }
