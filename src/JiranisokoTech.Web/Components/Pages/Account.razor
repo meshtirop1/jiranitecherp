@@ -6,10 +6,13 @@
 @using Microsoft.AspNetCore.Identity
 @inject SignInService Authentication
 @inject UserManager<ApplicationUser> Users
+@inject NavigationManager Navigation
 
 @*
     Static, like everything else that touches the session. Nothing here needs
-    to change without a page load.
+    to change without a page load — and signing out everywhere deletes this
+    browser's cookie, which can only happen while the response is still being
+    composed.
 *@
 
 <PageTitle>Your account — Jiranisoko Delivery</PageTitle>
@@ -48,10 +51,17 @@ else
         Failures included, not only successes. The point of showing somebody
         their own history is that they can spot an attempt that was not them,
         and the attempts that were not them are usually the ones that failed.
+
+        The advice used to say "change your password", which nobody reading this
+        page can actually do: there is no page for it, and a new password is set
+        from a link an administrator issues. Telling somebody to do something
+        this system does not offer is how they end up doing nothing at all, so it
+        now names what is here and who to ask for the rest.
     *@
     <p class="account__hint">
         Every attempt on this account, successful or not. If you see one you do
-        not recognise, change your password and tell an administrator.
+        not recognise, sign out everywhere — the button is below — and tell an
+        administrator, who can send you a link to set a new password.
     </p>
 
     @if (History.Count == 0)
@@ -85,6 +95,31 @@ else
             </tbody>
         </table>
     }
+
+    <h2>Sign out everywhere</h2>
+
+    <p>
+        Ends every session this account has — this browser, your phone, the
+        machine in the office you left signed in on, and any you have forgotten
+        about. You are signed out here too, straight away, and will have to sign
+        in again. An "everywhere" that quietly spared the browser you happen to
+        be holding would not be worth pressing.
+    </p>
+
+    <p class="account__hint">
+        It does not change your password, and nothing on this page can: whoever
+        knows it can sign back in. If you are here because of an attempt you do
+        not recognise, ask an administrator for a link and set a new one as well.
+        Other devices stop working within a minute rather than instantly, because
+        that is how often their session is checked against this account.
+    </p>
+
+    <div class="actions">
+        <form method="post" @formname="sign-out-everywhere" @onsubmit="SignOutEverywhere">
+            <AntiforgeryToken />
+            <button type="submit" class="danger">Sign out everywhere</button>
+        </form>
+    </div>
 }
 
 @code {
@@ -122,6 +157,35 @@ else
         Zone = ZoneFor(Person.TimeZone);
         History = await Authentication.HistoryFor(userId);
         TwoStep = await Users.GetTwoFactorEnabledAsync(Person);
+    }
+
+    /// <summary>
+    /// Roll the stamp every session is measured against, and leave.
+    /// </summary>
+    /// <remarks>
+    /// The redirect is the confirmation. Rendering this page again would show
+    /// somebody a signed-in account page — their name, their roles, a sign-out
+    /// button in the navigation — written into a response that has just deleted
+    /// the cookie behind all of it, and the first link they clicked would throw
+    /// them at the sign-in screen with no explanation. So the response says
+    /// where they now stand instead.
+    ///
+    /// <c>Person</c> is loaded in OnInitializedAsync, which static rendering runs
+    /// before it dispatches this, and the null check is for the case that
+    /// returns early — an identifier in the cookie with no account behind it.
+    /// Pressing the button then does nothing, which is correct: there is no
+    /// account whose sessions could be ended.
+    /// </remarks>
+    private async Task SignOutEverywhere()
+    {
+        if (Person is null)
+        {
+            return;
+        }
+
+        await Authentication.EndEverySessionAsync(Person);
+
+        Navigation.NavigateTo("/sign-in?ended=everywhere", forceLoad: true);
     }
 
     /// <summary>

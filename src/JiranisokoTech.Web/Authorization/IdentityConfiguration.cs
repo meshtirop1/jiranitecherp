@@ -67,15 +67,37 @@ public static class IdentityConfiguration
         services.AddScoped<TwoFactor>();
 
         /*
-         * Permissions travel in the cookie, so a role change does not reach an
-         * open session until the principal is rebuilt. Five minutes is the
-         * window in which somebody keeps an access they have just lost — short
-         * enough to be acceptable, long enough not to hit the database on every
-         * request. Revoking something urgent should also deactivate the
-         * account, which ends the session immediately.
+         * How long a session may go on believing what it was told, and the one
+         * number that decides whether revoking anything means anything.
+         *
+         * Permissions and the account's own state travel in the cookie, so a
+         * role change, a withdrawal, a password being set or a security stamp
+         * rolled by "sign out everywhere" reaches an open session only when the
+         * principal is next checked against the database. This interval is how
+         * long that takes, and the framework's default for it is thirty minutes
+         * — which makes every revocation in this system a suggestion. Somebody
+         * who finds a sign-in they do not recognise, ends every session and sets
+         * a new password has, on the default, left whoever it was reading
+         * invoices for another half hour.
+         *
+         * A minute instead. The cost is one read of one row by primary key per
+         * signed-in person per minute — per minute and not per request, because
+         * a check that passes stamps the cookie with the time it happened, and
+         * the next request inside the minute reads that stamp instead of the
+         * database. TimeSpan.Zero would make revocation immediate and move the
+         * read onto every request of every page; a minute is short enough to
+         * say out loud to somebody whose account has been used by a stranger,
+         * and cheap enough that nobody has to think about it again.
+         *
+         * The comments elsewhere that used to name five minutes now point here
+         * rather than repeating the figure. Three of them agreed with this line
+         * only because nobody had changed it yet, and the first edit would have
+         * left them all lying. Where a number still has to be spelled out is in
+         * what a page says to a person, because "within the validation interval"
+         * is not English.
          */
         services.Configure<SecurityStampValidatorOptions>(options =>
-            options.ValidationInterval = TimeSpan.FromMinutes(5));
+            options.ValidationInterval = TimeSpan.FromMinutes(1));
 
         services.ConfigureApplicationCookie(options =>
         {

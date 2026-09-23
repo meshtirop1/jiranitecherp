@@ -104,9 +104,10 @@ else
             @if (Row.IsActive)
             {
                 @*
-                    Withdrawing takes effect within five minutes, not at their
-                    next attempt: the security stamp is rolled, so the session
-                    they are in now fails its next check.
+                    Withdrawing takes effect within a minute, not at their next
+                    attempt: the security stamp is rolled, so the session they
+                    are in now fails its next check. The minute is the interval
+                    set in IdentityConfiguration, which is where to change it.
                 *@
                 <form method="post" @formname="withdraw" @onsubmit="Withdraw">
                     <AntiforgeryToken />

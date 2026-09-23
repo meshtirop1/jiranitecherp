@@ -227,8 +227,10 @@ public sealed class UserAdministration(
     /// deactivates themselves, and the last owner is not deactivated at all.
     ///
     /// Taking effect is not left to the next sign-in: the security stamp is
-    /// rolled, so the open session fails its next validation, which is within
-    /// five minutes.
+    /// rolled, so the open session fails its next validation. How soon that is
+    /// is the interval set on <c>SecurityStampValidatorOptions</c> in the web
+    /// layer's <c>IdentityConfiguration</c>, which is the only place the figure
+    /// is written down.
     /// </remarks>
     public async Task DeactivateAsync(Guid userId, Guid actingUserId)
     {

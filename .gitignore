@@ -22,12 +22,32 @@
 *.swp
 
 # Messages the file mailer writes in development. Correspondence, and not
-# something to commit.
-mail/
+# something to commit. Both paths are anchored with a leading slash, naming the
+# two places the mailer can put them: the web application's content root, which
+# is where a relative Mail:Directory resolves, and the repository root for
+# somebody running from there.
+#
+# Anchored because a bare "mail/" is what was here and it matched far more than
+# it was meant to. Git compares ignore patterns without regard to case wherever
+# core.ignoreCase is on, which it is on every Windows checkout, so "mail/" also
+# swallowed src/JiranisokoTech.Application/Mail,
+# src/JiranisokoTech.Infrastructure/Mail and tests/JiranisokoTech.Tests/Mail —
+# IMailer, Letters, every notification this system sends and the eleven tests
+# that cover them were invisible to git, and so to every review of every commit
+# that referred to them. The commit that added the candidate letters committed the
+# twelve lines that register them and nothing else. Master does not build from a
+# clean clone: the compiler asks for a namespace no clone has ever had, and the
+# suite is eleven tests shorter than the one anybody ran. Nothing warns about any
+# of it, because the files are simply not there and git calls the tree clean.
+/mail/
+/src/JiranisokoTech.Web/mail/
 
 # Candidate CVs written by the file store. Documents belonging to people
-# outside this firm, and not something to commit.
-cvs/
+# outside this firm, and not something to commit. Anchored for the reason above:
+# "cvs/" would have taken a source folder called Cvs with it the day somebody
+# added one.
+/cvs/
+/src/JiranisokoTech.Web/cvs/
 
 # Worktrees the agent tooling creates. Not part of the project.
 .claude/worktrees/
