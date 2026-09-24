@@ -157,7 +157,14 @@ else
 
             <label>
                 <span>What an hour costs the firm</span>
-                <InputNumber @bind-Value="Billing.CostPerHour" min="0" />
+                @*
+                    In whole currency, not in cents. This bound straight to
+                    StandardCostPerHourMinorUnits, so a firm entering 1200 for KES 1,200 an hour
+                    stored twelve shillings — and that figure is not decoration: it is what every
+                    project's cost and every project's margin is computed from, so the whole of
+                    §19 was a hundred times out with nothing anywhere to say so.
+                *@
+                <InputNumber @bind-Value="Billing.CostPerHour" min="0" step="0.01" />
                 <ValidationMessage For="() => Billing.CostPerHour" />
                 @*
                     One rate for everybody, and that is deliberate. A project cost worked
@@ -282,7 +289,10 @@ else
             Billing.InvoicePrefix = Firm.InvoicePrefix;
             Billing.Currency = Firm.Currency;
             Billing.PaymentTermDays = Firm.PaymentTermDays;
-            Billing.CostPerHour = Firm.StandardCostPerHourMinorUnits;
+            // Into whole currency for the box; the column holds minor units.
+            Billing.CostPerHour = Firm.StandardCostPerHourMinorUnits is { } minor
+                ? minor / 100m
+                : null;
         }
 
         AnyInvoices = await Service.HasInvoicedAsync();
@@ -302,7 +312,10 @@ else
         await Service.BillAsAsync(
             Billing.InvoicePrefix, Billing.Currency, Billing.PaymentTermDays);
 
-        await Service.CostAnHourAtAsync(Billing.CostPerHour);
+        await Service.CostAnHourAtAsync(
+            Billing.CostPerHour is { } whole
+                ? (long)decimal.Round(whole * 100m, 0, MidpointRounding.AwayFromZero)
+                : null);
     });
 
     private async Task TryAsync(Func<Task> act)
@@ -398,15 +411,20 @@ else
     private sealed class BillingInput
     {
         /// <summary>
-        /// What an hour of anybody's time costs the firm, in minor units.
+        /// What an hour of anybody's time costs the firm, in whole currency.
         /// </summary>
         /// <remarks>
         /// One blended rate rather than each person's pay. A per-project cost derived
         /// from real salaries would let a delivery manager — who holds projects.manage
         /// and not employees.pay — recover any one person's rate by dividing.
+        ///
+        /// Whole currency here and minor units in the column, converted on the way in and out.
+        /// It used to be minor units all the way to the box, with nothing on the screen saying
+        /// so, so a firm typing 1200 for an hour recorded twelve shillings — and this is the
+        /// figure every project's cost and margin is worked out from.
         /// </remarks>
-        [Range(0, long.MaxValue, ErrorMessage = "An hour cannot cost less than nothing.")]
-        public long? CostPerHour { get; set; }
+        [Range(0, 92_233_720_368_547.75, ErrorMessage = "An hour cannot cost less than nothing.")]
+        public decimal? CostPerHour { get; set; }
 
         [Required(ErrorMessage = "Invoices need something to start with.")]
         [StringLength(8)]

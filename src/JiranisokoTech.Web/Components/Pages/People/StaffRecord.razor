@@ -217,11 +217,30 @@
 
                 <label>
                     <span>Salary per period</span>
-                    <InputNumber @bind-Value="Pay.Salary" min="0" />
+                    @*
+                        In whole currency, not in cents, and that is a correction rather than a
+                        preference. This box bound straight to SalaryMinorUnits, so typing
+                        150000 for a salary of KES 150,000 saved KES 1,500.00 — a hundredth of
+                        what was meant, accepted without a murmur, on the one field in this
+                        application where being wrong by a factor of a hundred matters most.
+                        Nothing on the screen mentioned cents; the hint underneath warned about
+                        pay periods, which made it look as though the units had been thought
+                        about.
+                    *@
+                    <InputNumber @bind-Value="Pay.Salary" min="0" step="0.01"
+                                 data-answer-scale="salary" />
                     <span class="subtle">
-                        Per period, not per year. A year holds twelve months or
-                        twenty-six fortnights depending on the answer below.
+                        Per period, not per year, and in whole @(Blank(Pay.Currency) ?? "currency")
+                        rather than cents. A year holds twelve months or twenty-six fortnights
+                        depending on the answer below.
                     </span>
+                    @if (Pay.Salary is { } typed)
+                    {
+                        @* What will actually be stored, said back before anybody presses save. *@
+                        <span class="subtle" data-answer="salary">
+                            Saved as @($"{Blank(Pay.Currency)?.ToUpperInvariant() ?? "KES"} {typed:N2}")
+                        </span>
+                    }
                 </label>
 
                 <label>
@@ -463,7 +482,8 @@
         _pay = new PayInput
         {
             Contract = Person.Terms.Contract?.ToString(),
-            Salary = Person.Terms.SalaryMinorUnits,
+            // Back into whole currency for the box, since the column holds minor units.
+            Salary = Person.Terms.SalaryMinorUnits is { } minor ? minor / 100m : null,
             Currency = Person.Terms.SalaryCurrency,
             Frequency = Person.Terms.Frequency?.ToString(),
             NoticeDays = Person.Terms.NoticeDays,
@@ -525,7 +545,15 @@
                 Contract = Enum.TryParse<ContractType>(Pay.Contract, out var kind)
                     ? kind
                     : null,
-                SalaryMinorUnits = Pay.Salary,
+                /*
+                 * Rounded away from zero at the half, which is what a person means by "half a
+                 * shilling" and what every payroll in the country does. Banker's rounding —
+                 * .NET's default — would send half of those down and is a surprise nobody asked
+                 * for on a salary.
+                 */
+                SalaryMinorUnits = Pay.Salary is { } whole
+                    ? (long)decimal.Round(whole * 100m, 0, MidpointRounding.AwayFromZero)
+                    : null,
                 SalaryCurrency = Blank(Pay.Currency)?.ToUpperInvariant(),
                 Frequency = Enum.TryParse<PayFrequency>(Pay.Frequency, out var how)
                     ? how
@@ -641,8 +669,19 @@
     {
         public string? Contract { get; set; }
 
-        [Range(0, long.MaxValue, ErrorMessage = "A salary cannot be negative.")]
-        public long? Salary { get; set; }
+        /// <summary>
+        /// The salary in whole currency, which is what somebody types.
+        /// </summary>
+        /// <remarks>
+        /// A decimal rather than the long it used to be, because the long was the stored value
+        /// — minor units — and nothing on the screen said so. Typing a salary of 150,000 saved
+        /// 1,500.00.
+        ///
+        /// Two decimal places and no more: a salary is agreed in whole units or halves of one,
+        /// and a third place would be a rounding argument with the payroll nobody wants.
+        /// </remarks>
+        [Range(0, 92_233_720_368_547.75, ErrorMessage = "A salary cannot be negative.")]
+        public decimal? Salary { get; set; }
 
         [StringLength(3, MinimumLength = 3, ErrorMessage = "Three letters, such as KES.")]
         public string? Currency { get; set; }

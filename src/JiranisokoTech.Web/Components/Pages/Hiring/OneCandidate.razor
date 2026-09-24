@@ -85,7 +85,11 @@ else
             <EditForm Model="Expectation" method="post" OnValidSubmit="SaveExpectation"
                       FormName="expectation" class="inline">
                 <DataAnnotationsValidator />
-                <InputNumber @bind-Value="Expectation.Amount" min="0" />
+                @*
+                    Whole currency. This bound to ExpectedSalaryMinorUnits, so a candidate
+                    asking for 180,000 was recorded as asking for 1,800.
+                *@
+                <InputNumber @bind-Value="Expectation.Amount" min="0" step="0.01" />
                 <InputText @bind-Value="Expectation.Currency" maxlength="3" placeholder="KES" />
                 <button type="submit">Record it</button>
                 <ValidationMessage For="() => Expectation.Amount" />
@@ -209,7 +213,7 @@ else
 
         _expectation = new ExpectationInput
         {
-            Amount = Candidate.ExpectedSalaryMinorUnits,
+            Amount = Candidate.ExpectedSalaryMinorUnits is { } minor ? minor / 100m : null,
             Currency = Candidate.ExpectedSalaryCurrency ?? "KES",
         };
     }
@@ -224,7 +228,12 @@ else
         Input.Skills));
 
     private async Task SaveExpectation() => await TryAsync(
-        () => Service.CandidateExpectsAsync(Id, Expectation.Amount, Expectation.Currency));
+        () => Service.CandidateExpectsAsync(
+            Id,
+            Expectation.Amount is { } whole
+                ? (long)decimal.Round(whole * 100m, 0, MidpointRounding.AwayFromZero)
+                : null,
+            Expectation.Currency));
 
     private async Task TryAsync(Func<Task> act)
     {
@@ -280,7 +289,8 @@ else
     private sealed class ExpectationInput
     {
         [Range(0, long.MaxValue, ErrorMessage = "It cannot be less than nothing.")]
-        public long? Amount { get; set; }
+        /// <summary>What they are asking for, in whole currency rather than in cents.</summary>
+        public decimal? Amount { get; set; }
 
         [StringLength(3, MinimumLength = 3, ErrorMessage = "Three letters, such as KES.")]
         public string? Currency { get; set; } = "KES";
