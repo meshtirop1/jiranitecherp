@@ -353,6 +353,16 @@
                         <NavLink class="nav-link" href="audit">Trail</NavLink>
                     </div>
                 </AuthorizeView>
+                @*
+                    Beside the trail, because the two answer the same kind of question about
+                    somebody: what does this system hold, and who changed it.
+                *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.PrivacyRespond)"
+                               Context="privacy">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="privacy/requests">Data protection</NavLink>
+                    </div>
+                </AuthorizeView>
 
                 <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.SettingsManage)"
                                Context="settings">

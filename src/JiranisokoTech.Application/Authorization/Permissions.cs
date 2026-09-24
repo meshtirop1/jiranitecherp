@@ -193,6 +193,28 @@ public static class Permissions
     /// the same reason: approval says the figures are right and payment says the money has gone.
     /// </remarks>
     public const string PurchasesPay = "purchases.pay";
+
+    /// <summary>
+    /// Keep the register of data protection requests, and decide what happens to each class.
+    /// </summary>
+    /// <remarks>
+    /// HR, because the data most of these requests are about is the staff record HR already
+    /// keeps. Recording a decision is not the same as carrying it out — emptying somebody's
+    /// record is the next permission, deliberately held by fewer people.
+    /// </remarks>
+    public const string PrivacyRespond = "privacy.respond";
+
+    /// <summary>
+    /// Actually empty the personal data on a staff record.
+    /// </summary>
+    /// <remarks>
+    /// Narrower than deciding, and the split is the point: a single permission covering both
+    /// would let one person decide that somebody's record should be emptied and empty it in the
+    /// same minute, with the decision and the act indistinguishable afterwards. It is also
+    /// irreversible in a way almost nothing else here is — the values are gone, and no backup of
+    /// this system is somebody's to restore from on request.
+    /// </remarks>
+    public const string PrivacyErase = "privacy.erase";
     public const string ClientsManage = "clients.manage";
 
     // --- time and leave ----------------------------------------------------
@@ -560,6 +582,8 @@ public static class Permissions
 
         PurchasesPay,
 
+        PrivacyRespond, PrivacyErase,
+
         TimeLogOwn, TimeViewAll, TimeApprove,
         LeaveAsk, LeaveViewAll, LeaveApprove,
 
@@ -653,6 +677,14 @@ public static class Roles
                 // HR says the firm-wide things: the office is shut, the leave rules have
                 // changed, somebody has joined.
                 Permissions.AnnouncementsPost,
+
+                /*
+                 * And keeps the data protection register, because the data these requests are
+                 * about is the staff record HR already holds. Not privacy.erase: deciding that a
+                 * record should be emptied and emptying it are two acts, and one person doing
+                 * both in the same minute leaves them indistinguishable afterwards.
+                 */
+                Permissions.PrivacyRespond,
 
                 // HR runs the review cycles and is the one role that reads across the firm,
                 // because somebody has to be able to answer "have the reviews been done".

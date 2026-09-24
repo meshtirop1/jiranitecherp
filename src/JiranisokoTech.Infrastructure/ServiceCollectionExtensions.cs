@@ -169,6 +169,11 @@ public static class ServiceCollectionExtensions
             Procurement.ProcurementRepository>();
 
         services.AddScoped<Application.Procurement.ProcurementService>();
+
+
+        services.AddScoped<Application.Privacy.IPrivacyRepository, Privacy.PrivacyRepository>();
+
+        services.AddScoped<Application.Privacy.PrivacyService>();
         services.AddScoped<ClientService>();
         services.AddScoped<OpportunityService>();
         services.AddScoped<ContactService>();

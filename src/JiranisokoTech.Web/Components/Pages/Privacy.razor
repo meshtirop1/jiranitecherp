@@ -1,0 +1,256 @@
+@page "/privacy/requests"
+@rendermode InteractiveServer
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Privacy
+@using JiranisokoTech.Domain.Privacy
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.PrivacyRespond)]
+@inject PrivacyService Service
+@inject PeopleQueries People
+@inject NavigationManager Navigation
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    The register of data protection requests.
+
+    Section 55. The clock is statutory — thirty days from when the request was made, whether or
+    not anybody has looked at it — so the register is ordered by deadline and says how long is
+    left rather than how long it has been open.
+*@
+
+<PageTitle>Data protection — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Data protection</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+<p class="instructions">
+    Requests made under the Data Protection Act. Each one records, class of data by class of data,
+    what was done and why — erased, anonymised, kept until a date on a stated basis, or refused
+    with a reason. A request cannot be closed without that, because a closed file with an empty
+    list says a decision was taken and refuses to say what.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<section class="standing">
+    <h2>Record one</h2>
+
+    <div class="fields">
+        <label>
+            <span>What they are asking</span>
+            <select @bind="Ask">
+                <option value="@PrivacyAsk.Access">What do you hold about me</option>
+                <option value="@PrivacyAsk.Erasure">Delete what you hold about me</option>
+            </select>
+        </label>
+
+        <label>
+            <span>Who they are</span>
+            <select @bind="Kind">
+                <option value="@SubjectKind.Employee">On the staff list</option>
+                <option value="@SubjectKind.Candidate">A candidate</option>
+                <option value="@SubjectKind.Other">Somebody else</option>
+            </select>
+        </label>
+
+        <label>
+            <span>Received on</span>
+            <input type="date" @bind="ReceivedOn" />
+            <span class="subtle">
+                The day it arrived, not today — the statutory clock runs from when it was made.
+            </span>
+        </label>
+    </div>
+
+    <div class="fields">
+        @if (Kind == SubjectKind.Employee)
+        {
+            <label>
+                <span>Which member of staff</span>
+                <select @bind="SubjectId" @bind:after="NameThem">
+                    <option value="">Choose somebody</option>
+                    @foreach (var (id, name) in Names.OrderBy(one => one.Value))
+                    {
+                        <option value="@id">@name</option>
+                    }
+                </select>
+            </label>
+        }
+        else
+        {
+            <label>
+                <span>Their name</span>
+                <input @bind="Subject" />
+            </label>
+        }
+    </div>
+
+    <div class="row-actions">
+        <button type="button" @onclick="Receive">Put it on the register</button>
+    </div>
+</section>
+
+<section class="standing">
+    <h2>On the register</h2>
+
+    @if (Rows.Count == 0)
+    {
+        <p class="empty">Nothing has been asked.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Data protection requests</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Reference</th>
+                    <th scope="col">Who</th>
+                    <th scope="col">Asking</th>
+                    <th scope="col">Due</th>
+                    <th scope="col">State</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var one in Rows)
+                {
+                    <tr class="@(one.IsAnswered ? "row--closed" : null)">
+                        <td><a href="/privacy/requests/@one.Id">@one.Reference</a></td>
+                        <td>@one.Subject</td>
+                        <td>@(one.Ask == PrivacyAsk.Access ? "access" : "erasure")</td>
+                        <td>
+                            @one.DueOn.ToString("d MMM yyyy")
+                            @if (one.IsOverdueOn(Today))
+                            {
+                                <span class="pill pill--danger">overdue</span>
+                            }
+                            else if (!one.IsAnswered)
+                            {
+                                <span class="subtle">@Left(one)</span>
+                            }
+                        </td>
+                        <td>
+                            @if (one.IsAnswered)
+                            {
+                                <span class="pill pill--done">answered</span>
+                            }
+                            else
+                            {
+                                <span class="pill pill--wait">
+                                    @Count(one.Outcomes.Count, "class", "classes") decided
+                                </span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    private List<PrivacyRequest> Rows { get; set; } = [];
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private PrivacyAsk Ask { get; set; } = PrivacyAsk.Access;
+
+    private SubjectKind Kind { get; set; } = SubjectKind.Employee;
+
+    private Guid? SubjectId { get; set; }
+
+    private string Subject { get; set; } = string.Empty;
+
+    private DateTime ReceivedOn { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private DateOnly Today => Clock.Today;
+
+    private string Headline
+    {
+        get
+        {
+            var open = Rows.Count(one => !one.IsAnswered);
+            var late = Rows.Count(one => one.IsOverdueOn(Today));
+
+            if (Rows.Count == 0)
+            {
+                return "Nothing has been asked.";
+            }
+
+            return late > 0
+                ? $"{Count(open, "request", "requests")} open, {late} past the deadline."
+                : $"{Count(open, "request", "requests")} open.";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (ReceivedOn == default)
+        {
+            ReceivedOn = Clock.Today.ToDateTime(TimeOnly.MinValue);
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Rows = await Service.AllAsync();
+        Names = await People.NamesAsync();
+    }
+
+    /// <summary>Keep the written name in step with whoever was chosen.</summary>
+    /// <remarks>
+    /// The name is stored as well as the identifier so the register reads without a join — and
+    /// so a request stays readable after the staff record it was about has been emptied, which is
+    /// precisely what half of these requests ask for.
+    /// </remarks>
+    private void NameThem()
+    {
+        if (SubjectId is { } who)
+        {
+            Subject = Names.GetValueOrDefault(who) ?? Subject;
+        }
+    }
+
+    private async Task Receive()
+    {
+        Refusal = null;
+
+        try
+        {
+            var request = await Service.ReceiveAsync(
+                Ask,
+                Kind,
+                Subject,
+                DateOnly.FromDateTime(ReceivedOn),
+                Kind == SubjectKind.Employee ? SubjectId : null);
+
+            Navigation.NavigateTo($"/privacy/requests/{request.Id}");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private string Left(PrivacyRequest request) =>
+        request.DaysLeftOn(Today) switch
+        {
+            0 => "due today",
+            1 => "one day left",
+            var days => $"{days} days left",
+        };
+
+    private static string Count(int many, string one, string more) =>
+        $"{many} {(many == 1 ? one : more)}";
+}

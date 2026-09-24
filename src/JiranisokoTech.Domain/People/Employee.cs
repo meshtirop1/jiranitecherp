@@ -290,6 +290,57 @@ public sealed class Employee : Entity, IAuditable
 
     public void Record(PersonalDetails details) => Details = details;
 
+    /// <summary>
+    /// Empty the personal data around the name, at the subject's request.
+    /// </summary>
+    /// <remarks>
+    /// Section 55, and the shape of it is the section's central decision: <b>erasure means
+    /// emptying the shell, not removing the person.</b>
+    ///
+    /// The name, job title, dates, department and status stay. <see cref="Leave"/> already says
+    /// why in this same file — deleting a leaver turns every task, approval, incident timeline
+    /// and audit entry they touched into "unknown user", which destroys the firm's own record of
+    /// what happened rather than the person's privacy. What goes is everything that is personal
+    /// to them and serves no retained purpose: telephone, personal email, address, date of birth,
+    /// identity and tax numbers, and next of kin.
+    ///
+    /// <b>Refused while they still work here.</b> Erasure is a right against data held without a
+    /// continuing basis; a current employee's contact details are held under the employment
+    /// contract, and emptying them would leave the firm unable to reach somebody it employs. The
+    /// refusal says so rather than silently doing nothing.
+    ///
+    /// The complex properties are replaced wholesale rather than mutated, because a replacement
+    /// is the only assignment EF sees — and because the audit capture walks complex properties
+    /// specifically so that this change is recorded as having happened, with the values withheld.
+    /// </remarks>
+    public void Forget()
+    {
+        if (Status != EmploymentStatus.Left)
+        {
+            throw new InvalidOperationException(
+                $"{FullName} still works here. Their contact details are held under the "
+                + "employment contract, so there is no basis on which to erase them — and the "
+                + "firm would be unable to reach somebody it employs.");
+        }
+
+        /*
+         * Replaced, not mutated. Anything not named here is deliberately kept: the location and
+         * time zone describe where the work was done rather than who did it, and are what a
+         * historical timesheet is read against.
+         */
+        Details = Details with
+        {
+            Phone = null,
+            PersonalEmail = null,
+            DateOfBirth = null,
+            NationalId = null,
+            TaxNumber = null,
+            Address = null,
+        };
+
+        Emergency = EmergencyContact.Empty;
+    }
+
     public void Record(EmergencyContact contact) => Emergency = contact;
 
     /// <summary>

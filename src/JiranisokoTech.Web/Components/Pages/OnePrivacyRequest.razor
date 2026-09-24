@@ -1,0 +1,374 @@
+@page "/privacy/requests/{Id:guid}"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Privacy
+@using JiranisokoTech.Domain.Privacy
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.PrivacyRespond)]
+@inject PrivacyService Service
+@inject PeopleQueries People
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    One request, and what was decided about each class of the subject's data.
+
+    The list of classes is the answer. Erasure conflicts with nearly everything else this system
+    does — leavers keep their name on their work, the audit trail is never pruned — and the law
+    allows a controller to keep what it is obliged to keep. What it does not allow is keeping
+    things quietly, so every class gets a decision and anything kept or refused has to say why.
+*@
+
+<PageTitle>@(Request?.Reference ?? "Request") — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/privacy/requests">Data protection</a></nav>
+
+@if (Request is null)
+{
+    <p class="empty">That request is not on file.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Request.Reference</h1>
+        <p class="subtle">
+            <span class="pill @(Request.IsAnswered ? "pill--done" : "pill--wait")">
+                @(Request.IsAnswered ? "answered" : "open")
+            </span>
+            @if (Request.IsOverdueOn(Today))
+            {
+                <span class="pill pill--danger">overdue</span>
+            }
+            <span class="subtle">
+                @(Request.Ask == PrivacyAsk.Access ? "access" : "erasure") — @Request.Subject
+            </span>
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <dl class="facts">
+        <dt>Received</dt>
+        <dd>
+            @Request.ReceivedOn.ToString("d MMMM yyyy")
+            @if (!Request.IsAnswered)
+            {
+                <span class="subtle">correctable below</span>
+            }
+        </dd>
+
+        <dt>Answer owed by</dt>
+        <dd>
+            @Request.DueOn.ToString("d MMMM yyyy")
+            <span class="subtle">thirty days, as the Act requires</span>
+        </dd>
+
+        @if (Request.Note is { } note)
+        {
+            <dt>What they were told</dt>
+            <dd><span class="as-typed">@note</span></dd>
+        }
+    </dl>
+
+    <section class="standing">
+        <h2>What was decided, class by class</h2>
+
+        @if (Request.Outcomes.Count == 0)
+        {
+            <p class="empty">
+                Nothing decided yet. Every class of data this person's record touches needs an
+                answer before the request can be closed.
+            </p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Decisions on this request</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Class</th>
+                        <th scope="col">What was done</th>
+                        <th scope="col">On what basis</th>
+                        <th scope="col">Until</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var outcome in Request.Outcomes)
+                    {
+                        <tr>
+                            <td>@Held(outcome.Held)</td>
+                            <td>
+                                <span class="pill @OutcomePill(outcome.Kind)">
+                                    @OutcomeSaid(outcome.Kind)
+                                </span>
+                            </td>
+                            <td><span class="subtle">@(outcome.Basis ?? "—")</span></td>
+                            <td>
+                                @if (outcome.Until is { } until)
+                                {
+                                    @until.ToString("d MMM yyyy")
+                                }
+                                else
+                                {
+                                    <span class="subtle">—</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        @if (!Request.IsAnswered)
+        {
+            <div class="fields">
+                <label>
+                    <span>Class of data</span>
+                    <select @bind="Class">
+                        @foreach (var one in Classes)
+                        {
+                            <option value="@one">@Held(one)</option>
+                        }
+                    </select>
+                </label>
+
+                <label>
+                    <span>What was done</span>
+                    <select @bind="Kind">
+                        <option value="@OutcomeKind.Disclosed">Given to them</option>
+                        <option value="@OutcomeKind.Erased">Erased</option>
+                        <option value="@OutcomeKind.Anonymised">Anonymised</option>
+                        <option value="@OutcomeKind.Retained">Kept</option>
+                        <option value="@OutcomeKind.Refused">Refused</option>
+                    </select>
+                </label>
+
+                <label>
+                    <span>Until</span>
+                    <input type="date" @bind="Until" />
+                    <span class="subtle">Required when it is kept.</span>
+                </label>
+            </div>
+
+            <label class="stack">
+                <span>On what basis</span>
+                <textarea rows="2" @bind="Basis"
+                          placeholder="Employment records are kept for five years under the Employment Act"></textarea>
+            </label>
+
+            <div class="row-actions">
+                <button type="button" @onclick="Decide">Record the decision</button>
+            </div>
+
+            @*
+                Correctable, because the date is typed in from an email or a letter and the whole
+                deadline is computed from it — a request entered with the wrong arrival date has a
+                deadline that is wrong in the direction nobody notices until it has passed.
+            *@
+            <h3>Correct the date it arrived</h3>
+
+            <div class="fields">
+                <label>
+                    <span>Received on</span>
+                    <input type="date" @bind="Arrived" />
+                    <span class="subtle">
+                        The answer is owed thirty days after this, so it is worth being right.
+                    </span>
+                </label>
+            </div>
+
+            <div class="row-actions">
+                <button type="button" class="button--quiet" @onclick="CorrectArrival">
+                    Save the date
+                </button>
+            </div>
+
+            <p class="subtle">
+                The audit trail is never erased or anonymised, for anybody — it is the evidence
+                that answers who changed what, including this erasure, so removing it would
+                destroy the proof that the request was honoured. Record it as kept, with the
+                basis.
+            </p>
+        }
+    </section>
+
+    @if (!Request.IsAnswered)
+    {
+        <section class="standing">
+            <h2>Answer it</h2>
+
+            <label class="stack">
+                <span>What the subject was told</span>
+                <textarea rows="3" @bind="Note"></textarea>
+            </label>
+
+            <div class="row-actions">
+                <button type="button" @onclick="Answer">Record the answer</button>
+
+                @if (Request.Ask == PrivacyAsk.Erasure
+                    && Request.SubjectKind == SubjectKind.Employee)
+                {
+                    <AuthorizeView Policy="@Erasing" Context="mayErase">
+                        <button type="button" class="danger" @onclick="Forget">
+                            Empty their record now
+                        </button>
+                    </AuthorizeView>
+                }
+            </div>
+
+            <p class="subtle">
+                Emptying a record is behind its own permission and refuses unless a class has been
+                decided as erased. A button that empties a personnel file on one person's say-so,
+                with nothing afterwards able to say why, is the thing this whole register exists
+                to prevent. It cannot be undone — the values are gone.
+            </p>
+        </section>
+    }
+}
+
+@code {
+    private const string Erasing = PermissionClaim.PolicyPrefix + Permissions.PrivacyErase;
+
+    private static readonly DataClass[] Classes = Enum.GetValues<DataClass>();
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private PrivacyRequest? Request { get; set; }
+
+    private Guid? Me { get; set; }
+
+    private DataClass Class { get; set; } = DataClass.ContactDetails;
+
+    private OutcomeKind Kind { get; set; } = OutcomeKind.Retained;
+
+    private string Basis { get; set; } = string.Empty;
+
+    private DateTime? Until { get; set; }
+
+    private DateTime Arrived { get; set; }
+
+    private string Note { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private DateOnly Today => Clock.Today;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        Me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        Request = await Service.OneAsync(Id);
+
+        if (Request is not null && Arrived == default)
+        {
+            Arrived = Request.ReceivedOn.ToDateTime(TimeOnly.MinValue);
+        }
+    }
+
+    private Task Decide() => Act(
+        async () =>
+        {
+            if (Me is not { } me)
+            {
+                throw new InvalidOperationException(
+                    "A decision carries the name of whoever took it, and this account is not "
+                    + "linked to a staff record.");
+            }
+
+            await Service.DecideAsync(
+                Id,
+                Class,
+                Kind,
+                me,
+                string.IsNullOrWhiteSpace(Basis) ? null : Basis,
+                Until is { } until ? DateOnly.FromDateTime(until) : null);
+
+            Basis = string.Empty;
+            Until = null;
+        },
+        "Recorded.");
+
+    private Task CorrectArrival() => Act(
+        () => Service.ArrivedAsync(Id, DateOnly.FromDateTime(Arrived)),
+        "Saved. The deadline has moved with it.");
+
+    private Task Answer() => Act(
+        () => Service.AnsweredAsync(Id, Note), "Recorded as answered.");
+
+    private Task Forget() => Act(
+        () => Service.ForgetAsync(Id),
+        "Emptied. The name, job title and dates stay, so their work still reads.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private static string Held(DataClass held) => held switch
+    {
+        DataClass.StaffRecord => "Staff record",
+        DataClass.ContactDetails => "Contact details",
+        DataClass.IdentityNumbers => "Identity and tax numbers",
+        DataClass.NextOfKin => "Next of kin",
+        DataClass.PayAndTerms => "Pay and terms",
+        DataClass.Performance => "Appraisals and goals",
+        DataClass.Recruitment => "Application and CV",
+        DataClass.Documents => "Files and photographs",
+        DataClass.AuditTrail => "Audit trail",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(held), held, "Nothing has decided what this class of data is called."),
+    };
+
+    private static string OutcomeSaid(OutcomeKind kind) => kind switch
+    {
+        OutcomeKind.Erased => "erased",
+        OutcomeKind.Anonymised => "anonymised",
+        OutcomeKind.Retained => "kept",
+        OutcomeKind.Refused => "refused",
+        OutcomeKind.Disclosed => "given to them",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(kind), kind, "Nothing has decided what this outcome is called."),
+    };
+
+    private static string OutcomePill(OutcomeKind kind) => kind switch
+    {
+        OutcomeKind.Erased or OutcomeKind.Anonymised or OutcomeKind.Disclosed => "pill--done",
+        OutcomeKind.Refused => "pill--danger",
+        _ => "pill--quiet",
+    };
+}

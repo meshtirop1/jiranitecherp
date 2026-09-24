@@ -379,6 +379,16 @@ public class AppDbContext(
 
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
 
+    /// <summary>
+    /// Requests made under the Data Protection Act, and what was decided about each class.
+    /// </summary>
+    /// <remarks>
+    /// Beside the audit entries on purpose: this register records decisions about somebody's
+    /// privacy, and the trail records who took them. Neither holds the subject's own data.
+    /// </remarks>
+    public DbSet<Domain.Privacy.PrivacyRequest> PrivacyRequests =>
+        Set<Domain.Privacy.PrivacyRequest>();
+
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
     public DbSet<OutboxMessage> Outbox => Set<OutboxMessage>();
