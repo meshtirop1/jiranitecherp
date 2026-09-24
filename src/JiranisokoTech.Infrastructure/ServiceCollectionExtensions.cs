@@ -164,6 +164,14 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IRecruitmentRepository, RecruitmentRepository>();
         services.AddScoped<RecruitmentService>();
+
+        /*
+         * Offers and the checklist that follows one. Section 8, and the step section 92's
+         * hiring chain stopped at — the record ended with a status called Offered and nothing
+         * anywhere saying what had been offered.
+         */
+        services.AddScoped<OfferService>();
+        services.AddScoped<OnboardingService>();
         services.AddScoped<RecruitmentQueries>();
         services.AddScoped<ICvStore, FileCvStore>();
 

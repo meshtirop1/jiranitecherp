@@ -15,7 +15,7 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 24 September 2026 · 1161 tests · verified against PostgreSQL in
+Last updated: 24 September 2026 · 1180 tests · verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
 container, a lost opportunity surviving its client record being deleted, the
 builds and deployments tables applying to a real Postgres, an abandoned event
@@ -47,7 +47,7 @@ timesheet rather than typed into it. What is built is an ERP that a software
 company could run its business on, and the part that makes it developer-native
 is no longer the part that is missing.
 
-By section: **44 done, 3 partial, 51 not started, 1 excluded by agreement.**
+By section: **45 done, 3 partial, 50 not started, 1 excluded by agreement.**
 
 That count was recomputed from the tables below rather than adjusted, because the
 figure previously here did not add up to anything the tables said and had been
@@ -151,8 +151,8 @@ This block is the brief's stated centre of gravity and none of it exists.
 | ✅ | 7 | Candidate correspondence | Acknowledgement, rejection, invitation, offer |
 | ✅ | 7 | Candidate profile | Portfolio, GitHub, LinkedIn, experience, education, skills as stated, and a salary expectation behind employees.pay |
 | ✅ | 7 | Technical assessments | An exercise between the interview and the offer, with an Assessing stage that is not a one-way door. **The rule is the point, not the table:** an offer is refused while an exercise is out or unmarked, because an offer made then is made on evidence nobody has read. Marking demands the reasoning as well as the verdict; late work is still accepted, because refusing it throws away the only evidence there is. No rubric — weighted criteria turn a judgement into arithmetic somebody then has to defend to a candidate |
-| ☐ | 8 | Offer documents, electronic acceptance | A letter is sent; there is no offer object to approve or accept |
-| ☐ | 8 | Onboarding checklist, equipment, account provisioning | |
+| ✅ | 8 | Offer documents, electronic acceptance | The step section 92's chain stopped at: the requisition, the advert, the application, the interviews and the assessment all existed, and then the record ended at a status called Offered with nothing anywhere saying what had been offered. **The terms are recorded because the email deliberately does not carry them.** `Letters.Offer` says an offer is coming and that the terms follow separately, on the grounds that an email reading like a contract is an email somebody will later say they accepted. That was right, and it left a promise nobody kept; this keeps it. **Acceptance is a link with a secret in it, not an account.** Making somebody create a sign-in to accept a job is the friction that loses people at the last step. The secret is 256 bits from the operating system's generator and only its hash is stored, exactly as an API key is, so the database holds nothing that would let anybody accept on a candidate's behalf. The signature is a name typed into a box by whoever held the link, and the page says so rather than dressing it up — what makes it evidence is the rest of the record: a secret sent to one address, the moment it was used, and the terms frozen at the moment they were agreed to. **One live offer per application**, because two would mean two links and two salaries and whichever the candidate accepted is the one they will say they accepted. Terms freeze when it is sent, since a page that changes under somebody between reading and accepting is not an offer anybody could rely on. The closing date is required and can be moved out but never in. **Accepting creates nobody.** A person presses a button afterwards, which makes the staff record from the offer, starts the onboarding checklist and marks the application hired so the requisition's headcount comes down — three things together, because any two without the third is a state somebody has to notice and fix. The same reasoning as an opportunity being won creating no client and no project. **Not built, on the record:** no contract document is generated and none is signed here. The page says the acceptance is not a substitute for the contract, which is sent separately |
+| ✅ | 8 | Onboarding checklist, equipment, account provisioning | Deliberately the mirror of §9's offboarding: the same problem pointed in the other direction, and what a firm needs from both is the same list of what has not happened yet. Eight steps in the order they have to happen, a step somebody can add for a role that needs it, and "does not apply" rather than ticking something to get it out of the way — a list of ticks where some mean done and some mean irrelevant is a list nobody can read. **A checklist rather than an automation**, for offboarding's reasons: a start date entered wrongly would otherwise create a sign-in for somebody who does not work here, and what access a new person gets is a decision rather than a consequence. A tick can be undone, unlike an incident's timeline line, because this is a working document about what still has to happen and one that cannot be corrected stops being true the first time somebody misses. It cannot be closed while anything is outstanding, which is the opposite of offboarding — there is no equivalent here of "they kept it". **What was issued on the first day is what the leaver's list asks back.** That loop is why equipment is recorded here at all: §9 captured lent items only at the moment somebody left, so it was whatever the person filling it in remembered, and a laptop handed over on day one and written down nowhere is a laptop nobody misses until the audit. Serial numbers carry across, which is the difference between asking for "the laptop" and asking for one the firm can identify. **Not built, on the record:** account provisioning is a step somebody ticks, not a button that creates the sign-in — and there is no asset register behind the equipment list, which is §15. Two people issued the same serial number would not be noticed |
 | ✅ | 9 | Offboarding | Work released, plus a checklist: assets out, sign-in closed with who closed it, exit interview kept narrowly. A departure cannot be closed with access still live |
 
 ## Finance — phase 5
@@ -248,10 +248,17 @@ fires nothing.
 
 **§92 Hiring** — Requisition → approval → opening → published → applies →
 screening → interview → assessment → offer → accepted → employee → onboarding.
-**Runs as far as the offer letter**, and a test drives the whole of it: a
-requisition is raised, approved, advertised and published, and the advert is
-then found on the public careers page by somebody with no account. Technical
-assessments, a real offer object and onboarding are still absent.
+**Runs end to end.** Walked through in the running application: an offer written
+against a real application, sent by email with a link, opened and accepted by
+somebody with no account and no sign-in, and then turned into a staff record
+carrying the offer's own salary and start date, with the onboarding checklist
+started against it and the requisition's headcount coming down — all from one
+button, because any two of those three without the third is a state somebody has
+to notice and fix.
+
+What it does not do is produce the contract. The acceptance page says in as many
+words that a typed name is not a substitute for the contract itself, which is
+sent separately, and nothing here generates or signs one.
 
 **§93 Incident** — Detected → raised → severity → timeline → mitigated →
 resolved → review → corrective work → done.

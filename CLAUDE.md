@@ -119,6 +119,20 @@ Each of these cost real time. They are written down so they cost it once.
   build and the whole suite stay green, and `compose up --build` goes on serving
   the previous image rather than stopping — so the browser shows yesterday's
   application and every conclusion drawn from it is wrong.
+- **A directory default that is relative lands inside the image.** The file mail
+  transport writes to `mail`, which resolves to `/app/mail` — owned by root,
+  inside the image, unwritable by the non-root user the container runs as. So
+  every letter this application "sent" in a container threw, the outbox ones
+  retried and dead-lettered quietly, and the one synchronous send took a page
+  down. Anything a container writes to needs an absolute path, a `mkdir`/`chown`
+  in the Dockerfile and a volume — the same three lines `/keys`, `/documents`
+  and `/cvs` already have.
+- **A UI handler that catches only the domain's exceptions kills the circuit on
+  anything else**, and leaves the page contradicting the database: the offer
+  page went on showing a draft while the row said sent, so the obvious next move
+  was to press send again and be told it had already gone. Where a handler
+  crosses into infrastructure — a mailer, a file store, an HTTP call — catch
+  broadly and say precisely which half happened.
 - **The layout cannot share the page's DbContext.** Blazor initialises
   components concurrently, so a query injected into `NavMenu` runs at the same
   moment as whatever the page is reading, on the same scoped `AppDbContext` —

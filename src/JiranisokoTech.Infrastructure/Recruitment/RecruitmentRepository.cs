@@ -48,6 +48,37 @@ public sealed class RecruitmentRepository(AppDbContext database) : IRecruitmentR
 
     public void Add(Candidate candidate) => database.Candidates.Add(candidate);
 
+    public Task<Offer?> FindOfferAsync(
+        Guid id, CancellationToken cancellationToken = default) =>
+        database.Offers.FirstOrDefaultAsync(one => one.Id == id, cancellationToken);
+
+    /// <remarks>
+    /// Tracked rather than read-only, because the only reason to look an offer up by its link is
+    /// to answer it — and a candidate pressing accept on a page that loaded a detached copy is a
+    /// candidate whose answer goes nowhere.
+    /// </remarks>
+    public Task<Offer?> OfferByHashAsync(
+        string tokenHash, CancellationToken cancellationToken = default) =>
+        database.Offers.FirstOrDefaultAsync(
+            one => one.TokenHash == tokenHash, cancellationToken);
+
+    public Task<Offer?> LiveOfferForAsync(
+        Guid applicationId, CancellationToken cancellationToken = default) =>
+        database.Offers.FirstOrDefaultAsync(
+            one => one.ApplicationId == applicationId
+                && (one.Status == OfferStatus.Drafted || one.Status == OfferStatus.Sent),
+            cancellationToken);
+
+    public Task<List<Offer>> OffersForAsync(
+        Guid applicationId, CancellationToken cancellationToken = default) =>
+        database.Offers
+            .AsNoTracking()
+            .Where(one => one.ApplicationId == applicationId)
+            .OrderByDescending(one => one.MadeAt)
+            .ToListAsync(cancellationToken);
+
+    public void Add(Offer offer) => database.Offers.Add(offer);
+
     public void Add(JobApplication application) => database.Applications.Add(application);
 
     public Task SaveAsync(CancellationToken cancellationToken = default) =>

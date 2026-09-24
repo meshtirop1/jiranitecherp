@@ -61,5 +61,14 @@ public interface IPeopleRepository
 
     void Add(Offboarding offboarding);
 
+    /// <summary>The checklist for somebody starting, if one was begun.</summary>
+    Task<Onboarding?> OnboardingForAsync(
+        Guid employeeId, CancellationToken cancellationToken = default);
+
+    /// <summary>Checklists that are not finished, soonest start first.</summary>
+    Task<List<Onboarding>> OnboardingsAsync(CancellationToken cancellationToken = default);
+
+    void Add(Onboarding onboarding);
+
     Task SaveAsync(CancellationToken cancellationToken = default);
 }

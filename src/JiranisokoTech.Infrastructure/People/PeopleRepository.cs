@@ -64,6 +64,29 @@ public sealed class PeopleRepository(AppDbContext database) : IPeopleRepository
             .OrderBy(one => one.LeavingOn)
             .ToListAsync(cancellationToken);
 
+    /// <remarks>
+    /// The steps and the equipment come with it, always — every write to a checklist is a write
+    /// to one of those two collections, and an owned collection EF never loaded is one it
+    /// happily replaces with nothing.
+    /// </remarks>
+    public Task<Onboarding?> OnboardingForAsync(
+        Guid employeeId, CancellationToken cancellationToken = default) =>
+        database.Onboardings
+            .Include(one => one.Steps)
+            .Include(one => one.Issued)
+            .FirstOrDefaultAsync(one => one.EmployeeId == employeeId, cancellationToken);
+
+    public Task<List<Onboarding>> OnboardingsAsync(
+        CancellationToken cancellationToken = default) =>
+        database.Onboardings
+            .AsNoTracking()
+            .Include(one => one.Steps)
+            .Where(one => one.CompletedAt == null)
+            .OrderBy(one => one.StartsOn)
+            .ToListAsync(cancellationToken);
+
+    public void Add(Onboarding onboarding) => database.Onboardings.Add(onboarding);
+
     public void Add(Offboarding offboarding) => database.Offboardings.Add(offboarding);
 
     public Task SaveAsync(CancellationToken cancellationToken = default) =>

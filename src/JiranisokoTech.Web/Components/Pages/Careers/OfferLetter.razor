@@ -1,0 +1,251 @@
+@page "/offer/{Token}"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Recruitment
+@using JiranisokoTech.Application.Settings
+@using JiranisokoTech.Domain.Recruitment
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.RateLimiting
+@layout CareersLayout
+@attribute [AllowAnonymous]
+@attribute [EnableRateLimiting(JiranisokoTech.Web.CareersLimits.Limit)]
+@inject OfferService Offers
+@inject SettingsService Settings
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    The one page in this application a candidate is meant to use, and the only place outside the
+    careers site that answers to somebody with no account.
+
+    Static, like the careers pages, and for the same reasons: it has to work on a phone with a
+    bad connection, and it has to be able to post. It is also the reason it has no navigation and
+    names nobody — whoever holds this link is not staff, and the page they get should say what
+    they were offered and nothing else about the firm.
+
+    Rate limited on the same partition as the careers site. The secret in the URL is 256 bits, so
+    guessing it is not the threat; the limit is there because a public endpoint that reads the
+    database on every request is one somebody can point a script at.
+*@
+
+<PageTitle>Your offer — @Firm</PageTitle>
+
+@if (Offer is null)
+{
+    @*
+        One answer for a link that was never real and one that no longer works. Telling the two
+        apart would tell whoever is guessing that they were close — and it would also tell a
+        candidate whose offer was withdrawn something the firm should be saying to them itself.
+    *@
+    <h1>We cannot find that</h1>
+
+    <p class="careers__lead">
+        That link is not one we recognise. It may have been withdrawn, or it may have been
+        mistyped — check the address against the one in the email, and get in touch with
+        whoever you have been speaking to if it still does not work.
+    </p>
+}
+else
+{
+    <h1>@Offer.JobTitle</h1>
+
+    @if (Done is not null)
+    {
+        <p class="careers__lead">@Done</p>
+    }
+    else if (Offer.Status == OfferStatus.Accepted)
+    {
+        <p class="careers__lead">
+            You accepted this on @Offer.AnsweredAt!.Value.ToLocalTime().ToString("d MMMM yyyy"),
+            signing as @Offer.SignedName. Somebody will be in touch about your first day.
+        </p>
+    }
+    else if (Offer.Status == OfferStatus.Declined)
+    {
+        <p class="careers__lead">
+            You turned this down on
+            @Offer.AnsweredAt!.Value.ToLocalTime().ToString("d MMMM yyyy"). Thank you for
+            letting us know.
+        </p>
+    }
+    else if (Offer.Status == OfferStatus.Withdrawn)
+    {
+        <p class="careers__lead">This offer has been withdrawn.</p>
+    }
+    else if (Offer.HasLapsed(Today))
+    {
+        @*
+            Lapsed rather than gone. The offer is still readable, because somebody coming back to
+            it a week late needs to see what it said in order to ask for it back.
+        *@
+        <p class="careers__lead">
+            This offer closed on @Offer.ClosesOn.ToString("d MMMM yyyy"), so it can no longer be
+            accepted here. If you would still like it, get in touch with whoever you have been
+            speaking to — they can give you longer.
+        </p>
+    }
+    else
+    {
+        <p class="careers__lead">
+            @Firm would like to offer you this position. Everything we are offering is below.
+            Nothing is settled until you answer.
+        </p>
+    }
+
+    <dl class="careers__summary">
+        <dt>Salary</dt>
+        <dd>@Offer.Salary @Per(Offer.Frequency)</dd>
+
+        <dt>Starting</dt>
+        <dd>@Offer.StartsOn.ToString("dddd d MMMM yyyy")</dd>
+
+        <dt>Answer by</dt>
+        <dd>@Offer.ClosesOn.ToString("d MMMM yyyy")</dd>
+    </dl>
+
+    @if (Offer.Terms is { Length: > 0 } terms)
+    {
+        <h2 class="careers__role">The terms</h2>
+
+        <p class="careers__description">@terms</p>
+    }
+
+    @if (Refusal is not null)
+    {
+        <p class="careers__hint" role="alert">@Refusal</p>
+    }
+
+    @if (Offer.CanAnswer(Today) && Done is null)
+    {
+        <h2 class="careers__role">Your answer</h2>
+
+        <EditForm Model="Accepting" method="post" OnValidSubmit="Accept" FormName="accept"
+                  class="careers__list">
+            <DataAnnotationsValidator />
+
+            <label>
+                <span>Type your full name to accept</span>
+                <InputText @bind-Value="Accepting.Name" autocomplete="name" />
+                <ValidationMessage For="() => Accepting.Name" />
+            </label>
+
+            @*
+                What this is worth, said rather than implied. It is a name typed into a box by
+                whoever holds the link — not a qualified signature — and a page that dressed it
+                up as one would be making a claim the firm could not stand behind.
+            *@
+            <p class="careers__optional">
+                Typing your name here records that you accepted these terms, on this date. It is
+                not a substitute for the contract itself, which you will be sent to sign.
+            </p>
+
+            <button type="submit">Accept this offer</button>
+        </EditForm>
+
+        <EditForm Model="Declining" method="post" OnValidSubmit="Decline" FormName="decline"
+                  class="careers__list">
+            <label>
+                <span>Or turn it down</span>
+                <InputText @bind-Value="Declining.Why" placeholder="a reason, if you want to" />
+                <span class="careers__optional">You do not have to give one.</span>
+            </label>
+
+            <button type="submit">Turn it down</button>
+        </EditForm>
+    }
+}
+
+@code {
+    [Parameter]
+    public string Token { get; set; } = string.Empty;
+
+    private AcceptInput _accepting = new();
+
+    [SupplyParameterFromForm(FormName = "accept")]
+    private AcceptInput Accepting
+    {
+        get => _accepting;
+        set => _accepting = value ?? new AcceptInput();
+    }
+
+    private DeclineInput _declining = new();
+
+    [SupplyParameterFromForm(FormName = "decline")]
+    private DeclineInput Declining
+    {
+        get => _declining;
+        set => _declining = value ?? new DeclineInput();
+    }
+
+    private Offer? Offer { get; set; }
+
+    private string Firm { get; set; } = "Jiranisoko Tech Solutions";
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private DateOnly Today => Clock.Today;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Offer = await Offers.BehindAsync(Token);
+        Firm = (await Settings.CurrentAsync()).TradingName;
+    }
+
+    private async Task Accept()
+    {
+        try
+        {
+            Offer = await Offers.AcceptAsync(Token, Accepting.Name);
+            Done = "Thank you — that is accepted. Somebody will be in touch about your first day.";
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+    }
+
+    private async Task Decline()
+    {
+        try
+        {
+            Offer = await Offers.DeclineAsync(Token, Declining.Why);
+            Done = "Thank you for letting us know.";
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+    }
+
+    /// <summary>
+    /// What the salary figure is per.
+    /// </summary>
+    /// <remarks>
+    /// Spelt out beside the number, always. A figure with no period beside it is the single most
+    /// expensive ambiguity this page could carry, and the candidate is the person least able to
+    /// resolve it.
+    /// </remarks>
+    private static string Per(JiranisokoTech.Domain.People.PayFrequency frequency) =>
+        frequency switch
+        {
+            JiranisokoTech.Domain.People.PayFrequency.Monthly => "a month",
+            JiranisokoTech.Domain.People.PayFrequency.Fortnightly => "a fortnight",
+            JiranisokoTech.Domain.People.PayFrequency.Weekly => "a week",
+            _ => "per invoice",
+        };
+
+    private sealed class AcceptInput
+    {
+        [Required(ErrorMessage = "Type your name to accept.")]
+        [StringLength(200)]
+        public string Name { get; set; } = string.Empty;
+    }
+
+    private sealed class DeclineInput
+    {
+        [StringLength(1000)]
+        public string? Why { get; set; }
+    }
+}

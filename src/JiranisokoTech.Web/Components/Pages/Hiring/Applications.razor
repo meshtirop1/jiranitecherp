@@ -122,20 +122,41 @@ else
                             }
                         </AuthorizeView>
 
+                        @if (Offerable(row.Status))
+                        {
+                            <AuthorizeView Policy="@HirePolicy" Context="mayOffer">
+                                @*
+                                    Where section 8 lives. Until it existed this list ended at a
+                                    status called Offered with nothing anywhere saying what had
+                                    been offered — so the terms, the acceptance and the staff
+                                    record that follows were all somebody's memory.
+                                *@
+                                <a class="button button--quiet"
+                                   href="/hiring/applications/@row.Id/offer">The offer</a>
+                            </AuthorizeView>
+                        }
+
                         @if (row.Status == ApplicationStatus.Offered)
                         {
                             <AuthorizeView Policy="@HirePolicy" Context="mayHire">
                                 <Authorized>
                                     @*
                                         Hiring is its own permission because it is
-                                        not a step in a pipeline — it creates a
-                                        member of staff and takes a place off the
-                                        requisition.
+                                        not a step in a pipeline — it takes a place
+                                        off the requisition.
+
+                                        It does not create a staff record, and the
+                                        label says so now that there is a path that
+                                        does. This one is for somebody hired outside
+                                        this system — the requisition still has to
+                                        be closed against a real person.
                                     *@
                                     <form method="post" @formname="@($"hire-{row.Id}")"
                                           @onsubmit="() => Hire(row.Id)">
                                         <AntiforgeryToken />
-                                        <button type="submit">Hire them</button>
+                                        <button type="submit" class="button button--quiet">
+                                            Mark as hired
+                                        </button>
                                     </form>
                                 </Authorized>
                                 <NotAuthorized>
@@ -151,6 +172,20 @@ else
 }
 
 @code {
+    /// <summary>
+    /// Is this application far enough along to be writing an offer against?
+    /// </summary>
+    /// <remarks>
+    /// From interviewing onwards, rather than only at Offered. People write the offer while the
+    /// last interview is still being written up, and a link that only appeared once the status
+    /// had been moved would mean the status gets moved early to reach it — which makes the
+    /// board say something that is not true.
+    /// </remarks>
+    private static bool Offerable(ApplicationStatus status) =>
+        status is ApplicationStatus.Interviewing
+            or ApplicationStatus.Assessing
+            or ApplicationStatus.Offered;
+
     private const string MovePolicy = PermissionClaim.PolicyPrefix + Permissions.ApplicationsManage;
     private const string HirePolicy = PermissionClaim.PolicyPrefix + Permissions.ApplicationsHire;
 

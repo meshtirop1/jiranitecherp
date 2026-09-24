@@ -1,0 +1,122 @@
+@page "/onboarding"
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.People
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.EmployeesManage)]
+@inject OnboardingService Service
+@inject PeopleQueries People
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    Who is starting, and what has not happened yet.
+
+    Section 8's second half. Static, because this page is a list with links on it and nothing
+    here is typed — the checklist itself is where the interaction is.
+
+    Ordered by start date rather than by when the checklist was made, because the only question
+    this page answers is which of these is closest to being late.
+*@
+
+<PageTitle>Starting — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/people">People</a></nav>
+
+<div class="page-head">
+    <h1>Starting</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+<p class="instructions">
+    The mirror of what happens when somebody leaves, and the same kind of list: not an
+    automation, because a start date entered wrongly would otherwise create a sign-in for
+    somebody who does not work here. What it does is say out loud what is still outstanding
+    while there is time to do it.
+</p>
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">
+        Nobody is being onboarded. A checklist is started when an accepted offer becomes a
+        staff record, or by hand from somebody's staff record.
+    </p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Onboarding checklists still open</caption>
+        <thead>
+            <tr>
+                <th scope="col">Who</th>
+                <th scope="col">Starting</th>
+                <th scope="col">Left to do</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Rows)
+            {
+                <tr>
+                    <td><a href="/onboarding/@row.EmployeeId">@Who(row.EmployeeId)</a></td>
+                    <td>
+                        @row.StartsOn.ToString("ddd d MMM yyyy")
+                        @if (row.IsLate(Today))
+                        {
+                            @*
+                                The one thing this page is for. Somebody arriving on Monday with
+                                no sign-in is a Monday nobody gets back.
+                            *@
+                            <span class="pill pill--danger">already started</span>
+                        }
+                    </td>
+                    <td>
+                        @if (row.Outstanding.Count == 0)
+                        {
+                            <span class="subtle">nothing — it can be closed</span>
+                        }
+                        else
+                        {
+                            @row.Outstanding.Count
+                            <span class="subtle">@First(row)</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<JiranisokoTech.Domain.People.Onboarding> Rows { get; set; } = [];
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private DateOnly Today => Clock.Today;
+
+    private string Headline =>
+        Rows.Count switch
+        {
+            0 => "Nobody is being onboarded.",
+            1 => "One person is being set up.",
+            var many => $"{many} people are being set up.",
+        };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Rows = await Service.OutstandingAsync();
+        Names = await People.NamesAsync();
+    }
+
+    private string Who(Guid id) =>
+        Names.GetValueOrDefault(id) ?? "somebody no longer on the staff list";
+
+    /// <summary>
+    /// The first thing still outstanding, named.
+    /// </summary>
+    /// <remarks>
+    /// A count on its own is a number somebody has to open the row to act on. The first step is
+    /// nearly always the one holding everything else up, because the list is in the order it has
+    /// to happen in.
+    /// </remarks>
+    private static string First(JiranisokoTech.Domain.People.Onboarding row) =>
+        row.Outstanding.Count == 0 ? string.Empty : row.Outstanding[0].Name.ToLowerInvariant();
+}

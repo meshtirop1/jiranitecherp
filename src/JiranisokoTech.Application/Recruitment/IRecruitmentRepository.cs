@@ -47,5 +47,28 @@ public interface IRecruitmentRepository
 
     void Add(JobApplication application);
 
+    Task<Offer?> FindOfferAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>The offer behind an acceptance link, found by the hash of its secret.</summary>
+    Task<Offer?> OfferByHashAsync(
+        string tokenHash, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The offer against an application that has not been settled or taken back.
+    /// </summary>
+    /// <remarks>
+    /// One at a time, which is what this exists to enforce. Two live offers means two links and
+    /// two salaries, and whichever the candidate accepted is the one they will say they
+    /// accepted.
+    /// </remarks>
+    Task<Offer?> LiveOfferForAsync(
+        Guid applicationId, CancellationToken cancellationToken = default);
+
+    /// <summary>Every offer against an application, most recent first.</summary>
+    Task<List<Offer>> OffersForAsync(
+        Guid applicationId, CancellationToken cancellationToken = default);
+
+    void Add(Offer offer);
+
     Task SaveAsync(CancellationToken cancellationToken = default);
 }

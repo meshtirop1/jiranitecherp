@@ -1,0 +1,640 @@
+@page "/hiring/applications/{Id:guid}/offer"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Mail
+@using JiranisokoTech.Application.People
+@using JiranisokoTech.Application.Recruitment
+@using JiranisokoTech.Application.Settings
+@using JiranisokoTech.Domain.People
+@using JiranisokoTech.Domain.Recruitment
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Infrastructure.Recruitment
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ApplicationsHire)]
+@inject OfferService Offers
+@inject IRecruitmentRepository Recruitment
+@inject RecruitmentQueries Queries
+@inject PeopleQueries People
+@inject SettingsService Settings
+@inject IMailer Mailer
+@inject NavigationManager Navigation
+
+@*
+    What the firm is offering somebody, and what they said.
+
+    Section 8, and the step section 92's chain stopped at — the record ended with a status called
+    Offered and nothing anywhere saying what had been offered.
+
+    Interactive, because writing an offer is a form with money in it that somebody reads back
+    twice before sending, and because the link can only be shown once: it exists for exactly as
+    long as this page is open, and a round trip that lost it would mean withdrawing the offer and
+    writing it again.
+*@
+
+<PageTitle>Offer — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs">
+    <a href="/hiring">Hiring</a>
+    <a href="/hiring/applications">Applications</a>
+</nav>
+
+@if (Candidate is null)
+{
+    <p class="empty">There is no application with that identifier.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Candidate</h1>
+        <p class="subtle">@Advert</p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    @if (Link is not null)
+    {
+        @*
+            Shown once and never again. What is stored is a hash, exactly as an API key is, so
+            there is nothing to recover this from — and saying so here is what stops somebody
+            closing the tab and then looking for it.
+        *@
+        <section class="standing">
+            <h2>The link to send</h2>
+
+            <p class="secret">@Link</p>
+
+            <p class="subtle">
+                <strong>This is shown once.</strong> Only a hash of it is kept, so nobody —
+                including this system — can produce it again. If it is lost, withdraw the offer
+                and write another.
+            </p>
+        </section>
+    }
+
+    @if (Offer is null || Offer.Status == OfferStatus.Drafted)
+    {
+        @*
+            One form for writing and for correcting, rather than two that have to agree with
+            each other. A draft is editable precisely because nobody outside the firm has seen
+            it; the moment it is sent, the same fields become the record of what was shown.
+        *@
+        <section class="standing">
+            <h2>@(Offer is null ? "Write an offer" : "The draft")</h2>
+
+            <div class="fields">
+                <label>
+                    <span>Job title</span>
+                    <input @bind="Title" />
+                </label>
+
+                <label>
+                    <span>Salary</span>
+                    <input type="number" step="0.01" @bind="Salary" />
+                    <span class="subtle">
+                        In @Currency, for one pay period — not annualised. A payslip is for a
+                        period, and so is this.
+                    </span>
+                </label>
+
+                <label>
+                    <span>Paid</span>
+                    <select @bind="Frequency">
+                        @foreach (var how in Frequencies)
+                        {
+                            <option value="@how">@Per(how)</option>
+                        }
+                    </select>
+                </label>
+            </div>
+
+            <div class="fields">
+                <label>
+                    <span>Starting</span>
+                    <input type="date" @bind="StartsOn" />
+                </label>
+
+                <label>
+                    <span>Answer by</span>
+                    <input type="date" @bind="ClosesOn" />
+                    <span class="subtle">
+                        Required. An offer with no closing date is one the firm cannot plan
+                        around and the candidate cannot read as urgent.
+                    </span>
+                </label>
+            </div>
+
+            <label class="stack">
+                <span>The terms</span>
+                <textarea rows="10" @bind="Terms"></textarea>
+                <span class="subtle">
+                    Probation, notice, hours, holiday — in your own words. This is exactly what
+                    the candidate will read, and exactly what they will have accepted.
+                </span>
+            </label>
+
+            <div class="row-actions">
+                <button type="button" @onclick="Write">
+                    @(Offer is null ? "Write it" : "Change it")
+                </button>
+            </div>
+        </section>
+    }
+
+    @if (Offer is not null)
+    {
+        <dl class="facts">
+            <dt>State</dt>
+            <dd>
+                <span class="pill @PillFor(Offer.Status)">@Say(Offer.Status)</span>
+                @if (Offer.HasLapsed(Today))
+                {
+                    <span class="pill pill--quiet">closed @Offer.ClosesOn.ToString("d MMM")</span>
+                }
+            </dd>
+
+            <dt>Job title</dt>
+            <dd>@Offer.JobTitle</dd>
+
+            <dt>Salary</dt>
+            <dd>@Offer.Salary <span class="subtle">@Per(Offer.Frequency)</span></dd>
+
+            <dt>Starting</dt>
+            <dd>@Offer.StartsOn.ToString("d MMMM yyyy")</dd>
+
+            <dt>Answer by</dt>
+            <dd>@Offer.ClosesOn.ToString("d MMMM yyyy")</dd>
+
+            @if (Offer.SentAt is { } sent)
+            {
+                <dt>Sent</dt>
+                <dd>@sent.ToLocalTime().ToString("d MMM yyyy HH:mm")</dd>
+            }
+
+            @if (Offer.AnsweredAt is { } answered)
+            {
+                <dt>Answered</dt>
+                <dd>
+                    @answered.ToLocalTime().ToString("d MMM yyyy HH:mm")
+                    @if (Offer.SignedName is { } signed)
+                    {
+                        <span class="subtle">signed @signed</span>
+                    }
+                </dd>
+            }
+
+            @if (Offer.Outcome is { } outcome)
+            {
+                <dt>Why</dt>
+                <dd>@outcome</dd>
+            }
+        </dl>
+
+        @if (Offer.Terms is { Length: > 0 } terms)
+        {
+            <section class="standing">
+                <h2>The terms they were sent</h2>
+                <p class="as-typed">@terms</p>
+            </section>
+        }
+
+        <section class="standing">
+            <h2>What happens next</h2>
+
+            @if (Offer.Status == OfferStatus.Drafted)
+            {
+                <p class="subtle">
+                    Nobody outside the firm has seen this. Sending it freezes the terms, because
+                    a page that changed under a candidate between reading and accepting is not
+                    an offer anybody could rely on.
+                </p>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="Send">Send it to @Email</button>
+                </div>
+            }
+            else if (Offer.Status == OfferStatus.Sent)
+            {
+                <div class="fields">
+                    <label>
+                        <span>Give them longer — answer by</span>
+                        <input type="date" @bind="ClosesOn" />
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" class="button--quiet" @onclick="Extend">
+                        Move the date out
+                    </button>
+                </div>
+            }
+            else if (Offer.Status == OfferStatus.Accepted && Offer.EmployeeId is null)
+            {
+                @*
+                    A button somebody presses, not something acceptance did on its own. The same
+                    reasoning as an opportunity being won creating no client and no project:
+                    separate decisions with separate consequences, and a start date that moves
+                    between acceptance and arrival is the ordinary case.
+                *@
+                <p class="subtle">
+                    Accepted. Making the staff record creates the person, starts their
+                    onboarding checklist and marks the application hired, which takes the post
+                    off its requisition. The salary and start date come off this offer rather
+                    than being typed again.
+                </p>
+
+                <div class="fields">
+                    <label>
+                        <span>Department</span>
+                        <select @bind="DepartmentId">
+                            <option value="">Not yet</option>
+                            @foreach (var department in Departments)
+                            {
+                                <option value="@department.Key">@department.Value</option>
+                            }
+                        </select>
+                    </label>
+
+                    <label>
+                        <span>Reporting to</span>
+                        <select @bind="ReportsToId">
+                            <option value="">Nobody yet</option>
+                            @foreach (var person in Staff)
+                            {
+                                <option value="@person.Key">@person.Value</option>
+                            }
+                        </select>
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="TakeOn">Make the staff record</button>
+                </div>
+            }
+            else if (Offer.EmployeeId is { } employee)
+            {
+                <p>
+                    <a href="/onboarding/@employee">Their onboarding checklist</a>
+                </p>
+            }
+            else
+            {
+                <p class="subtle">Nothing further. The record of it stays.</p>
+            }
+
+            @if (Offer.Status is OfferStatus.Drafted or OfferStatus.Sent)
+            {
+                <div class="fields">
+                    <label>
+                        <span>Or withdraw it, and why</span>
+                        <input @bind="Why" placeholder="the post has been put on hold" />
+                        <span class="subtle">
+                            Required. Somebody was told they had this.
+                        </span>
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" class="danger" @onclick="Withdraw">Withdraw it</button>
+                </div>
+            }
+        </section>
+    }
+
+    @if (Earlier.Count > 0)
+    {
+        <section class="standing">
+            <h2>Earlier offers</h2>
+
+            <table class="grid">
+                <caption class="visually-hidden">Offers that were withdrawn or answered</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Written</th>
+                        <th scope="col">Job title</th>
+                        <th scope="col">State</th>
+                        <th scope="col">What happened</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var earlier in Earlier)
+                    {
+                        <tr>
+                            <td>@earlier.MadeAt.ToLocalTime().ToString("d MMM yyyy")</td>
+                            <td>@earlier.JobTitle</td>
+                            <td>
+                                <span class="pill @PillFor(earlier.Status)">
+                                    @Say(earlier.Status)
+                                </span>
+                            </td>
+                            <td>@(earlier.Outcome ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+}
+
+@code {
+    private static readonly PayFrequency[] Frequencies =
+    [
+        PayFrequency.Monthly,
+        PayFrequency.Fortnightly,
+        PayFrequency.Weekly,
+        PayFrequency.OnInvoice,
+    ];
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private Offer? Offer { get; set; }
+
+    private List<Offer> Earlier { get; set; } = [];
+
+    private string? Candidate { get; set; }
+
+    private string Email { get; set; } = string.Empty;
+
+    private string Advert { get; set; } = string.Empty;
+
+    private string Currency { get; set; } = "KES";
+
+    private Dictionary<Guid, string> Departments { get; set; } = [];
+
+    private Dictionary<Guid, string> Staff { get; set; } = [];
+
+    private string Title { get; set; } = string.Empty;
+
+    private decimal? Salary { get; set; }
+
+    private PayFrequency Frequency { get; set; } = PayFrequency.Monthly;
+
+    private DateTime StartsOn { get; set; }
+
+    private DateTime ClosesOn { get; set; }
+
+    private string Terms { get; set; } = string.Empty;
+
+    private string Why { get; set; } = string.Empty;
+
+    private Guid? DepartmentId { get; set; }
+
+    private Guid? ReportsToId { get; set; }
+
+    /// <summary>The acceptance link, for as long as this page is open.</summary>
+    private string? Link { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
+
+    protected override async Task OnInitializedAsync()
+    {
+        StartsOn = DateTime.UtcNow.Date.AddDays(30);
+        ClosesOn = DateTime.UtcNow.Date.AddDays(7);
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (await Queries.ApplicationAsync(Id) is not { } application)
+        {
+            return;
+        }
+
+        Candidate = application.CandidateName;
+        Email = application.CandidateEmail;
+        Advert = application.PostingTitle;
+        Title = Title.Length == 0 ? application.PostingTitle : Title;
+
+        Currency = (await Settings.CurrentAsync()).Currency;
+
+        var all = await Recruitment.OffersForAsync(Id);
+
+        Offer = all.FirstOrDefault(one =>
+            one.Status is OfferStatus.Drafted or OfferStatus.Sent
+                or OfferStatus.Accepted or OfferStatus.Declined);
+
+        Earlier = [.. all.Where(one => one != Offer)];
+
+        /*
+         * The form is filled from the draft, so "change it" starts from what is there rather
+         * than from an empty box that would silently blank the terms somebody spent twenty
+         * minutes on. Only while it is a draft: after that the fields are a record.
+         */
+        if (Offer is { Status: OfferStatus.Drafted } draft)
+        {
+            Title = draft.JobTitle;
+            Salary = draft.SalaryMinorUnits / 100m;
+            Frequency = draft.Frequency;
+            StartsOn = draft.StartsOn.ToDateTime(TimeOnly.MinValue);
+            ClosesOn = draft.ClosesOn.ToDateTime(TimeOnly.MinValue);
+            Terms = draft.Terms;
+        }
+
+        Departments = await People.DepartmentNamesAsync();
+        Staff = await People.NamesAsync();
+    }
+
+    /// <summary>
+    /// Write a new offer, or correct the draft.
+    /// </summary>
+    /// <remarks>
+    /// The same button, because it is the same form. Correcting deliberately does not mint a new
+    /// link: the secret belongs to the offer rather than to its current wording, and reissuing
+    /// it every time somebody fixed a typo would mean an offer with several live links, of which
+    /// the candidate would have whichever email they opened.
+    /// </remarks>
+    private async Task Write()
+    {
+        if (Offer is { } draft)
+        {
+            await Act(
+                () => Offers.ReviseAsync(
+                    draft.Id,
+                    Title,
+                    Money(Salary ?? 0),
+                    Frequency,
+                    DateOnly.FromDateTime(StartsOn),
+                    DateOnly.FromDateTime(ClosesOn),
+                    Terms),
+                "Changed. It still has not gone anywhere.");
+
+            return;
+        }
+
+        if (await Me() is not { } me)
+        {
+            Refusal = Unlinked;
+
+            return;
+        }
+
+        await Act(
+            async () =>
+            {
+                var written = await Offers.WriteAsync(
+                    Id,
+                    Title,
+                    Money(Salary ?? 0),
+                    Frequency,
+                    DateOnly.FromDateTime(StartsOn),
+                    DateOnly.FromDateTime(ClosesOn),
+                    Terms,
+                    me);
+
+                Link = Navigation.BaseUri.TrimEnd('/') + "/offer/" + written.Secret;
+            },
+            "Written. Nothing has gone to the candidate yet.");
+    }
+
+    /// <summary>
+    /// Mark it sent and send it, in that order — and say so when only the first happened.
+    /// </summary>
+    /// <remarks>
+    /// The record first, deliberately. The other way round leaves an email in somebody's inbox
+    /// pointing at an offer this system still thinks is a draft, with terms that can still be
+    /// edited under them.
+    ///
+    /// <b>The mailer is caught separately, and broadly.</b> It failed the first time this was
+    /// run against a container — the file transport could not write to its directory — and
+    /// because the handler only caught the two exception types the domain throws, the circuit
+    /// died: the page went on showing a draft while the database held a sent offer, so the
+    /// obvious next move was to press the button again and be told it had already gone. A
+    /// screen contradicting the database is worse than any error message, which is why this one
+    /// catches whatever comes and says exactly what did and did not happen.
+    /// </remarks>
+    private async Task Send()
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await Offers.SendAsync(Offer!.Id);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+
+            return;
+        }
+
+        try
+        {
+            await Mailer.SendAsync(Letters.OfferTerms(
+                Email,
+                Candidate ?? "there",
+                Offer!.JobTitle,
+                Link ?? string.Empty));
+
+            Done = "Sent. The terms are frozen now.";
+        }
+        catch (Exception exception)
+        {
+            Refusal =
+                "The offer is marked as sent and its terms are frozen, but the email did not "
+                + $"go out: {exception.Message} "
+                + (Link is null
+                    ? "The link cannot be shown again, so withdraw this offer and write another."
+                    : "Send the link above by hand.");
+        }
+
+        await LoadAsync();
+    }
+
+    private Task Extend() => Act(
+        () => Offers.CloseOnAsync(Offer!.Id, DateOnly.FromDateTime(ClosesOn)),
+        "They have longer.");
+
+    private Task Withdraw() => Act(
+        () => Offers.WithdrawAsync(Offer!.Id, Why), "Withdrawn.");
+
+    private Task TakeOn() => Act(
+        async () =>
+        {
+            var employee = await Offers.TakeOnAsync(Offer!.Id, DepartmentId, ReportsToId);
+
+            Navigation.NavigateTo($"/onboarding/{employee.Id}");
+        },
+        "On the staff list, with a checklist started.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private JiranisokoTech.Domain.Common.Money Money(decimal whole) =>
+        JiranisokoTech.Domain.Common.Money.Of(
+            (long)decimal.Round(whole * 100m, 0, MidpointRounding.AwayFromZero), Currency);
+
+    private const string Unlinked =
+        "Your sign-in is not linked to a staff record, so an offer cannot be written in your "
+        + "name. An administrator can link them on the People page.";
+
+    private async Task<Guid?> Me()
+    {
+        var user = (await AuthenticationState).User;
+
+        return Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+    }
+
+    private static string Per(PayFrequency frequency) => frequency switch
+    {
+        PayFrequency.Monthly => "a month",
+        PayFrequency.Fortnightly => "a fortnight",
+        PayFrequency.Weekly => "a week",
+        _ => "per invoice",
+    };
+
+    private static string Say(OfferStatus status) => status switch
+    {
+        OfferStatus.Drafted => "Draft",
+        OfferStatus.Sent => "With them",
+        OfferStatus.Accepted => "Accepted",
+        OfferStatus.Declined => "Declined",
+        _ => "Withdrawn",
+    };
+
+    private static string PillFor(OfferStatus status) => status switch
+    {
+        OfferStatus.Accepted => "pill--done",
+        OfferStatus.Sent => "pill--wait",
+        OfferStatus.Declined => "pill--danger",
+        OfferStatus.Withdrawn => "pill--quiet",
+        _ => "pill--quiet",
+    };
+}

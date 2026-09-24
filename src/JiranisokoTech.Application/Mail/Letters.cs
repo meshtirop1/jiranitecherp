@@ -376,6 +376,39 @@ public static class Letters
         return Compose(toAddress, toName, $"An offer for {jobTitle}", text, null);
     }
 
+    /// <summary>
+    /// The offer itself, with the link to read and answer it.
+    /// </summary>
+    /// <remarks>
+    /// The other half of the promise <see cref="Offer"/> makes. That letter says an offer is
+    /// coming and that the terms follow separately, on the grounds that an email reading like a
+    /// contract is an email somebody will later say they accepted — and it left the firm owing
+    /// somebody a letter nobody wrote. This is that letter, and it still carries no terms: the
+    /// terms are on a page, where they are recorded as having been shown.
+    ///
+    /// The salary is deliberately not in the body. An email is forwarded, quoted and left open
+    /// on screens; the page behind the link is reached once, by whoever holds the secret.
+    /// </remarks>
+    public static EmailMessage OfferTerms(
+        string toAddress, string toName, string jobTitle, string link)
+    {
+        var text = $"""
+            Hello {toName},
+
+            Here is our offer for the {jobTitle} position, in full — the salary, the
+            start date and the terms.
+
+            {link}
+
+            You can accept or turn it down on that page. The link is yours alone,
+            so please do not forward it.
+
+            {Signature}
+            """;
+
+        return Compose(toAddress, toName, $"Your offer for {jobTitle}", text, link);
+    }
+
     private static EmailMessage Compose(
         string toAddress, string toName, string subject, string text, string? link)
     {

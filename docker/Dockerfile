@@ -92,7 +92,13 @@ RUN apt-get update \
 # token, because the first thing that needs a key is the first form anybody
 # opens. Which is to say: a 500 on the page everyone lands on, from a directory
 # permission.
-RUN mkdir -p /keys /documents /cvs && chown app:app /keys /documents /cvs
+# /mail is here for the same reason and was missed. The file transport writes to
+# a relative "mail" directory, which resolves to /app/mail — inside the image, in
+# a directory owned by root — so every letter this application sent in a
+# container threw UnauthorizedAccessException. Nothing said so: the outbox ones
+# retried and dead-lettered quietly, and the one synchronous send took a page
+# down with a circuit exception. Found by pressing "send" on an offer.
+RUN mkdir -p /keys /documents /cvs /mail && chown app:app /keys /documents /cvs /mail
 
 # Non-root. The base image ships an `app` user for exactly this; a web process
 # running as root inside a container is one container escape away from being

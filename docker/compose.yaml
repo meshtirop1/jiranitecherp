@@ -30,6 +30,9 @@ services:
       # Mail. File by default, so nothing reaches a real person until somebody
       # sets MAIL_TRANSPORT=Smtp on purpose.
       Mail__Transport: ${MAIL_TRANSPORT:-File}
+      # An absolute path on a volume. The default is relative, which lands inside
+      # the image where the non-root user cannot write — see the Dockerfile.
+      Mail__Directory: /mail
       Mail__Host: ${MAIL_HOST:-}
       Mail__Port: ${MAIL_PORT:-587}
       Mail__Username: ${MAIL_USERNAME:-}
@@ -65,6 +68,10 @@ services:
       - keys:/keys
       - documents:/documents
       - cvs:/cvs
+      # So that what the file transport "sent" survives a deploy and can be read
+      # afterwards. It is only reached when no SMTP host is configured, which is
+      # every environment that has not been pointed at a real one yet.
+      - mail:/mail
     ports:
       # Bound to localhost. The reverse proxy in front of this is what the
       # internet talks to; the application itself is never directly exposed.
@@ -127,3 +134,4 @@ volumes:
   keys:
   documents:
   cvs:
+  mail:

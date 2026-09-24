@@ -214,6 +214,19 @@ public sealed class RecruitmentQueries(AppDbContext database)
     }
 
     /// <summary>
+    /// One application, with the candidate and the advert named.
+    /// </summary>
+    /// <remarks>
+    /// Built on the list rather than written again, because the interesting part of both is the
+    /// same two joins — and a second copy of "a candidate since removed" is a second place for
+    /// that sentence to drift.
+    /// </remarks>
+    public async Task<WaitingApplicationRow?> ApplicationAsync(
+        Guid id, CancellationToken cancellationToken = default) =>
+        (await ApplicationsAsync(cancellationToken: cancellationToken))
+            .FirstOrDefault(one => one.Id == id);
+
+    /// <summary>
     /// Applications against one advert.
     /// </summary>
     /// <remarks>

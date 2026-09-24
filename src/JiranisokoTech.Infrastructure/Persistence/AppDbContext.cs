@@ -55,6 +55,20 @@ public class AppDbContext(
     /// </remarks>
     public DbSet<Offboarding> Offboardings => Set<Offboarding>();
 
+    /// <summary>
+    /// What has to happen before somebody starts, and what they were given.
+    /// </summary>
+    /// <remarks>
+    /// Section 8, and deliberately the same shape as Offboardings at the other end. The
+    /// equipment recorded here is what the leaver's checklist asks back, which is the loop that
+    /// was open: a laptop handed over on day one and written down nowhere is a laptop nobody
+    /// misses until the audit.
+    /// </remarks>
+    public DbSet<Onboarding> Onboardings => Set<Onboarding>();
+
+    /// <summary>What the firm offered somebody, and what they said.</summary>
+    public DbSet<Offer> Offers => Set<Offer>();
+
     public DbSet<ApprovalRequest> Approvals => Set<ApprovalRequest>();
 
     public DbSet<Client> Clients => Set<Client>();

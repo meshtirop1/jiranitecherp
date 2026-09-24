@@ -270,7 +270,28 @@ public sealed class PeopleService(IPeopleRepository people, Abstractions.IClock 
         }
         else
         {
-            people.Add(Offboarding.Begin(employeeId, on, clock.Now));
+            var leaving = Offboarding.Begin(employeeId, on, clock.Now);
+
+            /*
+             * What was issued on the first day is what gets asked back on the last, and until
+             * section 8 there was nothing to copy from — so every leaver's asset list was
+             * somebody remembering, which means it was whatever they remembered. Anything
+             * handed over at onboarding is carried across here with its serial number, and
+             * anything else the person picked up along the way is still added by hand.
+             *
+             * Copied rather than shared. Section 15 would give the firm one asset register with
+             * one row per laptop; until then these are two lists, and the one that matters at
+             * this end is this one — it is the one that says what has not come back.
+             */
+            if (await people.OnboardingForAsync(employeeId, cancellationToken) is { } arrival)
+            {
+                foreach (var issued in arrival.Issued)
+                {
+                    leaving.Lent(issued.Kind, issued.Description, issued.Identifier);
+                }
+            }
+
+            people.Add(leaving);
         }
 
         await people.SaveAsync(cancellationToken);

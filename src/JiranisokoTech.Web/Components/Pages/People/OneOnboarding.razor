@@ -1,0 +1,414 @@
+@page "/onboarding/{Id:guid}"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.People
+@using JiranisokoTech.Domain.People
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.EmployeesManage)]
+@inject OnboardingService Service
+@inject PeopleQueries People
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    One person's first day, and what still has to happen before it.
+
+    Interactive, because this is a checklist: somebody works down it ticking things off, and a
+    page that reloaded between each tick is one people keep on paper instead — and the paper never
+    makes it back.
+*@
+
+<PageTitle>Onboarding — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs">
+    <a href="/people">People</a>
+    <a href="/onboarding">Starting</a>
+</nav>
+
+@if (Onboarding is null)
+{
+    <p class="empty">
+        There is no checklist for that person. One is started when an accepted offer becomes a
+        staff record.
+    </p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Name</h1>
+
+        <p class="subtle">
+            @if (Onboarding.IsComplete)
+            {
+                <span class="pill pill--done">Set up</span>
+            }
+            else if (Onboarding.IsLate(Today))
+            {
+                <span class="pill pill--danger">already started</span>
+            }
+            else
+            {
+                <span class="pill pill--wait">@Onboarding.Outstanding.Count left</span>
+            }
+            <span class="subtle">
+                starting @Onboarding.StartsOn.ToString("dddd d MMMM yyyy")
+            </span>
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <section class="standing">
+        <h2>Before they start</h2>
+
+        <table class="grid">
+            <caption class="visually-hidden">The checklist</caption>
+            <thead>
+                <tr>
+                    <th scope="col">What</th>
+                    <th scope="col">Done</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var step in Onboarding.Steps)
+                {
+                    var it = step;
+
+                    <tr>
+                        <td>@it.Name</td>
+                        <td>
+                            @if (it.DoneAt is { } when)
+                            {
+                                @when.ToLocalTime().ToString("d MMM")
+                                @if (it.DoneById is { } by)
+                                {
+                                    <span class="subtle">@Who(by)</span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="subtle">not yet</span>
+                            }
+                        </td>
+                        <td>
+                            @*
+                                Per-row buttons with no fields in them, so the handler closes
+                                over the row's id and nothing has to be bound by name — the
+                                trap that silently broke four forms in this application.
+                            *@
+                            @if (it.IsDone)
+                            {
+                                <button type="button" class="button--quiet"
+                                        @onclick="() => NotDone(it.Id)">
+                                    Not yet
+                                </button>
+                            }
+                            else
+                            {
+                                <button type="button" @onclick="() => Did(it.Id)">Done</button>
+
+                                <button type="button" class="button--quiet"
+                                        @onclick="() => NotNeeded(it.Id)">
+                                    Does not apply
+                                </button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <p class="subtle">
+            "Does not apply" rather than ticking it to get it out of the way — a list of ticks
+            where some mean done and some mean irrelevant is a list nobody can read.
+        </p>
+
+        <div class="fields">
+            <label>
+                <span>Something else this role needs</span>
+                <input @bind="Step" placeholder="Practising certificate checked" />
+            </label>
+        </div>
+
+        <div class="row-actions">
+            <button type="button" class="button--quiet" @onclick="Also">Add it</button>
+        </div>
+    </section>
+
+    <section class="standing">
+        <h2>What they were given</h2>
+
+        @*
+            This list is what the leaver's checklist asks back. Section 9 recorded lent equipment
+            only at the moment somebody left, which meant it was whatever the person filling it
+            in remembered — and a laptop handed over on day one and written down nowhere is a
+            laptop nobody misses until the audit.
+        *@
+        @if (Onboarding.Issued.Count == 0)
+        {
+            <p class="empty">Nothing recorded.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Equipment issued</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">What</th>
+                        <th scope="col">Which one</th>
+                        <th scope="col">Issued</th>
+                        <th scope="col"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var asset in Onboarding.Issued)
+                    {
+                        var it = asset;
+
+                        <tr>
+                            <td>@Said(it.Kind) @it.Description</td>
+                            <td>@(it.Identifier ?? "—")</td>
+                            <td>@it.IssuedOn.ToString("d MMM yyyy")</td>
+                            <td>
+                                <button type="button" class="button--quiet"
+                                        @onclick="() => NotIssued(it.Id)">
+                                    Take it off
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        <div class="fields">
+            <label>
+                <span>What</span>
+                <select @bind="Kind">
+                    @foreach (var kind in Kinds)
+                    {
+                        <option value="@kind">@Said(kind)</option>
+                    }
+                </select>
+            </label>
+
+            <label>
+                <span>Description</span>
+                <input @bind="Description" placeholder="MacBook Air 13in" />
+            </label>
+
+            <label>
+                <span>Serial or asset tag</span>
+                <input @bind="Identifier" placeholder="optional" />
+                <span class="subtle">
+                    Worth typing. It is the difference between asking for "the laptop" and
+                    asking for one the firm can identify.
+                </span>
+            </label>
+        </div>
+
+        <div class="row-actions">
+            <button type="button" class="button--quiet" @onclick="Issue">Record it</button>
+        </div>
+    </section>
+
+    <section class="standing">
+        <h2>Dates and closing it</h2>
+
+        <div class="fields">
+            <label>
+                <span>Starting</span>
+                <input type="date" @bind="StartsOn" />
+                <span class="subtle">
+                    It moves — notice periods are negotiated and visas take what they take.
+                </span>
+            </label>
+        </div>
+
+        <div class="row-actions">
+            <button type="button" class="button--quiet" @onclick="MoveStart">
+                Change the date
+            </button>
+        </div>
+
+        @if (!Onboarding.IsComplete)
+        {
+            <p class="subtle">
+                Closing it is somebody saying "this person is set up". It is not done
+                automatically when the last box is ticked, because a list that closed itself is
+                one nobody ever looks at the whole of.
+            </p>
+
+            <div class="row-actions">
+                <button type="button" @onclick="Complete">Everything is done</button>
+            </div>
+        }
+        else
+        {
+            <p class="subtle">
+                Closed @Onboarding.CompletedAt!.Value.ToLocalTime().ToString("d MMM yyyy").
+                What was issued above is what the leaver's checklist will ask back.
+            </p>
+        }
+    </section>
+}
+
+@code {
+    private static readonly AssetKind[] Kinds =
+    [
+        AssetKind.Laptop,
+        AssetKind.Phone,
+        AssetKind.Monitor,
+        AssetKind.AccessDevice,
+        AssetKind.Vehicle,
+        AssetKind.Other,
+    ];
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private Onboarding? Onboarding { get; set; }
+
+    private string Name { get; set; } = string.Empty;
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string Step { get; set; } = string.Empty;
+
+    private AssetKind Kind { get; set; } = AssetKind.Laptop;
+
+    private string Description { get; set; } = string.Empty;
+
+    private string Identifier { get; set; } = string.Empty;
+
+    private DateTime StartsOn { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private DateOnly Today => Clock.Today;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Onboarding = await Service.ForAsync(Id);
+        Names = await People.NamesAsync();
+        Name = Names.GetValueOrDefault(Id) ?? "Somebody no longer on the staff list";
+
+        if (Onboarding is not null)
+        {
+            StartsOn = Onboarding.StartsOn.ToDateTime(TimeOnly.MinValue);
+        }
+    }
+
+    private async Task Did(Guid stepId)
+    {
+        if (await Me() is not { } me)
+        {
+            Refusal = Unlinked;
+
+            return;
+        }
+
+        await Act(() => Service.DidAsync(Id, stepId, me), "Ticked.");
+    }
+
+    private Task NotDone(Guid stepId) => Act(
+        () => Service.NotDoneAsync(Id, stepId), "Back on the list.");
+
+    private Task NotNeeded(Guid stepId) => Act(
+        () => Service.NotNeededAsync(Id, stepId), "Taken off.");
+
+    private Task Also() => Act(
+        async () =>
+        {
+            await Service.AlsoAsync(Id, Step);
+            Step = string.Empty;
+        },
+        "Added.");
+
+    private Task Issue() => Act(
+        async () =>
+        {
+            await Service.IssueAsync(
+                Id, Kind, Description, string.IsNullOrWhiteSpace(Identifier) ? null : Identifier);
+
+            Description = string.Empty;
+            Identifier = string.Empty;
+        },
+        "Recorded. It will be on their leaver's list if they go.");
+
+    private Task NotIssued(Guid assetId) => Act(
+        () => Service.NotIssuedAsync(Id, assetId), "Taken off.");
+
+    private Task MoveStart() => Act(
+        () => Service.StartsOnAsync(Id, DateOnly.FromDateTime(StartsOn)), "Moved.");
+
+    private Task Complete() => Act(
+        () => Service.CompleteAsync(Id), "Closed. They are set up.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private const string Unlinked =
+        "Your sign-in is not linked to a staff record, so a step cannot be ticked in your name. "
+        + "An administrator can link them on the People page.";
+
+    private async Task<Guid?> Me()
+    {
+        var user = (await AuthenticationState).User;
+
+        return Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+    }
+
+    private string Who(Guid id) =>
+        Names.GetValueOrDefault(id) ?? "somebody no longer on the staff list";
+
+    /// <summary>
+    /// The kind of thing, in words rather than as it is spelt in the code.
+    /// </summary>
+    /// <remarks>
+    /// One enum member is two words joined up, and a dropdown offering "AccessDevice" beside
+    /// "Laptop" and "Phone" reads as a leak from the code rather than a choice somebody was
+    /// offered. Written out rather than split on capitals, because a rule that guesses would
+    /// get the next member wrong in some new way.
+    /// </remarks>
+    private static string Said(AssetKind kind) => kind switch
+    {
+        AssetKind.AccessDevice => "Access device",
+        _ => kind.ToString(),
+    };
+}
