@@ -60,6 +60,11 @@
     }
 
     .nav-item ::deep .nav-link {
+        /*
+         * Fixed, and deliberately outside the theme. The sidebar is the firm's blue on a light
+         * page and on a dark one — the corporate site wears it the same way — so the ink on it
+         * answers to the blue rather than to the reader's theme.
+         */
         color: #d7d7d7;
         background: none;
         border: none;

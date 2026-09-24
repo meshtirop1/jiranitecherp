@@ -121,6 +121,69 @@ public class DarkModeTests
             + string.Join("\n  ", missingFromStamped));
     }
 
+    /// <summary>
+    /// The scoped stylesheets choose their colours from tokens too.
+    /// </summary>
+    /// <remarks>
+    /// Blazor's per-component stylesheets — the <c>.razor.css</c> files — were outside every
+    /// check in this class, which reads <c>app.css</c> and nothing else. That gap had a fault
+    /// sitting in it for as long as dark mode has existed: <c>MainLayout.razor.css</c> painted
+    /// the top strip a fixed light grey, so on a dark page the command box and the theme button
+    /// sat on a white band across the top of an otherwise dark screen. It was in every
+    /// screenshot anybody ever took of dark mode and nothing ever said a word about it.
+    ///
+    /// Custom properties cross the scoping boundary, which is what makes the fix available:
+    /// Blazor rewrites the SELECTOR to match a generated attribute, and the declaration still
+    /// inherits its value from <c>:root</c>.
+    /// </remarks>
+    [Fact]
+    public void Every_scoped_stylesheet_reads_its_colours_from_tokens()
+    {
+        var offenders = new List<string>();
+
+        foreach (var sheet in Directory.EnumerateFiles(
+            WebProject(), "*.razor.css", SearchOption.AllDirectories))
+        {
+            var name = Path.GetFileName(sheet);
+            var bare = Regex.Replace(
+                File.ReadAllText(sheet), @"/\*.*?\*/", string.Empty, RegexOptions.Singleline);
+
+            foreach (var (selector, properties) in ColourRules(bare))
+            {
+                if (TheSameOnEitherGround.Contains($"{name} {selector}"))
+                {
+                    continue;
+                }
+
+                offenders.Add($"  {name}: {selector} sets {string.Join(", ", properties)}");
+            }
+        }
+
+        Assert.True(
+            offenders.Count == 0,
+            "These scoped rules choose a colour with a hex literal, so the reader's theme "
+            + "cannot change it:\n"
+            + string.Join('\n', offenders.Order())
+            + "\n\nRead a token instead — they inherit through scoping — or add the rule to "
+            + "TheSameOnEitherGround with a reason that is a fact about the world.");
+    }
+
+    /// <summary>
+    /// Scoped rules whose colour is the same on either ground, with the reason.
+    /// </summary>
+    /// <remarks>
+    /// Both entries are the sidebar, and they are one decision. It wears the firm's blue in
+    /// both themes because that is how the firm wears it on jiranisokotech.co.ke — the
+    /// navigation is blue on a white page there, and a reader moving between the two should not
+    /// meet two companies. The ink on it therefore answers to the blue rather than to the
+    /// theme, which is why it is fixed as well.
+    /// </remarks>
+    private static readonly HashSet<string> TheSameOnEitherGround =
+    [
+        "MainLayout.razor.css .sidebar",
+        "NavMenu.razor.css .nav-item ::deep .nav-link",
+    ];
+
     /// <summary>The token names declared inside one block.</summary>
     private static HashSet<string> Tokens(string block) =>
         [.. Regex.Matches(block, @"(--[a-z-]+)\s*:").Select(one => one.Groups[1].Value)];

@@ -1,4 +1,36 @@
 /*
+ * The firm's own face, served from the firm's own server.
+ *
+ * PT Sans, matching jiranisokotech.co.ke exactly: the same two weights, the same files. It is
+ * self-hosted here for the reason it is self-hosted there. A face fetched from Google would
+ * mean a third-party origin in a Content-Security-Policy this application has already shipped
+ * one outage by loosening, a DNS lookup on the critical path of a page somebody opens to find
+ * out whether the invoicing broke, and the fact that this firm's staff opened their ERP
+ * announced to somebody else on every load.
+ *
+ * Two weights and no more. The site uses four hundred and seven hundred; the italics and the
+ * intermediate weights would be ninety kilobytes of faces nothing here asks for.
+ *
+ * font-display: swap, so the words are readable in the fallback while the face arrives — which
+ * is why the stack still names Segoe UI and Tahoma in the order the site names them.
+ */
+@font-face {
+    font-family: 'PT Sans';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('fonts/pt-sans-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'PT Sans';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('fonts/pt-sans-700-normal.woff2') format('woff2');
+}
+
+/*
  * The colours this application is made of.
  *
  * Declared as tokens so that dark mode is a redefinition rather than a second copy of
@@ -15,13 +47,13 @@
  * borders and the form controls.
  */
 :root {
-    --page: #f5f6f8;
+    --page: #f8f8f8;
     --surface: #fff;
-    --surface-sunken: #eef1f5;
-    --ink: #1f2937;
-    --ink-quiet: #6b7280;
-    --line: #e3e5e9;
-    --link: #006bb7;
+    --surface-sunken: #f1f1f1;
+    --ink: #2b2b2b;
+    --ink-quiet: #6e6e6e;
+    --line: #e5e5e5;
+    --link: #0c6e92;
 
     /*
      * The semantic colours, promoted from literals.
@@ -42,9 +74,9 @@
      * the light theme did not move. The dark values are lifted for contrast against a dark
      * ground rather than being the same hues dimmed.
      */
-    --accent: #1b6ec2;
-    --accent-strong: #1861ac;
-    --accent-quiet: #eef4fb;
+    --accent: #0c6e92;
+    --accent-strong: #095571;
+    --accent-quiet: #e8f7fd;
 
     /*
      * Stays white in both themes. It is the text on a saturated blue button, not a
@@ -53,19 +85,19 @@
      */
     --on-accent: #fff;
 
-    --danger: #b32121;
-    --danger-strong: #8a1b1b;
-    --warn: #d97706;
+    --danger: #c62828;
+    --danger-strong: #9e2020;
+    --warn: #b45309;
 
     /* The pill grounds and inks, which are pairs and only mean anything as pairs. */
-    --good-ground: #e6f4ea;
-    --good-ink: #1e6b32;
-    --warn-ground: #fff4e5;
+    --good-ground: #eaf5eb;
+    --good-ink: #227a28;
+    --warn-ground: #fdf3e6;
     --warn-ink: #8a5300;
-    --danger-ground: #fdf2f2;
-    --danger-ink: #8a1b1b;
-    --running-ground: #e8f0fb;
-    --running-ink: #1b4f8a;
+    --danger-ground: #fbeaea;
+    --danger-ink: #a02020;
+    --running-ground: #e8f7fd;
+    --running-ink: #0c6e92;
 
     /*
      * A third grey, between --ink and --ink-quiet. It appeared as the literal #4b5563 in
@@ -73,23 +105,23 @@
      * "quieter than body text but not as quiet as a hint". Naming it is what stops the
      * ninth one being #4a5563 by a typo nobody sees.
      */
-    --ink-mid: #4b5563;
+    --ink-mid: #4e4e4e;
 
     /*
      * The edge of something a person types into, which is deliberately darker than --line.
      * A field whose border is the same weight as a table rule does not read as a field, and
      * this appeared as the literal var(--field-line) in six rules that all meant "input".
      */
-    --field-line: #c8ccd4;
+    --field-line: #767676;
 
     /* The sign-in page's two answers, which are a ground, an ink and an edge each. */
-    --refusal-ground: #fdf2f2;
-    --refusal-ink: #8a1b1b;
-    --done-ground: #e6f4ea;
-    --done-ink: #1e6b32;
+    --refusal-ground: #fbeaea;
+    --refusal-ink: #a02020;
+    --done-ground: #eaf5eb;
+    --done-ink: #227a28;
 
     /* A pill's word, a shade lighter than body text so the ground reads as the pill. */
-    --pill-ink: #374151;
+    --pill-ink: #4e4e4e;
 
     /*
      * The type scale, declared here with the colours rather than in a second :root
@@ -116,43 +148,43 @@
  */
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-        --page: #161a1f;
-        --surface: #1e242b;
-        --surface-sunken: #262e37;
-        --ink: #e6e9ee;
-        --ink-quiet: #9aa4b2;
-        --line: #333c47;
+        --page: #101519;
+        --surface: #181f25;
+        --surface-sunken: #212a31;
+        --ink: #e8eef1;
+        --ink-quiet: #8d9aa3;
+        --line: #2d3840;
 
         /* Lifted, because #006bb7 on a dark ground fails contrast by a long way. */
-        --link: #6fb6ff;
+        --link: #6fd2f5;
 
         /*
          * The semantic colours again. Lifted rather than dimmed: a saturated hue that
          * reads well on white is too dark to read on #161a1f, and the instinct to darken
          * everything for dark mode gets the contrast backwards.
          */
-        --accent: #2f7fd0;
-        --accent-strong: #3d8de0;
-        --accent-quiet: #20303f;
-        --danger: #c94040;
-        --danger-strong: #d95c5c;
+        --accent: #1188b4;
+        --accent-strong: #1cbbed;
+        --accent-quiet: #12303d;
+        --danger: #e05252;
+        --danger-strong: #f07070;
         --warn: #e0912f;
 
-        --good-ground: #1d3a27;
-        --good-ink: #7ddc9b;
+        --good-ground: #17331c;
+        --good-ink: #7fd186;
         --warn-ground: #3a2f1c;
         --warn-ink: #ffc987;
-        --danger-ground: #3d2126;
-        --danger-ink: #ff9aa2;
-        --running-ground: #1e3346;
-        --running-ink: #8ec5ff;
-        --ink-mid: #b3bcc9;
-    --field-line: #46515f;
+        --danger-ground: #3a1f1f;
+        --danger-ink: #ffa1a1;
+        --running-ground: #12303d;
+        --running-ink: #6fd2f5;
+        --ink-mid: #b6c2c9;
+    --field-line: #48555e;
         --field-line: #46515f;
-        --refusal-ground: #3d2126;
-        --refusal-ink: #ff9aa2;
-        --done-ground: #1d3a27;
-        --done-ink: #7ddc9b;
+        --refusal-ground: #3a1f1f;
+        --refusal-ink: #ffa1a1;
+        --done-ground: #17331c;
+        --done-ink: #7fd186;
     
         /*
          * The same white as the light theme, declared rather than left to inherit. White on a
@@ -166,39 +198,39 @@
 }
 
 :root[data-theme="dark"] {
-    --page: #161a1f;
-    --surface: #1e242b;
-    --surface-sunken: #262e37;
-    --ink: #e6e9ee;
-    --ink-quiet: #9aa4b2;
-    --line: #333c47;
-    --link: #6fb6ff;
+    --page: #101519;
+    --surface: #181f25;
+    --surface-sunken: #212a31;
+    --ink: #e8eef1;
+    --ink-quiet: #8d9aa3;
+    --line: #2d3840;
+    --link: #6fd2f5;
 
     /* The same again, for a reader who chose dark on a light machine. */
-    --accent: #2f7fd0;
-    --accent-strong: #3d8de0;
-    --accent-quiet: #20303f;
-    --danger: #c94040;
-    --danger-strong: #d95c5c;
+    --accent: #1188b4;
+    --accent-strong: #1cbbed;
+    --accent-quiet: #12303d;
+    --danger: #e05252;
+    --danger-strong: #f07070;
     --warn: #e0912f;
 
-    --good-ground: #1d3a27;
-    --good-ink: #7ddc9b;
+    --good-ground: #17331c;
+    --good-ink: #7fd186;
     --warn-ground: #3a2f1c;
     --warn-ink: #ffc987;
-    --danger-ground: #3d2126;
-    --danger-ink: #ff9aa2;
-    --running-ground: #1e3346;
-    --running-ink: #8ec5ff;
-    --ink-mid: #b3bcc9;
-    --refusal-ground: #3d2126;
-    --refusal-ink: #ff9aa2;
-    --done-ground: #1d3a27;
-    --done-ink: #7ddc9b;
+    --danger-ground: #3a1f1f;
+    --danger-ink: #ffa1a1;
+    --running-ground: #12303d;
+    --running-ink: #6fd2f5;
+    --ink-mid: #b6c2c9;
+    --refusal-ground: #3a1f1f;
+    --refusal-ink: #ffa1a1;
+    --done-ground: #17331c;
+    --done-ink: #7fd186;
 
     --on-accent: #fff;
     --pill-ink: var(--ink);
-    --field-line: #46515f;
+    --field-line: #48555e;
 }
 
 /*
@@ -218,21 +250,22 @@
 
 
 /*
- * The system's own faces rather than a web font, deliberately.
+ * PT Sans, which is what the firm's own site is set in.
  *
- * A downloaded face would mean a network request on a page somebody opens to find out
- * whether the invoicing has broken, a Content-Security-Policy entry for a third-party
- * origin, and a flash of unstyled text on every cold load. This is self-hosted software
- * for one firm on their own hardware; the operating system already has a good interface
- * face and it is already in memory.
+ * This used to be the operating system's interface face, on the argument that a downloaded
+ * face costs a request and a Content-Security-Policy entry for somebody else's origin. The
+ * first half of that was right and the second no longer applies: the file is served from this
+ * application, beside the stylesheet, so there is no third party and no extra connection.
  *
- * Helvetica Neue stays at the front of the stack so that the appearance on the machines
- * this was built on does not shift, with the modern system tokens ahead of the old
- * Arial fallback for everybody else.
+ * What the old argument missed is that a firm's own software looking like a different firm's
+ * software is a cost too. Somebody moves between jiranisokotech.co.ke and this application
+ * several times a day and they should not read as two companies.
+ *
+ * The fallbacks are the site's, in the site's order, so the shape of a page is the same while
+ * the face is still arriving and on anything that refuses to load it.
  */
 html, body {
-    font-family: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text',
-        'Segoe UI', system-ui, Helvetica, Arial, sans-serif;
+    font-family: 'PT Sans', 'Segoe UI', Tahoma, Verdana, sans-serif;
 
     /* Tabular figures everywhere, because most of this application is columns of numbers
        and proportional digits make a column of money jitter as it scrolls. */

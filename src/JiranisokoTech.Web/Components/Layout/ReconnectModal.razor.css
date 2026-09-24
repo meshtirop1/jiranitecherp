@@ -90,18 +90,23 @@
 
 #components-reconnect-modal button {
     border: 0;
-    background-color: #6b9ed2;
-    color: white;
+    /*
+     * The firm's blue. These were the Blazor template's, and this overlay is the one screen
+     * somebody sees when the connection to an interactive page has dropped — so it is a poor
+     * moment for the application to look like a different application.
+     */
+    background-color: var(--accent);
+    color: var(--on-accent);
     padding: 4px 24px;
     border-radius: 4px;
 }
 
     #components-reconnect-modal button:hover {
-        background-color: #3b6ea2;
+        background-color: var(--accent-strong);
     }
 
     #components-reconnect-modal button:active {
-        background-color: #6b9ed2;
+        background-color: var(--accent);
     }
 
 .components-rejoining-animation {
@@ -112,7 +117,7 @@
 
     .components-rejoining-animation div {
         position: absolute;
-        border: 3px solid #0087ff;
+        border: 3px solid var(--accent);
         opacity: 1;
         border-radius: 50%;
         animation: components-rejoining-animation 1.5s cubic-bezier(0, 0.2, 0.8, 1) infinite;

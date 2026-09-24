@@ -9,12 +9,28 @@ main {
 }
 
 .sidebar {
-    background-image: linear-gradient(180deg, rgb(5, 39, 103) 0%, #3a0647 70%);
+    /*
+     * The firm's blue, flat, the way jiranisokotech.co.ke wears it.
+     *
+     * This was a navy-to-purple gradient, and it was a gradient because it came straight from
+     * the Blazor project template — it belonged to no firm at all, least of all this one.
+     */
+    background-color: #0c6e92;
 }
 
 .top-row {
-    background-color: #f7f7f7;
-    border-bottom: 1px solid #d6d5d5;
+    /*
+     * Tokens, not literals, and it took a restyle to notice. This strip was a fixed light grey,
+     * so on a dark page the command box and the theme button sat on a white band across the top
+     * of an otherwise dark screen — visible in every screenshot anybody had ever taken of dark
+     * mode, and never once reported, because DarkModeTests reads app.css and a scoped
+     * .razor.css was outside everything that checks this.
+     *
+     * Custom properties cross the scoping boundary: Blazor rewrites the SELECTOR to match an
+     * attribute on the element, and the value still inherits from :root.
+     */
+    background-color: var(--surface);
+    border-bottom: 1px solid var(--line);
     justify-content: flex-end;
     height: 3.5rem;
     display: flex;
