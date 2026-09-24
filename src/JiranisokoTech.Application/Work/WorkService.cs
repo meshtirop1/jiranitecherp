@@ -14,7 +14,11 @@ namespace JiranisokoTech.Application.Work;
 /// of the system — whether the person being handed the work is in a position to
 /// take it, whether a project has anything still open under it.
 /// </remarks>
-public sealed class WorkService(IWorkRepository work, IPeopleRepository people, IClock clock)
+public sealed class WorkService(
+    IWorkRepository work,
+    IPeopleRepository people,
+    IPlanningRepository planning,
+    IClock clock)
 {
     public async Task<Project> BeginProjectAsync(
         string name,
@@ -119,6 +123,7 @@ public sealed class WorkService(IWorkRepository work, IPeopleRepository people, 
         Guid? projectId = null,
         Guid? assigneeId = null,
         Priority priority = Priority.Normal,
+        WorkItemKind kind = WorkItemKind.Task,
         CancellationToken cancellationToken = default)
     {
         if (projectId is { } id)
@@ -142,7 +147,7 @@ public sealed class WorkService(IWorkRepository work, IPeopleRepository people, 
          */
         var number = await work.LastNumberAsync(cancellationToken) + 1;
 
-        var item = WorkItem.Raise(number, title, raisedById, projectId, priority);
+        var item = WorkItem.Raise(number, title, raisedById, projectId, priority, kind);
 
         if (assigneeId is { } assignee)
         {
@@ -178,6 +183,16 @@ public sealed class WorkService(IWorkRepository work, IPeopleRepository people, 
         await work.SaveAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Move work along the board.
+    /// </summary>
+    /// <remarks>
+    /// The state machine itself is in the aggregate, and so is the refusal to finish something
+    /// whose acceptance criteria are not met. What is here is the one rule that needs other
+    /// rows: <b>nothing is done while something it waits on is not</b>. That is what a dependency
+    /// means, and a board that lets the blocked card finish first is a board recording an order
+    /// of events that did not happen.
+    /// </remarks>
     public async Task MoveAsync(
         Guid workItemId,
         WorkItemStatus status,
@@ -186,8 +201,144 @@ public sealed class WorkService(IWorkRepository work, IPeopleRepository people, 
     {
         var item = await Required(workItemId, cancellationToken);
 
+        if (status is WorkItemStatus.Done or WorkItemStatus.Deployed)
+        {
+            var waiting = await Waiting(workItemId, cancellationToken);
+
+            if (waiting.Count > 0)
+            {
+                var names = string.Join(", ", waiting.Select(one => one.Reference));
+
+                throw new InvalidOperationException(
+                    $"{item.Reference} waits on {names}, which "
+                    + $"{(waiting.Count == 1 ? "is" : "are")} not finished. Finish "
+                    + $"{(waiting.Count == 1 ? "it" : "them")} first, or drop the dependency if "
+                    + "it is no longer real.");
+            }
+        }
+
         item.MoveTo(status, clock.Now, because);
         await work.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>Put a word on a piece of work.</summary>
+    public async Task LabelAsync(
+        Guid workItemId, string text, CancellationToken cancellationToken = default)
+    {
+        var item = await Required(workItemId, cancellationToken);
+
+        item.Label(text);
+        await work.SaveAsync(cancellationToken);
+    }
+
+    public async Task UnlabelAsync(
+        Guid workItemId, string text, CancellationToken cancellationToken = default)
+    {
+        var item = await Required(workItemId, cancellationToken);
+
+        item.Unlabel(text);
+        await work.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Say something about a piece of work.
+    /// </summary>
+    /// <remarks>
+    /// The author is passed in rather than read here, because the only honest source for who is
+    /// speaking is whoever is signed in — and a service that guessed would be one where a
+    /// comment can be put in somebody else's name.
+    /// </remarks>
+    public async Task<WorkItemComment> CommentAsync(
+        Guid workItemId,
+        Guid byEmployeeId,
+        string body,
+        CancellationToken cancellationToken = default)
+    {
+        var item = await Required(workItemId, cancellationToken);
+        var comment = item.Say(byEmployeeId, body, clock.Now);
+
+        await work.SaveAsync(cancellationToken);
+
+        return comment;
+    }
+
+    public async Task RewordAsync(
+        Guid workItemId,
+        Guid commentId,
+        Guid byEmployeeId,
+        string body,
+        CancellationToken cancellationToken = default)
+    {
+        var item = await Required(workItemId, cancellationToken);
+
+        item.Reword(commentId, byEmployeeId, body, clock.Now);
+        await work.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>Add a line to what done looks like.</summary>
+    public async Task NeedsAsync(
+        Guid workItemId, string text, CancellationToken cancellationToken = default)
+    {
+        var item = await Required(workItemId, cancellationToken);
+
+        item.Needs(text);
+        await work.SaveAsync(cancellationToken);
+    }
+
+    public async Task MetAsync(
+        Guid workItemId,
+        Guid lineId,
+        Guid byEmployeeId,
+        bool met,
+        CancellationToken cancellationToken = default)
+    {
+        var item = await Required(workItemId, cancellationToken);
+
+        if (met)
+        {
+            item.Met(lineId, byEmployeeId, clock.Now);
+        }
+        else
+        {
+            item.NotMet(lineId);
+        }
+
+        await work.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>Strike out a line that turned out not to apply, saying why.</summary>
+    public async Task DropLineAsync(
+        Guid workItemId, Guid lineId, string because, CancellationToken cancellationToken = default)
+    {
+        var item = await Required(workItemId, cancellationToken);
+
+        item.DropLine(lineId, because);
+        await work.SaveAsync(cancellationToken);
+    }
+
+    public async Task RemoveLineAsync(
+        Guid workItemId, Guid lineId, CancellationToken cancellationToken = default)
+    {
+        var item = await Required(workItemId, cancellationToken);
+
+        item.RemoveLine(lineId);
+        await work.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>The unfinished work this one waits on.</summary>
+    private async Task<List<WorkItem>> Waiting(
+        Guid workItemId, CancellationToken cancellationToken)
+    {
+        var links = await planning.LinksForAsync(workItemId, cancellationToken);
+        var blockerIds = links
+            .Where(one => one.BlockedId == workItemId)
+            .Select(one => one.BlockerId)
+            .ToList();
+
+        return blockerIds.Count == 0
+            ? []
+            : [.. (await planning.ByIdsAsync(blockerIds, cancellationToken))
+                .Where(one => one.IsOpen)];
     }
 
     public async Task UpdateAsync(

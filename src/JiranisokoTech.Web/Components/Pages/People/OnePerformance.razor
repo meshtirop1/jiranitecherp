@@ -253,7 +253,15 @@ else
                         <div class="fields">
                             <label class="stack">
                                 <span>Your half</span>
-                                <textarea rows="6" @bind="SelfNotes[cycle.Id]"></textarea>
+                                @*
+                                    Through a helper rather than @@bind to the dictionary, for
+                                    the reason the work card learned the hard way: a Dictionary
+                                    indexer throws on a missing key, and the read happens on the
+                                    first render.
+                                *@
+                                <textarea rows="6" value="@Typed(SelfNotes, cycle.Id)"
+                                          @onchange="args => SelfNotes[cycle.Id] =
+                                              args.Value?.ToString() ?? string.Empty"></textarea>
                             </label>
                         </div>
 
@@ -269,12 +277,19 @@ else
                         <div class="fields">
                             <label class="stack">
                                 <span>Your half, about them</span>
-                                <textarea rows="6" @bind="ManagerNotes[cycle.Id]"></textarea>
+                                <textarea rows="6" value="@Typed(ManagerNotes, cycle.Id)"
+                                          @onchange="args => ManagerNotes[cycle.Id] =
+                                              args.Value?.ToString() ?? string.Empty"></textarea>
                             </label>
 
                             <label>
                                 <span>Band</span>
-                                <select @bind="Bands[cycle.Id]">
+                                <select value="@Bands.GetValueOrDefault(cycle.Id)"
+                                        @onchange="args => Bands[cycle.Id] =
+                                            Enum.TryParse<ReviewRating>(
+                                                args.Value?.ToString(), out var band)
+                                                ? band
+                                                : null">
                                     <option value="">No band</option>
                                     <option value="@ReviewRating.Below">Below</option>
                                     <option value="@ReviewRating.Meeting">Meeting</option>
@@ -448,12 +463,12 @@ else
         "Set.");
 
     private Task WriteSelf(Guid cycleId) => Act(
-        () => Service.WriteSelfAsync(cycleId, EmployeeId, SelfNotes[cycleId]),
+        () => Service.WriteSelfAsync(cycleId, EmployeeId, Typed(SelfNotes, cycleId)),
         "Saved. Your manager can read this.");
 
     private Task WriteManager(Guid cycleId) => Act(
         () => Service.WriteManagerAsync(
-            cycleId, EmployeeId, Me!.Value, ManagerNotes[cycleId], Bands[cycleId]),
+            cycleId, EmployeeId, Me!.Value, Typed(ManagerNotes, cycleId), Bands.GetValueOrDefault(cycleId)),
         "Saved, and still private.");
 
     private Task Share(Guid cycleId) => Act(
@@ -481,6 +496,10 @@ else
          */
         await LoadAsync();
     }
+
+    /// <summary>What has been typed against one cycle, or what is stored, or nothing.</summary>
+    private static string Typed(Dictionary<Guid, string> against, Guid cycleId) =>
+        against.GetValueOrDefault(cycleId, string.Empty);
 
     private static string Count(int many, string one, string more) =>
         $"{many} {(many == 1 ? one : more)}";

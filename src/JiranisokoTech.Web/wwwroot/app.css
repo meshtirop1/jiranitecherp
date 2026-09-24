@@ -1794,3 +1794,25 @@ code.key {
     border-radius: 3px;
     padding: 0 0.3rem;
 }
+
+/*
+ * A line of "what done looks like" that is already true, or has been struck out because it no
+ * longer applies.
+ *
+ * Both get the same treatment on purpose. What the reader is scanning for is what is left, and
+ * the difference between "done" and "does not apply" is carried by the sentence beside it rather
+ * than by a second visual state — three styles in one list is a list nobody reads at a glance.
+ *
+ * line-through rather than a lighter colour alone, because colour is the one thing a reader may
+ * not have: the crossed line says the same thing in a screenshot, in high contrast, and to
+ * somebody who cannot tell the two greys apart.
+ */
+.struck {
+    text-decoration: line-through;
+    color: var(--ink-quiet);
+}
+
+/* An input that sits inside a row of actions and should not take the whole line with it. */
+.narrow {
+    max-width: 16rem;
+}

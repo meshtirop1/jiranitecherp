@@ -234,6 +234,22 @@ public static class Permissions
     public const string TasksViewOwn = "tasks.view_own";
     public const string TasksCreate = "tasks.create";
     public const string TasksAssign = "tasks.assign";
+
+    /// <summary>
+    /// Plan the work: sprints, the backlog, what sits under what, what waits on what.
+    /// </summary>
+    /// <remarks>
+    /// Its own permission rather than tasks.create, because they are different acts by different
+    /// people. Raising a card is something everybody doing the work does; deciding what is in
+    /// this sprint, what the epics are and what has to happen before what is the thing somebody
+    /// runs the delivery with — and a system where anybody can move cards into the running
+    /// sprint has a sprint that means nothing by Wednesday.
+    ///
+    /// Reading the plan needs no permission of its own: the backlog and the sprint board are
+    /// behind tasks.view_all and tasks.view_own like every other view of the same work. A
+    /// separate read permission would be a second answer to "may this person see this card".
+    /// </remarks>
+    public const string PlanningManage = "planning.manage";
     public const string TasksUpdateOwn = "tasks.update_own";
     public const string TasksSubmit = "tasks.submit";
     public const string TasksReview = "tasks.review";
@@ -487,6 +503,7 @@ public static class Permissions
 
         ProjectsViewAll, ProjectsViewMember, ProjectsManage,
         TasksViewAll, TasksViewOwn, TasksCreate, TasksAssign, TasksUpdateOwn, TasksSubmit,
+        PlanningManage,
         TasksReview, TasksDeploy,
 
         ReposView, ReposManage, ReposDeliveries, ReleasesDeclare,
@@ -636,6 +653,10 @@ public static class Roles
                 Permissions.TasksViewAll, Permissions.TasksViewOwn, Permissions.TasksCreate,
                 Permissions.TasksAssign, Permissions.TasksReview, Permissions.TasksDeploy,
 
+                // A head plans what their part of the firm is doing: the sprint, the backlog,
+                // and the epics the work hangs off.
+                Permissions.PlanningManage,
+
                 // A head releases what the team finishes, and the evidence that
                 // it is finished is a merged pull request. Seeing the board
                 // without seeing that is being asked to sign for work on
@@ -701,6 +722,10 @@ public static class Roles
                 Permissions.ProjectsViewAll, Permissions.ProjectsManage,
                 Permissions.TasksViewAll, Permissions.TasksViewOwn, Permissions.TasksCreate,
                 Permissions.TasksAssign, Permissions.TasksReview,
+
+                // Running the board is what a delivery manager does. If anybody in this firm
+                // holds this one, it is them.
+                Permissions.PlanningManage,
                 Permissions.ReposView,
                 Permissions.ApprovalsDecide,
 

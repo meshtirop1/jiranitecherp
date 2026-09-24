@@ -67,6 +67,7 @@ public sealed class WorkQueries(AppDbContext database)
                 item.DueOn,
                 item.EstimateMinutes,
                 item.BlockedReason,
+                item.Kind,
             })
             .ToListAsync(cancellationToken);
 
@@ -90,7 +91,8 @@ public sealed class WorkQueries(AppDbContext database)
             row.AssigneeId is { } assignee ? people.GetValueOrDefault(assignee) : null,
             row.DueOn,
             row.EstimateMinutes,
-            row.BlockedReason)).ToList();
+            row.BlockedReason,
+            row.Kind)).ToList();
     }
 
     /// <summary>
@@ -232,8 +234,12 @@ public sealed record WorkItemRow(
     string? AssigneeName,
     DateOnly? DueOn,
     int? EstimateMinutes,
-    string? BlockedReason)
+    string? BlockedReason,
+    WorkItemKind Kind = WorkItemKind.Task)
 {
+    /// <summary>The kind, as somebody would say it.</summary>
+    public string Sized => WorkItem.Name(Kind);
+
     /// <summary>
     /// What a developer writes in a branch name.
     /// </summary>

@@ -68,12 +68,22 @@ public sealed class WorkItem : Entity, IAuditable
         [WorkItemStatus.Deployed] = [],
     };
 
+    private readonly List<WorkItemLabel> _labels = [];
+    private readonly List<WorkItemComment> _comments = [];
+    private readonly List<DoneWhen> _doneWhen = [];
+
     private WorkItem()
     {
         Title = string.Empty;
     }
 
-    private WorkItem(int number, string title, Guid raisedById, Guid? projectId, Priority priority)
+    private WorkItem(
+        int number,
+        string title,
+        Guid raisedById,
+        Guid? projectId,
+        Priority priority,
+        WorkItemKind kind)
     {
         Number = number > 0
             ? number
@@ -84,6 +94,7 @@ public sealed class WorkItem : Entity, IAuditable
         RaisedById = raisedById;
         ProjectId = projectId;
         Priority = priority;
+        Kind = kind;
         Status = WorkItemStatus.Todo;
 
         Raise(new WorkItemRaised(Id, Title, projectId, raisedById));
@@ -94,8 +105,9 @@ public sealed class WorkItem : Entity, IAuditable
         string title,
         Guid raisedById,
         Guid? projectId = null,
-        Priority priority = Priority.Normal) =>
-        new(number, title, raisedById, projectId, priority);
+        Priority priority = Priority.Normal,
+        WorkItemKind kind = WorkItemKind.Task) =>
+        new(number, title, raisedById, projectId, priority, kind);
 
     /// <summary>
     /// A short number somebody can type.
@@ -139,6 +151,67 @@ public sealed class WorkItem : Entity, IAuditable
     public Guid? AssigneeId { get; private set; }
 
     public WorkItemStatus Status { get; private set; }
+
+    /// <summary>
+    /// How big it is, which decides what may sit under it.
+    /// </summary>
+    /// <remarks>
+    /// Section 11's epics, features, stories and subtasks, as one table with a kind rather than
+    /// four tables — see <see cref="WorkItemKind"/> for why, and for the rule that makes the
+    /// words mean something.
+    /// </remarks>
+    public WorkItemKind Kind { get; private set; } = WorkItemKind.Task;
+
+    /// <summary>
+    /// The bigger piece of work this belongs to.
+    /// </summary>
+    /// <remarks>
+    /// One parent, and the shape is a tree rather than a graph. Work that genuinely belongs to
+    /// two epics is work somebody has not decided about yet, and letting it point at both means
+    /// every roll-up double-counts it.
+    /// </remarks>
+    public Guid? ParentId { get; private set; }
+
+    /// <summary>
+    /// The sprint this is in, or null for the backlog.
+    /// </summary>
+    /// <remarks>
+    /// The backlog is derived from this being null rather than kept as its own list. A second
+    /// list would need every item to be in exactly one of the two with nothing enforcing it, and
+    /// work would end up in both or in neither.
+    /// </remarks>
+    public Guid? SprintId { get; private set; }
+
+    /// <summary>
+    /// The words somebody put on it: "frontend", "needs-design", "kra".
+    /// </summary>
+    /// <remarks>
+    /// A copy, not the backing list — handing EF its own navigation property makes it treat
+    /// added rows as updates and then nothing saves and nothing complains.
+    /// </remarks>
+    public IReadOnlyList<WorkItemLabel> Labels =>
+        [.. _labels.OrderBy(one => one.Text, StringComparer.Ordinal)];
+
+    /// <summary>What has been said about it, oldest first, because it is a conversation.</summary>
+    public IReadOnlyList<WorkItemComment> Comments =>
+        [.. _comments.OrderBy(one => one.At).ThenBy(one => one.Id)];
+
+    /// <summary>
+    /// What has to be true before this is done.
+    /// </summary>
+    /// <remarks>
+    /// One list doing the work of section 11's "checklists" and "acceptance criteria", because
+    /// they are the same structure — a line of text and whether it is true yet — and two lists
+    /// produce two half-used lists with the real criteria spread across both.
+    ///
+    /// The difference people describe between them is who writes them and when, and that is a
+    /// habit rather than a shape. What matters is that the board cannot call something done while
+    /// a line on this list is still false, which <see cref="Done"/> refuses.
+    /// </remarks>
+    public IReadOnlyList<DoneWhen> DoneWhen =>
+        [.. _doneWhen.OrderBy(one => one.Order).ThenBy(one => one.Id)];
+
+    public bool HasUnmetCriteria => _doneWhen.Any(one => !one.IsMet);
 
     public Priority Priority { get; private set; }
 
@@ -223,6 +296,27 @@ public sealed class WorkItem : Entity, IAuditable
                         " Deployed work stays deployed; a change to something released is new work.",
                     _ => string.Empty,
                 });
+        }
+
+        /*
+         * Done means the list of what done looks like is true. Without this the list is a
+         * decoration somebody fills in and nobody reads, and the board can say a card is
+         * finished while the criteria written on it are plainly not met — which is the specific
+         * lie section 11's acceptance criteria exist to prevent.
+         *
+         * A line that has turned out not to apply is struck out with a reason rather than
+         * ticked, so this refusal does not force anybody to claim something untrue in order to
+         * close a card.
+         */
+        if (status == WorkItemStatus.Done && HasUnmetCriteria)
+        {
+            var left = _doneWhen.Count(one => !one.IsMet);
+
+            throw new InvalidOperationException(
+                $"{(left == 1 ? "One line of" : $"{left} lines of")} what done looks like "
+                + $"{(left == 1 ? "is" : "are")} not true yet. Tick "
+                + $"{(left == 1 ? "it" : "them")}, or strike out what no longer applies and say "
+                + "why.");
         }
 
         if (status == WorkItemStatus.Blocked && string.IsNullOrWhiteSpace(because))
@@ -332,8 +426,174 @@ public sealed class WorkItem : Entity, IAuditable
         EstimateMinutes = minutes;
     }
 
+    /// <summary>
+    /// Say how big it is.
+    /// </summary>
+    /// <remarks>
+    /// Kept on the aggregate although the rule about parents needs two rows. What this can check
+    /// is that something with a parent does not become bigger than it, which is the mistake
+    /// somebody actually makes: promoting a task to an epic while it still sits under a story.
+    /// </remarks>
+    public void IsA(WorkItemKind kind, WorkItemKind? parentKind)
+    {
+        if (ParentId is not null && parentKind is { } above && kind <= above)
+        {
+            throw new InvalidOperationException(
+                $"A {Name(kind)} cannot sit under a {Name(above)}. Take it out of its parent "
+                + "first, or make it something smaller.");
+        }
+
+        Kind = kind;
+    }
+
+    /// <summary>
+    /// Put it under a bigger piece of work, or take it out.
+    /// </summary>
+    /// <remarks>
+    /// The parent's kind is passed in because this aggregate cannot read another row, and the
+    /// check has to happen somewhere that knows both: a hierarchy where an epic can sit under a
+    /// subtask is one where the words have stopped meaning anything.
+    ///
+    /// Whether the parent is really an ancestor — the loop check — is the service's, because it
+    /// has to walk.
+    /// </remarks>
+    public void Under(Guid? parentId, WorkItemKind? parentKind)
+    {
+        if (parentId == Id)
+        {
+            throw new InvalidOperationException("A piece of work cannot sit under itself.");
+        }
+
+        if (parentId is not null && parentKind is { } above && Kind <= above)
+        {
+            throw new InvalidOperationException(
+                $"A {Name(Kind)} cannot sit under a {Name(above)}. A parent has to be bigger "
+                + "than what is under it, or the words stop describing the shape of the work.");
+        }
+
+        ParentId = parentId;
+    }
+
+    /// <summary>Put it in a sprint, or back on the backlog.</summary>
+    public void In(Guid? sprintId) => SprintId = sprintId;
+
+    /// <summary>
+    /// Put a word on it.
+    /// </summary>
+    /// <remarks>
+    /// Idempotent after reduction, so "Frontend" on something already tagged "frontend" changes
+    /// nothing rather than producing a second row that no filter will ever match twice.
+    /// </remarks>
+    public void Label(string text)
+    {
+        var reduced = Slug.From(text).Value;
+
+        if (_labels.Any(one => one.Text == reduced))
+        {
+            return;
+        }
+
+        if (_labels.Count >= 12)
+        {
+            throw new InvalidOperationException(
+                "Twelve labels is enough. Past that they are not describing the work any more, "
+                + "and a board where everything is tagged is a board where nothing is.");
+        }
+
+        _labels.Add(new WorkItemLabel(reduced));
+    }
+
+    public void Unlabel(string text)
+    {
+        var reduced = Slug.From(text).Value;
+
+        _labels.RemoveAll(one => one.Text == reduced);
+    }
+
+    public bool Tagged(string text) => _labels.Any(one => one.Text == Slug.From(text).Value);
+
+    public WorkItemComment Say(Guid byEmployeeId, string body, DateTimeOffset at)
+    {
+        var comment = new WorkItemComment(byEmployeeId, body, at);
+
+        _comments.Add(comment);
+
+        return comment;
+    }
+
+    public void Reword(Guid commentId, Guid byEmployeeId, string body, DateTimeOffset at) =>
+        (_comments.FirstOrDefault(one => one.Id == commentId)
+            ?? throw new InvalidOperationException("That comment is not on this work."))
+        .Reword(byEmployeeId, body, at);
+
+    /// <summary>Add a line to what done looks like.</summary>
+    public DoneWhen Needs(string text)
+    {
+        var line = new DoneWhen(text, _doneWhen.Count);
+
+        _doneWhen.Add(line);
+
+        return line;
+    }
+
+    public void Met(Guid lineId, Guid byEmployeeId, DateTimeOffset at) =>
+        RequiredLine(lineId).Met(byEmployeeId, at);
+
+    public void NotMet(Guid lineId) => RequiredLine(lineId).NotMet();
+
+    public void DropLine(Guid lineId, string because) => RequiredLine(lineId).Drop(because);
+
+    /// <summary>
+    /// Take a line off the list entirely.
+    /// </summary>
+    /// <remarks>
+    /// For the one typed twice or typed wrong, which is a different thing from one that turned
+    /// out not to apply — that is struck out with a reason and stays, because the fact that it
+    /// was once expected is part of what the card records.
+    /// </remarks>
+    public void RemoveLine(Guid lineId)
+    {
+        if (RequiredLine(lineId).IsTicked)
+        {
+            throw new InvalidOperationException(
+                "That line has been ticked. Untick it first if it was wrong — removing something "
+                + "somebody said was true loses the fact that they said so.");
+        }
+
+        _doneWhen.RemoveAll(one => one.Id == lineId);
+    }
+
     /// <summary>Nothing here is a secret.</summary>
     public static IReadOnlySet<string> AuditExcludes { get; } = new HashSet<string>();
+
+    /// <summary>
+    /// The kind, as somebody would say it in a sentence.
+    /// </summary>
+    /// <remarks>
+    /// Every arm written out, and an unknown value throws rather than falling into the last one.
+    /// The first version ended with <c>_ => "subtask"</c>, and that default arm is how ten
+    /// existing cards came to be labelled subtasks the hour this shipped: the migration gave the
+    /// new column EF's default of zero, which is not a value this enum has, and the switch
+    /// quietly answered anyway.
+    ///
+    /// The same reasoning the document permissions switch already uses, arrived at the same way —
+    /// by a screen being wrong. A switch that cannot answer should say so, because the alternative
+    /// is a plausible answer nobody checks.
+    /// </remarks>
+    public static string Name(WorkItemKind kind) => kind switch
+    {
+        WorkItemKind.Epic => "epic",
+        WorkItemKind.Feature => "feature",
+        WorkItemKind.Story => "story",
+        WorkItemKind.Task => "task",
+        WorkItemKind.Subtask => "subtask",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(kind), kind, "Nothing has decided what this kind of work is called."),
+    };
+
+    private DoneWhen RequiredLine(Guid lineId) =>
+        _doneWhen.FirstOrDefault(one => one.Id == lineId)
+        ?? throw new InvalidOperationException("That line is not on this work.");
 
     private static string Describe(WorkItemStatus status) => status switch
     {

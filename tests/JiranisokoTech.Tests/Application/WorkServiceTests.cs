@@ -24,7 +24,11 @@ public class WorkServiceTests
         public PeopleService People => new(new PeopleRepository(_context), new AssetRepository(_context), db.Clock);
 
         public WorkService Work =>
-            new(new WorkRepository(_context), new PeopleRepository(_context), db.Clock);
+            new(
+                new WorkRepository(_context),
+                new PeopleRepository(_context),
+                new PlanningRepository(_context),
+                db.Clock);
 
         public ValueTask DisposeAsync() => _context.DisposeAsync();
     }

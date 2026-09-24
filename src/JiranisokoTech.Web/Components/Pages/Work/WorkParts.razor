@@ -1,0 +1,685 @@
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Work
+@using JiranisokoTech.Domain.Work
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@inject WorkService Service
+@inject PlanningService Planning
+@inject PeopleQueries People
+
+@*
+    Section 11's second row, as an interactive child of a statically rendered page.
+
+    Labels, dependencies, comments and what done looks like all need a field inside a row — a
+    tick beside one criterion, a word beside one label — and a per-row form with fields in it
+    cannot bind under static rendering: the model is matched by one exact form name and a row has
+    an id in it. That has cost this codebase six separate faults, and the fix each time was to
+    make the part that needs inputs an interactive child. This is that child, written that way
+    from the start.
+*@
+
+<section class="standing">
+    <h2>What done looks like</h2>
+
+    @*
+        One list doing the work of section 11's "checklists" and "acceptance criteria", because
+        they are the same structure — a line and whether it is true yet — and two lists produce
+        two half-used ones with the real criteria spread across both.
+    *@
+    @if (Item is null)
+    {
+        <p class="empty">Reading.</p>
+    }
+    else
+    {
+        @if (Refusal is not null)
+        {
+            <p class="refusal" role="alert">@Refusal</p>
+        }
+
+        @if (Done is not null)
+        {
+            <p class="done" role="status">@Done</p>
+        }
+
+        @if (Item.DoneWhen.Count == 0)
+        {
+            <p class="empty">
+                Nothing written down. Until something is, this card can be called done by
+                anybody, at any time, for any reason.
+            </p>
+        }
+        else
+        {
+            <ul class="plain">
+                @foreach (var line in Item.DoneWhen)
+                {
+                    <li>
+                        <label class="inline">
+                            <input type="checkbox" checked="@line.IsTicked"
+                                   disabled="@(!MayWrite || line.DroppedBecause is not null)"
+                                   @onchange="args => Tick(line.Id, args)" />
+                            <span class="@(line.IsMet ? "struck" : null)">@line.Text</span>
+                        </label>
+
+                        @if (line.DroppedBecause is { } why)
+                        {
+                            <span class="subtle">no longer applies: @why</span>
+                        }
+
+                        @if (MayWrite && !line.IsTicked)
+                        {
+                            <span class="row-actions">
+                                @if (line.DroppedBecause is null)
+                                {
+                                    @*
+                                        Read through a helper rather than @@bind to the
+                                        dictionary. A Dictionary indexer throws on a key that is
+                                        not there, and the read happens on the first render —
+                                        before anybody has typed anything — so binding straight
+                                        to it took the whole card down with a
+                                        KeyNotFoundException the moment a line existed. Found by
+                                        opening the page; no test touched it, because page tests
+                                        cannot press an interactive component.
+                                    *@
+                                    <input class="narrow" value="@Reason(line.Id)"
+                                           @onchange="args => Because[line.Id] =
+                                               args.Value?.ToString() ?? string.Empty"
+                                           placeholder="why it no longer applies" />
+                                    <button type="button" class="button--quiet"
+                                            @onclick="() => Drop(line.Id)">
+                                        Strike it out
+                                    </button>
+                                }
+                                <button type="button" class="button--quiet"
+                                        @onclick="() => Remove(line.Id)">
+                                    Remove
+                                </button>
+                            </span>
+                        }
+                    </li>
+                }
+            </ul>
+
+            <p class="subtle">
+                This card cannot be moved to done while a line here is still false. A line that
+                has turned out not to apply is struck out with a reason rather than ticked, so
+                nothing here forces anybody to claim something untrue in order to close it.
+            </p>
+        }
+
+        @if (MayWrite)
+        {
+            <div class="fields">
+                <label>
+                    <span>Add a line</span>
+                    <input @bind="Criterion"
+                           placeholder="The rota is written down and somebody else has run it" />
+                </label>
+            </div>
+
+            <div class="row-actions">
+                <button type="button" @onclick="AddCriterion">Add it</button>
+            </div>
+        }
+    }
+</section>
+
+@if (Item is not null)
+{
+    <section class="standing">
+        <h2>Where it sits</h2>
+
+        @*
+            Section 11's epics, features, stories and subtasks — one table with a kind rather
+            than four tables, because they are the same thing at four sizes. The rule that makes
+            the words mean anything is that a parent has to be bigger than what is under it.
+        *@
+        <dl class="facts">
+            <dt>Kind</dt>
+            <dd>@WorkItem.Name(Item.Kind)</dd>
+
+            <dt>Under</dt>
+            <dd>
+                @if (Parent is { } parent)
+                {
+                    <a href="/work/@parent.Id">@parent.Reference</a>
+                    <span class="subtle">@parent.Title</span>
+                    <span class="pill pill--quiet">@WorkItem.Name(parent.Kind)</span>
+                }
+                else
+                {
+                    <span class="subtle">Nothing. It is a piece of work in its own right.</span>
+                }
+            </dd>
+
+            <dt>Sprint</dt>
+            <dd>
+                @if (Sprint is { } sprint)
+                {
+                    <a href="/planning">@sprint.Name</a>
+                    @if (sprint.IsRunning)
+                    {
+                        <span class="pill pill--done">running</span>
+                    }
+                }
+                else
+                {
+                    <span class="subtle">On the backlog</span>
+                }
+            </dd>
+        </dl>
+
+        @if (Children.Count > 0)
+        {
+            <p class="subtle">Under this:</p>
+            <ul class="plain">
+                @foreach (var child in Children)
+                {
+                    <li>
+                        <a href="/work/@child.Id">@child.Reference</a>
+                        <span class="subtle">@child.Title</span>
+                        <span class="pill pill--quiet">@WorkItem.Name(child.Kind)</span>
+                        @if (!child.IsOpen)
+                        {
+                            <span class="pill pill--done">@Said(child.Status)</span>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+
+        @if (MayPlan)
+        {
+            <div class="fields">
+                <label>
+                    <span>Kind</span>
+                    <select @bind="Kind">
+                        @foreach (var kind in Kinds)
+                        {
+                            <option value="@kind">@WorkItem.Name(kind)</option>
+                        }
+                    </select>
+                </label>
+
+                <label>
+                    <span>Sits under</span>
+                    <input type="number" @bind="ParentNumber" placeholder="412" />
+                    <span class="subtle">
+                        The number of the bigger piece of work. Leave it empty to take this out
+                        of whatever it is under.
+                    </span>
+                </label>
+            </div>
+
+            <div class="row-actions">
+                <button type="button" @onclick="SaveKind">Save the kind</button>
+                <button type="button" class="button--quiet" @onclick="SaveParent">
+                    Save where it sits
+                </button>
+            </div>
+        }
+    </section>
+
+    <section class="standing">
+        <h2>Labels</h2>
+
+        @if (Item.Labels.Count == 0)
+        {
+            <p class="empty">None.</p>
+        }
+        else
+        {
+            <p class="subtle">
+                @foreach (var label in Item.Labels)
+                {
+                    <span class="pill pill--quiet">@label.Text</span>
+                }
+            </p>
+        }
+
+        @if (MayWrite)
+        {
+            <div class="fields">
+                <label>
+                    <span>Add one</span>
+                    <input @bind="NewLabel" placeholder="frontend" />
+                    <span class="subtle">
+                        Reduced to a short form on the way in, so "Frontend" and "frontend" are
+                        one label rather than two that no filter can match together.
+                    </span>
+                </label>
+
+                <label>
+                    <span>Take one off</span>
+                    <select @bind="DropLabel">
+                        <option value="">Choose one</option>
+                        @foreach (var label in Item.Labels)
+                        {
+                            <option value="@label.Text">@label.Text</option>
+                        }
+                    </select>
+                </label>
+            </div>
+
+            <div class="row-actions">
+                <button type="button" @onclick="AddLabel">Add the label</button>
+                <button type="button" class="button--quiet" @onclick="RemoveLabel">
+                    Take it off
+                </button>
+            </div>
+        }
+    </section>
+
+    <section class="standing">
+        <h2>Waiting on, and holding up</h2>
+
+        <p class="instructions">
+            A dependency is a fact about a pair: the first has to finish before the second can.
+            Nothing here is done while something it waits on is not — that is what the
+            dependency means, and a board that let the waiting card finish first would be
+            recording an order of events that did not happen.
+        </p>
+
+        @if (WaitingOn.Count == 0)
+        {
+            <p class="empty">Waiting on nothing.</p>
+        }
+        else
+        {
+            <ul class="plain">
+                @foreach (var blocker in WaitingOn)
+                {
+                    <li>
+                        <a href="/work/@blocker.Id">@blocker.Reference</a>
+                        <span class="subtle">@blocker.Title</span>
+                        <span class="pill pill--wait">@Said(blocker.Status)</span>
+
+                        @if (MayPlan)
+                        {
+                            <button type="button" class="button--quiet"
+                                    @onclick="() => Unblock(blocker.Id, Item.Id)">
+                                No longer waiting
+                            </button>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+
+        @if (HoldingUp.Count > 0)
+        {
+            <p class="subtle">Holding up:</p>
+            <ul class="plain">
+                @foreach (var blocked in HoldingUp)
+                {
+                    <li>
+                        <a href="/work/@blocked.Id">@blocked.Reference</a>
+                        <span class="subtle">@blocked.Title</span>
+
+                        @if (MayPlan)
+                        {
+                            <button type="button" class="button--quiet"
+                                    @onclick="() => Unblock(Item.Id, blocked.Id)">
+                                No longer blocking
+                            </button>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+
+        @if (MayPlan)
+        {
+            <div class="fields">
+                <label>
+                    <span>This waits on</span>
+                    <input type="number" @bind="WaitsOnNumber" placeholder="412" />
+                    <span class="subtle">The number of the work that has to finish first.</span>
+                </label>
+            </div>
+
+            <div class="row-actions">
+                <button type="button" @onclick="AddBlocker">Record it</button>
+            </div>
+        }
+    </section>
+
+    <section class="standing">
+        <h2>Comments</h2>
+
+        @if (Item.Comments.Count == 0)
+        {
+            <p class="empty">Nothing said yet.</p>
+        }
+        else
+        {
+            @foreach (var comment in Item.Comments)
+            {
+                <article class="entry">
+                    <p class="subtle">
+                        @Who(comment.ByEmployeeId)
+                        <span class="subtle">
+                            @comment.At.ToLocalTime().ToString("d MMM yyyy, HH:mm")
+                        </span>
+                        @if (comment.WasEdited)
+                        {
+                            @*
+                                Marked, so that a reply which no longer makes sense can be
+                                explained rather than looking like nonsense.
+                            *@
+                            <span class="pill pill--quiet">edited</span>
+                        }
+                    </p>
+
+                    @if (Editing == comment.Id)
+                    {
+                        <label class="stack">
+                            <span>Your words</span>
+                            <textarea rows="3" @bind="EditBody"></textarea>
+                        </label>
+
+                        <div class="row-actions">
+                            <button type="button" @onclick="() => SaveEdit(comment.Id)">
+                                Save it
+                            </button>
+                            <button type="button" class="button--quiet" @onclick="StopEditing">
+                                Leave it
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="as-typed">@comment.Body</p>
+
+                        @if (Me == comment.ByEmployeeId)
+                        {
+                            <div class="row-actions">
+                                <button type="button" class="button--quiet"
+                                        @onclick="() => StartEditing(comment.Id, comment.Body)">
+                                    Edit
+                                </button>
+                            </div>
+                        }
+                    }
+                </article>
+            }
+
+            <p class="subtle">
+                Nothing here is deletable, and only whoever wrote a comment can change it. A
+                thread somebody can tidy is one nobody can rely on — the awkward question is
+                always the one that disappears.
+            </p>
+        }
+
+        @if (Me is not null)
+        {
+            <label class="stack">
+                <span>Say something</span>
+                <textarea rows="3" @bind="Comment"></textarea>
+            </label>
+
+            <div class="row-actions">
+                <button type="button" @onclick="AddComment">Add it</button>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private static readonly WorkItemKind[] Kinds =
+    [
+        WorkItemKind.Epic,
+        WorkItemKind.Feature,
+        WorkItemKind.Story,
+        WorkItemKind.Task,
+        WorkItemKind.Subtask,
+    ];
+
+    [Parameter]
+    [EditorRequired]
+    public Guid WorkItemId { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    [Inject]
+    private IWorkRepository Work { get; set; } = default!;
+
+    private WorkItem? Item { get; set; }
+
+    private Guid? Me { get; set; }
+
+    private bool MayWrite { get; set; }
+
+    private bool MayPlan { get; set; }
+
+    private List<WorkItem> WaitingOn { get; set; } = [];
+
+    private List<WorkItem> HoldingUp { get; set; } = [];
+
+    private List<WorkItem> Children { get; set; } = [];
+
+    private WorkItem? Parent { get; set; }
+
+    private Sprint? Sprint { get; set; }
+
+    private WorkItemKind Kind { get; set; } = WorkItemKind.Task;
+
+    private int? ParentNumber { get; set; }
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private Dictionary<Guid, string> Because { get; set; } = [];
+
+    private string Criterion { get; set; } = string.Empty;
+
+    private string NewLabel { get; set; } = string.Empty;
+
+    private string DropLabel { get; set; } = string.Empty;
+
+    private int? WaitsOnNumber { get; set; }
+
+    private string Comment { get; set; } = string.Empty;
+
+    private Guid? Editing { get; set; }
+
+    private string EditBody { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthenticationState).User;
+        var held = user.FindAll(PermissionClaim.Type).Select(claim => claim.Value).ToHashSet();
+
+        Me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        Item = await Work.FindAsync(WorkItemId);
+
+        /*
+         * Writing the criteria and the labels goes with being able to change the work, which is
+         * what tasks.update_own and tasks.create already mean. Recording a dependency is a
+         * planning decision and sits behind planning.manage — one is describing a card and the
+         * other is deciding the order the firm does things in.
+         */
+        MayWrite = held.Contains(Permissions.TasksUpdateOwn)
+            || held.Contains(Permissions.TasksCreate);
+        MayPlan = held.Contains(Permissions.PlanningManage);
+
+        Names = await People.NamesAsync();
+        WaitingOn = await Planning.WaitingOnAsync(WorkItemId);
+        HoldingUp = await Planning.HoldingUpAsync(WorkItemId);
+        Children = await Planning.ChildrenOfAsync(WorkItemId);
+
+        if (Item is null)
+        {
+            return;
+        }
+
+        Kind = Item.Kind;
+        Parent = Item.ParentId is { } parent ? await Work.FindAsync(parent) : null;
+        Sprint = Item.SprintId is { } sprint ? await Planning.SprintAsync(sprint) : null;
+        ParentNumber = Parent?.Number;
+    }
+
+    private Task SaveKind() => Act(
+        () => Planning.KindAsync(WorkItemId, Kind), "Saved.");
+
+    /// <summary>
+    /// Put it under another piece of work, by that work's number.
+    /// </summary>
+    /// <remarks>
+    /// By number rather than from a picker, because a picker over every card in the system is a
+    /// list nobody can find anything in — and the number is what people already say to each
+    /// other about work here.
+    /// </remarks>
+    private Task SaveParent() => Act(
+        async () =>
+        {
+            if (ParentNumber is not { } number)
+            {
+                await Planning.ParentAsync(WorkItemId, null);
+
+                return;
+            }
+
+            var parent = await Work.ByNumberAsync(number)
+                ?? throw new InvalidOperationException($"There is no work numbered {number}.");
+
+            await Planning.ParentAsync(WorkItemId, parent.Id);
+        },
+        "Saved.");
+
+    private Task AddCriterion() => Act(
+        async () =>
+        {
+            await Service.NeedsAsync(WorkItemId, Criterion);
+
+            Criterion = string.Empty;
+        },
+        "Added.");
+
+    private Task Tick(Guid lineId, ChangeEventArgs args) => Act(
+        () => Service.MetAsync(WorkItemId, lineId, Me!.Value, args.Value is true),
+        args.Value is true ? "Ticked." : "Unticked.");
+
+    private Task Drop(Guid lineId) => Act(
+        () => Service.DropLineAsync(
+            WorkItemId, lineId, Because.GetValueOrDefault(lineId, string.Empty)),
+        "Struck out. It stays on the card, because it was once expected.");
+
+    private Task Remove(Guid lineId) => Act(
+        () => Service.RemoveLineAsync(WorkItemId, lineId), "Removed.");
+
+    private Task AddLabel() => Act(
+        async () =>
+        {
+            await Service.LabelAsync(WorkItemId, NewLabel);
+
+            NewLabel = string.Empty;
+        },
+        "Labelled.");
+
+    private Task RemoveLabel() => Act(
+        async () =>
+        {
+            if (string.IsNullOrWhiteSpace(DropLabel))
+            {
+                throw new ArgumentException("Choose a label to take off.");
+            }
+
+            await Service.UnlabelAsync(WorkItemId, DropLabel);
+
+            DropLabel = string.Empty;
+        },
+        "Taken off.");
+
+    private Task AddBlocker() => Act(
+        async () =>
+        {
+            if (WaitsOnNumber is not { } number)
+            {
+                throw new ArgumentException("Say which piece of work this waits on.");
+            }
+
+            var blocker = await Work.ByNumberAsync(number)
+                ?? throw new InvalidOperationException($"There is no work numbered {number}.");
+
+            await Planning.BlocksAsync(blocker.Id, WorkItemId);
+
+            WaitsOnNumber = null;
+        },
+        "Recorded.");
+
+    private Task Unblock(Guid blockerId, Guid blockedId) => Act(
+        () => Planning.UnblockAsync(blockerId, blockedId), "Dropped.");
+
+    private Task AddComment() => Act(
+        async () =>
+        {
+            await Service.CommentAsync(WorkItemId, Me!.Value, Comment);
+
+            Comment = string.Empty;
+        },
+        "Added.");
+
+    private void StartEditing(Guid commentId, string body)
+    {
+        Editing = commentId;
+        EditBody = body;
+    }
+
+    private void StopEditing() => Editing = null;
+
+    private Task SaveEdit(Guid commentId) => Act(
+        async () =>
+        {
+            await Service.RewordAsync(WorkItemId, commentId, Me!.Value, EditBody);
+
+            Editing = null;
+        },
+        "Saved, and marked as edited.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    /// <summary>Whatever has been typed against one line, or nothing.</summary>
+    private string Reason(Guid lineId) => Because.GetValueOrDefault(lineId, string.Empty);
+
+    private string Who(Guid employeeId) =>
+        Names.GetValueOrDefault(employeeId) ?? "Somebody no longer on the staff list";
+
+    private static string Said(WorkItemStatus status) => status switch
+    {
+        WorkItemStatus.Todo => "to do",
+        WorkItemStatus.InProgress => "in progress",
+        WorkItemStatus.InReview => "in review",
+        WorkItemStatus.Blocked => "blocked",
+        _ => status.ToString().ToLowerInvariant(),
+    };
+}

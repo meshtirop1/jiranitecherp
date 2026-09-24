@@ -37,7 +37,11 @@ public class BusinessRuleTests
         public PeopleService People => new(new PeopleRepository(_context), new AssetRepository(_context), db.Clock);
 
         public WorkService Work =>
-            new(new WorkRepository(_context), new PeopleRepository(_context), db.Clock);
+            new(
+                new WorkRepository(_context),
+                new PeopleRepository(_context),
+                new PlanningRepository(_context),
+                db.Clock);
 
         public RecruitmentService Recruitment => new(
             new RecruitmentRepository(_context),

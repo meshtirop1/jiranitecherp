@@ -239,6 +239,10 @@ public static class ServiceCollectionExtensions
             TellTheRequisitionWhatWasDecided>();
 
         services.AddScoped<IWorkRepository, WorkRepository>();
+
+        services.AddScoped<IPlanningRepository, Work.PlanningRepository>();
+
+        services.AddScoped<PlanningService>();
         services.AddScoped<WorkService>();
         services.AddScoped<WorkQueries>();
         services.AddScoped<BusinessQueries>();

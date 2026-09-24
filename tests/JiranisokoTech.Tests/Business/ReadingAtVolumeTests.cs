@@ -229,7 +229,10 @@ public class ReadingAtVolumeTests
         var engineer = await module.People.HireAsync("Grace Wanjiru", new DateOnly(2026, 1, 5));
 
         var work = new WorkService(
-            new WorkRepository(db.NewContext()), new PeopleRepository(db.NewContext()), db.Clock);
+            new WorkRepository(db.NewContext()),
+            new PeopleRepository(db.NewContext()),
+            new PlanningRepository(db.NewContext()),
+            db.Clock);
 
         var first = await work.RaiseAsync("Fit the tracker", engineer.Id);
         await work.RaiseAsync("Wire the depot", engineer.Id);
@@ -252,7 +255,10 @@ public class ReadingAtVolumeTests
         var engineer = await module.People.HireAsync("Grace Wanjiru", new DateOnly(2026, 1, 5));
 
         var work = new WorkService(
-            new WorkRepository(db.NewContext()), new PeopleRepository(db.NewContext()), db.Clock);
+            new WorkRepository(db.NewContext()),
+            new PeopleRepository(db.NewContext()),
+            new PlanningRepository(db.NewContext()),
+            db.Clock);
 
         for (var raised = 0; raised < 5; raised++)
         {

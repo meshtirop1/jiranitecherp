@@ -256,6 +256,18 @@ public class AppDbContext(
 
     public DbSet<WorkItem> WorkItems => Set<WorkItem>();
 
+    /// <summary>
+    /// The sprints. The backlog is not a set: it is the work with no sprint.
+    /// </summary>
+    /// <remarks>
+    /// A second table for the backlog would need every item to be in exactly one of the two with
+    /// nothing enforcing it, and work would end up in both or in neither.
+    /// </remarks>
+    public DbSet<Sprint> Sprints => Set<Sprint>();
+
+    /// <summary>Which work has to finish before which other work can.</summary>
+    public DbSet<WorkItemLink> WorkItemLinks => Set<WorkItemLink>();
+
     public DbSet<Domain.Engineering.Repository> Repositories =>
         Set<Domain.Engineering.Repository>();
 

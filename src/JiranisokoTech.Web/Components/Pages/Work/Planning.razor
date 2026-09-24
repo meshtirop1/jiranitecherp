@@ -1,0 +1,534 @@
+@page "/planning"
+@rendermode InteractiveServer
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Work
+@using JiranisokoTech.Domain.Work
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.TasksViewAll)]
+@inject PlanningService Service
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    Sprints and the backlog.
+
+    Section 11. The backlog is not a table: it is the work in no sprint. A second table would
+    need every item to be in exactly one of the two with nothing enforcing it, and work would end
+    up in both or in neither.
+
+    Reading the plan is behind tasks.view_all, like every other view of the same work; changing
+    it is behind planning.manage, because deciding what is in this sprint is a different act from
+    raising a card.
+*@
+
+<PageTitle>Planning — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Planning</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Done is not null)
+{
+    <p class="done" role="status">@Done</p>
+}
+
+<section class="standing">
+    <h2>@(Running is null ? "No sprint is running" : Running.Name)</h2>
+
+    @if (Running is null)
+    {
+        <p class="empty">
+            Nothing is running. One sprint runs at a time, so that "the current sprint" is a
+            phrase with an answer.
+        </p>
+    }
+    else
+    {
+        <p class="subtle">
+            @(Running.Goal ?? "No goal was written down, so this sprint can only be counted.")
+        </p>
+
+        <p class="subtle">
+            @Running.Starts.ToString("d MMM") to @Running.Ends.ToString("d MMM yyyy")
+            <span class="subtle">@Left</span>
+        </p>
+
+        @if (InSprint.Count == 0)
+        {
+            <p class="empty">Nothing is in it.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Work in the running sprint</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">What</th>
+                        <th scope="col">Kind</th>
+                        <th scope="col">State</th>
+                        <th scope="col">Done when</th>
+                        <AuthorizeView Policy="@Managing" Context="mayPlan">
+                            <th scope="col"><span class="visually-hidden">Actions</span></th>
+                        </AuthorizeView>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in InSprint)
+                    {
+                        <tr class="@(item.IsOpen ? null : "row--closed")">
+                            <td>
+                                <a href="/work/@item.Id">@item.Reference</a>
+                                <span class="subtle">@item.Title</span>
+                                @foreach (var label in item.Labels)
+                                {
+                                    <span class="pill pill--quiet">@label.Text</span>
+                                }
+                            </td>
+                            <td>@WorkItem.Name(item.Kind)</td>
+                            <td><span class="pill @PillFor(item.Status)">@Said(item.Status)</span></td>
+                            <td>@Criteria(item)</td>
+                            <AuthorizeView Policy="@Managing" Context="mayPlan">
+                                <td class="row-actions">
+                                    <button type="button" class="button--quiet"
+                                            @onclick="() => Schedule(item.Id, null)">
+                                        Back to the backlog
+                                    </button>
+                                </td>
+                            </AuthorizeView>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        <AuthorizeView Policy="@Managing" Context="mayPlan">
+            <div class="row-actions">
+                <button type="button" class="danger" @onclick="() => Finish(Running.Id)">
+                    Finish the sprint
+                </button>
+            </div>
+
+            <p class="subtle">
+                Whatever is unfinished goes back to the backlog and the count is recorded on the
+                sprint. Not carried into the next one: a sprint that fills up before anybody has
+                decided what is in it is one nobody chose, and the decision to do a thing next is
+                one somebody should make rather than inherit.
+            </p>
+        </AuthorizeView>
+    }
+</section>
+
+<section class="standing">
+    <h2>Backlog</h2>
+
+    <p class="instructions">
+        Everything not in a sprint and not finished. Biggest first, so an epic reads as a heading
+        and the pieces of it are not scattered through the list by priority.
+    </p>
+
+    @if (Backlog.Count == 0)
+    {
+        <p class="empty">The backlog is empty.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">The backlog</caption>
+            <thead>
+                <tr>
+                    <th scope="col">What</th>
+                    <th scope="col">Kind</th>
+                    <th scope="col">Priority</th>
+                    <th scope="col">Done when</th>
+                    <AuthorizeView Policy="@Managing" Context="mayPlan">
+                        <th scope="col"><span class="visually-hidden">Actions</span></th>
+                    </AuthorizeView>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in Backlog)
+                {
+                    <tr>
+                        <td>
+                            <a href="/work/@item.Id">@item.Reference</a>
+                            <span class="subtle">@item.Title</span>
+                            @foreach (var label in item.Labels)
+                            {
+                                <span class="pill pill--quiet">@label.Text</span>
+                            }
+                        </td>
+                        <td>@WorkItem.Name(item.Kind)</td>
+                        <td>@item.Priority</td>
+                        <td>@Criteria(item)</td>
+                        <AuthorizeView Policy="@Managing" Context="mayPlan">
+                            <td class="row-actions">
+                                <select @bind="MoveTo">
+                                    <option value="">Into…</option>
+                                    @foreach (var sprint in Sprints.Where(one => one.Accepts))
+                                    {
+                                        <option value="@sprint.Id">@sprint.Name</option>
+                                    }
+                                </select>
+                                <button type="button" class="button--quiet"
+                                        @onclick="() => Schedule(item.Id, MoveTo)">
+                                    Put it in
+                                </button>
+                            </td>
+                        </AuthorizeView>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+<AuthorizeView Policy="@Managing" Context="mayPlan">
+    <section class="standing">
+        <h2>Sprints</h2>
+
+        @if (Sprints.Count == 0)
+        {
+            <p class="empty">None yet.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Every sprint</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Runs</th>
+                        <th scope="col">State</th>
+                        <th scope="col">Carried over</th>
+                        <th scope="col"><span class="visually-hidden">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var sprint in Sprints)
+                    {
+                        <tr class="@(sprint.IsOver ? "row--closed" : null)">
+                            <td>
+                                @sprint.Name
+                                @if (sprint.Goal is { } goal)
+                                {
+                                    <span class="subtle">@goal</span>
+                                }
+                            </td>
+                            <td>
+                                @sprint.Starts.ToString("d MMM")
+                                <span class="subtle">
+                                    to @sprint.Ends.ToString("d MMM yyyy")
+                                </span>
+                            </td>
+                            <td>
+                                <span class="pill @SprintPill(sprint.State)">
+                                    @SprintSaid(sprint.State)
+                                </span>
+                            </td>
+                            @*
+                                Recorded when it finished rather than counted now: counting open
+                                items later gives a different answer every time somebody finishes
+                                one, which would quietly improve the history of every sprint the
+                                firm has ever run.
+                            *@
+                            <td>
+                                @if (sprint.CarriedOver is { } carried)
+                                {
+                                    @carried
+                                }
+                                else
+                                {
+                                    <span class="subtle">—</span>
+                                }
+                            </td>
+                            <td class="row-actions">
+                                @if (sprint.State == SprintState.Planned)
+                                {
+                                    <button type="button" class="button--quiet"
+                                            @onclick="() => Start(sprint.Id)">
+                                        Start it
+                                    </button>
+                                }
+                                else if (sprint.IsRunning)
+                                {
+                                    <button type="button" class="button--quiet"
+                                            @onclick="() => Finish(sprint.Id)">
+                                        Finish it
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="subtle">—</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        <h3>Plan one</h3>
+
+        <div class="fields">
+            <label>
+                <span>Name</span>
+                <input @bind="Name" placeholder="Sprint 14" />
+            </label>
+
+            <label>
+                <span>Goal</span>
+                <input @bind="Goal" placeholder="Clients can pay an invoice from the email" />
+                <span class="subtle">
+                    A sprint with a goal can be judged; one that is only a list of cards can only
+                    be counted, which is how a team finishes eleven small things and none of the
+                    one that mattered.
+                </span>
+            </label>
+        </div>
+
+        <div class="fields">
+            <label>
+                <span>From</span>
+                <input type="date" @bind="Starts" />
+            </label>
+
+            <label>
+                <span>To</span>
+                <input type="date" @bind="Ends" />
+            </label>
+        </div>
+
+        <div class="row-actions">
+            <button type="button" @onclick="Plan">Plan it</button>
+        </div>
+
+        @if (Sprints.FirstOrDefault(one => one.Accepts) is { } editable)
+        {
+            <h3>Change @editable.Name</h3>
+
+            <div class="fields">
+                <label>
+                    <span>Name</span>
+                    <input @bind="EditName" />
+                </label>
+
+                <label>
+                    <span>Goal</span>
+                    <input @bind="EditGoal" />
+                </label>
+            </div>
+
+            <div class="row-actions">
+                <button type="button" class="button--quiet" @onclick="() => Describe(editable)">
+                    Save it
+                </button>
+            </div>
+        }
+    </section>
+</AuthorizeView>
+
+@code {
+    private const string Managing = PermissionClaim.PolicyPrefix + Permissions.PlanningManage;
+
+    private Sprint? Running { get; set; }
+
+    private List<Sprint> Sprints { get; set; } = [];
+
+    private List<WorkItem> InSprint { get; set; } = [];
+
+    private List<WorkItem> Backlog { get; set; } = [];
+
+    private string Name { get; set; } = string.Empty;
+
+    private string Goal { get; set; } = string.Empty;
+
+    private DateTime Starts { get; set; }
+
+    private DateTime Ends { get; set; }
+
+    private string EditName { get; set; } = string.Empty;
+
+    private string EditGoal { get; set; } = string.Empty;
+
+    private Guid? MoveTo { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private string Headline
+    {
+        get
+        {
+            var backlog = Count(Backlog.Count, "thing", "things");
+
+            return Running is null
+                ? $"No sprint is running. {backlog} on the backlog."
+                : $"{Running.Name}, {Count(InSprint.Count(one => one.IsOpen), "thing", "things")} "
+                  + $"still open. {backlog} on the backlog.";
+        }
+    }
+
+    /// <summary>How much of the sprint is left, said the way somebody would say it.</summary>
+    private string Left
+    {
+        get
+        {
+            if (Running is null)
+            {
+                return string.Empty;
+            }
+
+            var days = Running.Ends.DayNumber - Clock.Today.DayNumber;
+
+            return days switch
+            {
+                < 0 => "ran out",
+                0 => "ends today",
+                1 => "one day left",
+                _ => $"{days} days left",
+            };
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Sprints = await Service.SprintsAsync();
+        Running = await Service.RunningAsync();
+        Backlog = await Service.BacklogAsync();
+
+        InSprint = Running is { } running ? await Service.InSprintAsync(running.Id) : [];
+
+        if (Starts == default)
+        {
+            Starts = Clock.Today.ToDateTime(TimeOnly.MinValue);
+            Ends = Clock.Today.AddDays(13).ToDateTime(TimeOnly.MinValue);
+        }
+
+        if (EditName.Length == 0 && Sprints.FirstOrDefault(one => one.Accepts) is { } editable)
+        {
+            EditName = editable.Name;
+            EditGoal = editable.Goal ?? string.Empty;
+        }
+    }
+
+    private Task Plan() => Act(
+        async () =>
+        {
+            await Service.PlanAsync(
+                Name,
+                DateOnly.FromDateTime(Starts),
+                DateOnly.FromDateTime(Ends),
+                string.IsNullOrWhiteSpace(Goal) ? null : Goal);
+
+            Name = string.Empty;
+            Goal = string.Empty;
+        },
+        "Planned.");
+
+    private Task Describe(Sprint sprint) => Act(
+        () => Service.DescribeSprintAsync(
+            sprint.Id,
+            EditName,
+            string.IsNullOrWhiteSpace(EditGoal) ? null : EditGoal,
+            sprint.Starts,
+            sprint.Ends),
+        "Saved.");
+
+    private Task Start(Guid id) => Act(() => Service.StartSprintAsync(id), "Running.");
+
+    private Task Finish(Guid id) => Act(
+        async () =>
+        {
+            var carried = await Service.FinishSprintAsync(id);
+
+            Done = carried == 0
+                ? "Finished, with everything in it done."
+                : $"Finished. {Count(carried, "thing", "things")} went back to the backlog.";
+        },
+        string.Empty);
+
+    private Task Schedule(Guid workItemId, Guid? sprintId) => Act(
+        async () =>
+        {
+            await Service.ScheduleAsync(workItemId, sprintId);
+
+            MoveTo = null;
+        },
+        sprintId is null ? "Back on the backlog." : "In the sprint.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+
+            // Left empty by a caller that sets its own message, because the useful sentence is
+            // the one with the count in it.
+            Done = Done is null && done.Length > 0 ? done : Done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    /// <summary>How much of the done-list is still outstanding.</summary>
+    private static string Criteria(WorkItem item)
+    {
+        if (item.DoneWhen.Count == 0)
+        {
+            return "—";
+        }
+
+        var met = item.DoneWhen.Count(one => one.IsMet);
+
+        return $"{met}/{item.DoneWhen.Count}";
+    }
+
+    private static string Count(int many, string one, string more) =>
+        $"{many} {(many == 1 ? one : more)}";
+
+    private static string Said(WorkItemStatus status) => status switch
+    {
+        WorkItemStatus.Todo => "to do",
+        WorkItemStatus.InProgress => "in progress",
+        WorkItemStatus.InReview => "in review",
+        _ => status.ToString().ToLowerInvariant(),
+    };
+
+    private static string PillFor(WorkItemStatus status) => status switch
+    {
+        WorkItemStatus.Done or WorkItemStatus.Deployed => "pill--done",
+        WorkItemStatus.Blocked => "pill--danger",
+        WorkItemStatus.Cancelled => "pill--quiet",
+        _ => "pill--wait",
+    };
+
+    private static string SprintSaid(SprintState state) => state switch
+    {
+        SprintState.Planned => "planned",
+        SprintState.Running => "running",
+        _ => "over",
+    };
+
+    private static string SprintPill(SprintState state) => state switch
+    {
+        SprintState.Running => "pill--done",
+        SprintState.Planned => "pill--wait",
+        _ => "pill--quiet",
+    };
+}

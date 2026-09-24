@@ -89,6 +89,17 @@ else
                         <a class="card__title" href="/work/@item.Id">@item.Title</a>
 
                         <div class="card__meta">
+                            @*
+                                The kind, but only when it is not the ordinary case. Most of what
+                                is on this board is a task, and a board where every card says so
+                                is one where the word has stopped carrying information — the
+                                epics and the subtasks are what a reader is scanning for.
+                            *@
+                            @if (item.Kind != WorkItemKind.Task)
+                            {
+                                <span>@item.Sized</span>
+                            }
+
                             @if (item.ProjectName is { } project)
                             {
                                 <span>@project</span>

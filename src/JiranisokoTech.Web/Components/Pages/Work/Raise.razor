@@ -84,6 +84,25 @@ else
             </InputSelect>
         </label>
 
+        @*
+            Section 11's epics, features and stories. Defaulted to a task, because most of what
+            goes on this board is one and a form that made somebody choose would have them
+            choosing wrong rather than thinking.
+        *@
+        <label>
+            <span>Kind</span>
+            <InputSelect @bind-Value="Input.Kind">
+                @foreach (var kind in Enum.GetValues<WorkItemKind>())
+                {
+                    <option value="@kind">@WorkItem.Name(kind)</option>
+                }
+            </InputSelect>
+            <span class="subtle">
+                Where it sits under anything bigger is set on the card itself, because it needs
+                the other card's number.
+            </span>
+        </label>
+
         <label>
             <span>Due</span>
             <InputDate @bind-Value="Input.DueOn" />
@@ -136,7 +155,12 @@ else
         try
         {
             var item = await Service.RaiseAsync(
-                Input.Title, RaisedBy!.Value, Input.ProjectId, Input.AssigneeId, Input.Priority);
+                Input.Title,
+                RaisedBy!.Value,
+                Input.ProjectId,
+                Input.AssigneeId,
+                Input.Priority,
+                Input.Kind);
 
             await Service.UpdateAsync(
                 item.Id, Input.Title, Input.Detail, Input.Priority, null, Input.DueOn);
@@ -164,6 +188,8 @@ else
         public Guid? AssigneeId { get; set; }
 
         public Priority Priority { get; set; } = Priority.Normal;
+
+        public WorkItemKind Kind { get; set; } = WorkItemKind.Task;
 
         public DateOnly? DueOn { get; set; }
     }
