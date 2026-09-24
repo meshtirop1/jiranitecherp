@@ -10,7 +10,10 @@
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.EmployeesManage)]
 @inject OnboardingService Service
-@inject AssetService Assets
+@* Named Register, not Assets. ComponentBase already has an Assets property, and an
+   injected field with that name hides it — CS0108, a warning that a clean build
+   reports and an incremental one does not. *@
+@inject AssetService Register
 @inject PeopleQueries People
 @inject JiranisokoTech.Application.Abstractions.IClock Clock
 
@@ -321,8 +324,8 @@ else
             StartsOn = Onboarding.StartsOn.ToDateTime(TimeOnly.MinValue);
         }
 
-        Holding = await Assets.HeldByAsync(Id);
-        Stock = await Assets.InStockAsync();
+        Holding = await Register.HeldByAsync(Id);
+        Stock = await Register.InStockAsync();
     }
 
     private async Task Did(Guid stepId)
@@ -363,14 +366,14 @@ else
         await Act(
             async () =>
             {
-                await Assets.IssueAsync(asset, Id, Clock.Today, "Issued on joining");
+                await Register.IssueAsync(asset, Id, Clock.Today, "Issued on joining");
                 Chosen = null;
             },
             "Handed over. It is on their leaver's list from now until it comes back.");
     }
 
     private Task TakeBack(Guid assetId) => Act(
-        () => Assets.TakeBackAsync(assetId, Clock.Today),
+        () => Register.TakeBackAsync(assetId, Clock.Today),
         "Back in stock.");
 
     private Task MoveStart() => Act(

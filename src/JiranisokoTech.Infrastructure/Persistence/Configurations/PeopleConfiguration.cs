@@ -1,5 +1,6 @@
 using JiranisokoTech.Domain.Common;
 using JiranisokoTech.Domain.People;
+using JiranisokoTech.Domain.Performance;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -205,5 +206,172 @@ public sealed class OffboardingConfiguration : IEntityTypeConfiguration<Offboard
             .HasForeignKey(one => one.EmployeeId)
             .OnDelete(DeleteBehavior.Cascade);
 
+    }
+}
+
+public sealed class TeamConfiguration : IEntityTypeConfiguration<Team>
+{
+    public void Configure(EntityTypeBuilder<Team> builder)
+    {
+        builder.ToTable("teams");
+
+        builder.HasKey(team => team.Id);
+
+        builder.Property(team => team.Name).HasMaxLength(120).IsRequired();
+        builder.Property(team => team.Slug).HasMaxLength(Slug.MaximumLength).IsRequired();
+        builder.Property(team => team.Purpose).HasMaxLength(2_000);
+
+        builder.Ignore(team => team.Handle);
+        builder.Ignore(team => team.Current);
+        builder.Ignore(team => team.Size);
+
+        // Unique for the reason a department's is: the slug is what an address names.
+        builder.HasIndex(team => team.Slug).IsUnique();
+
+        builder.HasIndex(team => team.IsActive);
+
+        /*
+         * No foreign key to the lead, for the same reason a department has none to its head:
+         * the pair points both ways and one constraint would have to be deferred. The rule
+         * that the lead is on the team is held in the aggregate, where it can be tested.
+         */
+        builder.HasIndex(team => team.LeadEmployeeId);
+
+        builder.OwnsMany(team => team.Members, membership =>
+        {
+            membership.ToTable("team_members");
+            membership.WithOwner().HasForeignKey("TeamId");
+
+            membership.HasKey(one => one.Id);
+
+            membership.Property(one => one.EmployeeId).IsRequired();
+            membership.Property(one => one.JoinedOn).IsRequired();
+
+            membership.Ignore(one => one.IsCurrent);
+
+            /*
+             * Indexed by person, because the question asked most often is the other way round —
+             * "what is this person working on" — and that read happens on every staff page.
+             */
+            membership.HasIndex(one => one.EmployeeId);
+
+            /*
+             * No unique index over the team and the person, deliberately. Two spells are
+             * legitimate: somebody lent to another team for a quarter and brought back has
+             * joined twice, and only one of those spells is current. "One current spell" is
+             * the real rule and it is not expressible as a unique index over a nullable
+             * leaving date, because nulls are distinct — two open spells would both be
+             * allowed by exactly the constraint that looks like it forbids them. It is
+             * enforced in the aggregate, which is the only place that can see both rows.
+             */
+        });
+
+        /*
+         * No foreign key from a membership to the employee either. The membership table is
+         * owned by the team, and a cascade from a deleted staff record would quietly remove
+         * somebody from the history of every team they were ever on — which is the record.
+         */
+    }
+}
+
+public sealed class GoalConfiguration : IEntityTypeConfiguration<Goal>
+{
+    public void Configure(EntityTypeBuilder<Goal> builder)
+    {
+        builder.ToTable("goals");
+
+        builder.HasKey(one => one.Id);
+
+        builder.Property(one => one.Title).HasMaxLength(300).IsRequired();
+        builder.Property(one => one.Measure).HasMaxLength(1_000).IsRequired();
+        builder.Property(one => one.Detail).HasMaxLength(4_000);
+        builder.Property(one => one.Outcome).HasConversion<int>();
+        builder.Property(one => one.Verdict).HasMaxLength(4_000);
+
+        builder.Ignore(one => one.IsOpen);
+
+        /*
+         * One person's goals, open first — the query every page here starts from. The outcome is
+         * in the index because "still open" is the half of the table anybody is looking at.
+         */
+        builder.HasIndex(one => new { one.ForEmployeeId, one.Outcome, one.To })
+            .HasDatabaseName("IX_goals_for_open_by");
+
+        builder.HasIndex(one => one.CycleId);
+
+        /*
+         * Cascade from the staff record, unusually for this codebase, and it is the same
+         * reasoning a notice uses: a goal is an agreement between two people about one of them,
+         * not a record of what the firm did. Kept after the person is gone it is a commitment
+         * with nobody at either end.
+         *
+         * Deleting a person is not something this system does — people leave — so in practice
+         * this decides nothing. It is written down because the alternative reading is defensible
+         * and somebody will wonder which was meant.
+         */
+        builder.HasOne<Employee>()
+            .WithMany()
+            .HasForeignKey(one => one.ForEmployeeId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.OwnsMany(one => one.Notes, note =>
+        {
+            note.ToTable("goal_notes");
+            note.WithOwner().HasForeignKey("GoalId");
+
+            note.HasKey(row => row.Id);
+
+            note.Property(row => row.Note).HasMaxLength(4_000).IsRequired();
+            note.Property(row => row.At).IsRequired();
+        });
+    }
+}
+
+public sealed class ReviewCycleConfiguration : IEntityTypeConfiguration<ReviewCycle>
+{
+    public void Configure(EntityTypeBuilder<ReviewCycle> builder)
+    {
+        builder.ToTable("review_cycles");
+
+        builder.HasKey(one => one.Id);
+
+        builder.Property(one => one.Name).HasMaxLength(120).IsRequired();
+
+        builder.Ignore(one => one.Awaiting);
+        builder.Ignore(one => one.NotShared);
+
+        builder.HasIndex(one => one.IsClosed);
+
+        builder.OwnsMany(one => one.Reviews, review =>
+        {
+            review.ToTable("reviews");
+            review.WithOwner().HasForeignKey("CycleId");
+
+            review.HasKey(row => row.Id);
+
+            review.Property(row => row.SelfNote).HasMaxLength(10_000);
+            review.Property(row => row.Rating).HasConversion<int>();
+
+            /*
+             * Mapped by name because the property is private, and it is private on purpose: the
+             * manager's half is reachable only through ManagerNoteFor, which knows who is asking
+             * and hides it from the subject until it has been shared. A public property would be
+             * one careless page away from showing somebody a half-written appraisal of
+             * themselves.
+             */
+            review.Property<string?>("ManagerNote").HasMaxLength(10_000);
+
+            review.Ignore(row => row.IsShared);
+            review.Ignore(row => row.HasSelfNote);
+            review.Ignore(row => row.HasManagerNote);
+
+            /*
+             * One review per person per cycle. Neither column is nullable, so unlike a team
+             * membership this is a constraint a unique index can actually hold — and it matters,
+             * because two reviews for one person in one cycle would make "which is mine"
+             * unanswerable.
+             */
+            review.HasIndex("CycleId", "EmployeeId").IsUnique();
+        });
     }
 }

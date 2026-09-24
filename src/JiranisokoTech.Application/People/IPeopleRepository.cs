@@ -35,6 +35,16 @@ public interface IPeopleRepository
     /// <summary>Everyone who answers to this person directly.</summary>
     Task<List<Employee>> DirectReportsAsync(Guid managerId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Everybody who works here: started, and not left.
+    /// </summary>
+    /// <remarks>
+    /// Somebody invited but not yet started is left out, which is the only defensible reading of
+    /// "works here" for the thing that asks — a review cycle covering somebody whose first day is
+    /// next month would ask them to write about a period they were not present for.
+    /// </remarks>
+    Task<List<Employee>> EverybodyHereAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Departments this person is head of. Normally none or one.</summary>
     Task<List<Department>> HeadedByAsync(Guid employeeId, CancellationToken cancellationToken = default);
 

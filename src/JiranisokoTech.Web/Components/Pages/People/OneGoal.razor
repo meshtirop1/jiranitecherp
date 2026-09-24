@@ -1,0 +1,382 @@
+@page "/performance/goals/{Id:guid}"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.People
+@using JiranisokoTech.Domain.Performance
+@using JiranisokoTech.Infrastructure.Authorization
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.GoalsView)]
+@inject PerformanceService Service
+@inject PeopleQueries People
+@inject Reaches Reaches
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    One goal, and the conversation on it.
+
+    The notes are why this page exists rather than a row on a list. A goal with nothing said about
+    it between January and December is one nobody remembers by review time, and the review then
+    becomes an argument about what was meant nine months ago. Either person may add to it — the
+    person holding the goal and whoever set it — because a note only one of them can write is a
+    monologue.
+*@
+
+<PageTitle>@(Goal?.Title ?? "Goal") — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/performance">Performance</a></nav>
+
+@if (!Loaded)
+{
+    <p class="empty">Reading.</p>
+}
+else if (Goal is null || !MaySee)
+{
+    @*
+        One message for "no such goal" and "not yours to read", deliberately. Telling somebody
+        that a goal exists and they may not see it is telling them something about a colleague.
+    *@
+    <p class="empty">That goal is not one you can see.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Goal.Title</h1>
+
+        <p class="subtle">
+            @if (Goal.Outcome is { } outcome)
+            {
+                <span class="pill @PillFor(outcome)">@Say(outcome)</span>
+            }
+            else
+            {
+                <span class="pill pill--wait">open</span>
+            }
+            @if (Goal.IsOverdueOn(Today))
+            {
+                <span class="pill pill--danger">past its date</span>
+            }
+            <span class="subtle">
+                <a href="/performance/@Goal.ForEmployeeId">@Who(Goal.ForEmployeeId)</a>
+            </span>
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <dl class="facts">
+        <dt>How anybody will know</dt>
+        <dd>@Goal.Measure</dd>
+
+        <dt>Runs</dt>
+        <dd>
+            @Goal.From.ToString("d MMMM yyyy")
+            <span class="subtle">to @Goal.To.ToString("d MMMM yyyy")</span>
+        </dd>
+
+        <dt>Set</dt>
+        <dd>
+            @Goal.SetAt.ToLocalTime().ToString("d MMM yyyy")
+            <span class="subtle">with @Who(Goal.SetByEmployeeId)</span>
+        </dd>
+
+        @if (Goal.Detail is { } detail)
+        {
+            <dt>More</dt>
+            <dd><span class="as-typed">@detail</span></dd>
+        }
+
+        @if (Goal.Verdict is { } verdict)
+        {
+            <dt>How it went</dt>
+            <dd><span class="as-typed">@verdict</span></dd>
+        }
+    </dl>
+
+    <section class="standing">
+        <h2>What has been said about it</h2>
+
+        @if (Goal.Notes.Count == 0)
+        {
+            <p class="empty">Nothing yet.</p>
+        }
+        else
+        {
+            <ul class="plain">
+                @foreach (var note in Goal.Notes)
+                {
+                    <li>
+                        <span class="as-typed">@note.Note</span>
+                        <span class="subtle">
+                            @Who(note.ByEmployeeId), @note.At.ToLocalTime().ToString("d MMM yyyy")
+                        </span>
+                    </li>
+                }
+            </ul>
+        }
+
+        @if (Goal.IsOpen && MayWrite)
+        {
+            <label class="stack">
+                <span>Add something</span>
+                <textarea rows="3" @bind="Note"></textarea>
+            </label>
+
+            <div class="row-actions">
+                <button type="button" @onclick="AddNote">Add it</button>
+            </div>
+        }
+    </section>
+
+    @if (MayManage)
+    {
+        <section class="standing">
+            <h2>Change it</h2>
+
+            @if (!Goal.IsOpen)
+            {
+                <p class="instructions">
+                    This goal is closed. Reopen it if that was a mistake — editing what a closed
+                    goal said would change what somebody was judged on after the judging.
+                </p>
+
+                <div class="row-actions">
+                    <button type="button" class="button--quiet" @onclick="Reopen">Reopen it</button>
+                </div>
+            }
+            else
+            {
+                <div class="fields">
+                    <label>
+                        <span>The goal</span>
+                        <input @bind="Title" />
+                    </label>
+
+                    <label>
+                        <span>How anybody will know</span>
+                        <input @bind="Measure" />
+                    </label>
+                </div>
+
+                <div class="fields">
+                    <label>
+                        <span>From</span>
+                        <input type="date" @bind="From" />
+                    </label>
+
+                    <label>
+                        <span>By</span>
+                        <input type="date" @bind="To" />
+                    </label>
+                </div>
+
+                <label class="stack">
+                    <span>More, if it needs it</span>
+                    <textarea rows="3" @bind="Detail"></textarea>
+                </label>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="Save">Save it</button>
+                </div>
+            }
+        </section>
+
+        @if (Goal.IsOpen)
+        {
+            <section class="standing">
+                <h2>Close it</h2>
+
+                <div class="fields">
+                    <label>
+                        <span>How it went</span>
+                        <select @bind="Outcome">
+                            <option value="@GoalOutcome.Achieved">Achieved</option>
+                            <option value="@GoalOutcome.Partly">Partly</option>
+                            <option value="@GoalOutcome.Missed">Missed</option>
+                            <option value="@GoalOutcome.Dropped">Dropped</option>
+                        </select>
+                        <span class="subtle">
+                            Four outcomes rather than done and not done, because the two in the
+                            middle are the ones that happen. A goal dropped because the firm
+                            changed direction is not a failure by whoever held it.
+                        </span>
+                    </label>
+                </div>
+
+                <label class="stack">
+                    <span>And in words</span>
+                    <textarea rows="3" @bind="Verdict"
+                              placeholder="Which part, and what got in the way."></textarea>
+                </label>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="Close">Close it</button>
+                </div>
+
+                <p class="subtle">
+                    A sentence is required. "Partly" on its own is the least useful thing anybody
+                    can write down: the reader wants to know which part, and the person who knew
+                    is whoever pressed this button.
+                </p>
+            </section>
+        }
+    }
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private Goal? Goal { get; set; }
+
+    private Guid? Me { get; set; }
+
+    private bool Loaded { get; set; }
+
+    private bool MaySee { get; set; }
+
+    private bool MayManage { get; set; }
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string Title { get; set; } = string.Empty;
+
+    private string Measure { get; set; } = string.Empty;
+
+    private string Detail { get; set; } = string.Empty;
+
+    private DateTime From { get; set; }
+
+    private DateTime To { get; set; }
+
+    private string Note { get; set; } = string.Empty;
+
+    private GoalOutcome Outcome { get; set; } = GoalOutcome.Achieved;
+
+    private string Verdict { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private DateOnly Today => Clock.Today;
+
+    /// <summary>
+    /// Both people on a goal may add a note.
+    /// </summary>
+    /// <remarks>
+    /// The person it is about, and whoever may manage goals for them. Anybody who got this far is
+    /// inside the reach already, so the question left is only whether they are a reader or a
+    /// participant — and HR reading across the firm is a reader.
+    /// </remarks>
+    private bool MayWrite => Goal is not null && (Me == Goal.ForEmployeeId || MayManage);
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthenticationState).User;
+        var held = user.FindAll(PermissionClaim.Type).Select(claim => claim.Value).ToHashSet();
+
+        Me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        MayManage = held.Contains(Permissions.GoalsManage);
+        Goal = await Service.GoalAsync(Id);
+        Names = await People.NamesAsync();
+        Loaded = true;
+
+        if (Goal is null)
+        {
+            return;
+        }
+
+        MaySee = (await Reaches.PerformanceAsync(held, Me)).Contains(Goal.ForEmployeeId);
+
+        if (!MaySee)
+        {
+            return;
+        }
+
+        Title = Goal.Title;
+        Measure = Goal.Measure;
+        Detail = Goal.Detail ?? string.Empty;
+        From = Goal.From.ToDateTime(TimeOnly.MinValue);
+        To = Goal.To.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private Task Save() => Act(
+        () => Service.DescribeGoalAsync(
+            Id,
+            Title,
+            Measure,
+            string.IsNullOrWhiteSpace(Detail) ? null : Detail,
+            DateOnly.FromDateTime(From),
+            DateOnly.FromDateTime(To)),
+        "Saved.");
+
+    private Task AddNote() => Act(
+        async () =>
+        {
+            await Service.NoteGoalAsync(Id, Me!.Value, Note);
+
+            Note = string.Empty;
+        },
+        "Added.");
+
+    private Task Close() => Act(
+        () => Service.CloseGoalAsync(Id, Outcome, Verdict), "Closed.");
+
+    private Task Reopen() => Act(() => Service.ReopenGoalAsync(Id), "Open again.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private string Who(Guid employeeId) =>
+        Names.GetValueOrDefault(employeeId) ?? "Somebody no longer on the staff list";
+
+    private static string Say(GoalOutcome outcome) => outcome switch
+    {
+        GoalOutcome.Achieved => "achieved",
+        GoalOutcome.Partly => "partly",
+        GoalOutcome.Missed => "missed",
+        _ => "dropped",
+    };
+
+    private static string PillFor(GoalOutcome outcome) => outcome switch
+    {
+        GoalOutcome.Achieved => "pill--done",
+        GoalOutcome.Partly => "pill--wait",
+        GoalOutcome.Missed => "pill--danger",
+        _ => "pill--quiet",
+    };
+}

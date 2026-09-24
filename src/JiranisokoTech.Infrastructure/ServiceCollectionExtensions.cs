@@ -128,6 +128,13 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IPeopleRepository, PeopleRepository>();
         services.AddScoped<PeopleService>();
+
+        services.AddScoped<ITeamRepository, TeamRepository>();
+        services.AddScoped<TeamService>();
+
+        services.AddScoped<IPerformanceRepository, PerformanceRepository>();
+        services.AddScoped<PerformanceService>();
+
         services.AddScoped<PeopleQueries>();
 
         services.AddScoped<UserAdministration>();
@@ -208,8 +215,11 @@ public static class ServiceCollectionExtensions
          * outbox, so one cannot exist for something that then failed to save.
          */
         services.AddScoped<Application.Notices.INoticeRepository, Notices.NoticeRepository>();
+        services.AddScoped<
+            Application.Notices.IAnnouncementRepository, Notices.AnnouncementRepository>();
         services.AddSingleton<Application.Notices.IWhereThisLives, Notices.WhereThisLives>();
         services.AddScoped<Application.Notices.NoticeService>();
+        services.AddScoped<Application.Notices.AnnouncementService>();
         services.AddScoped<IDomainEventHandler<Domain.Work.WorkItemAssigned>,
             Application.Notices.TellPeopleTheirWorkMoved>();
         services.AddScoped<IDomainEventHandler<Domain.Approvals.ApprovalSettled>,

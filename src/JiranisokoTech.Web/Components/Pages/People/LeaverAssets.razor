@@ -1,7 +1,10 @@
 @using JiranisokoTech.Application.Assets
 @using JiranisokoTech.Domain.Assets
 @rendermode InteractiveServer
-@inject AssetService Assets
+@* Named Register, not Assets. ComponentBase already has an Assets property, and an
+   injected field with that name hides it — CS0108, a warning that a clean build
+   reports and an incremental one does not. *@
+@inject AssetService Register
 @inject JiranisokoTech.Application.Abstractions.IClock Clock
 
 @*
@@ -110,20 +113,20 @@ else
 
     private async Task LoadAsync()
     {
-        Holding = await Assets.HeldByAsync(EmployeeId);
+        Holding = await Register.HeldByAsync(EmployeeId);
 
         /*
          * Everything they ever held, so the empty case can say "all back" rather than "nothing",
          * which are two very different statements about a leaver.
          */
-        Ever = [.. (await Assets.AllAsync())
+        Ever = [.. (await Register.AllAsync())
             .Where(one => one.Movements.Any(move => move.PersonId == EmployeeId))];
     }
 
     private Task Back(Guid assetId) => Act(
         async () =>
         {
-            await Assets.TakeBackAsync(
+            await Register.TakeBackAsync(
                 assetId,
                 Clock.Today,
                 string.IsNullOrWhiteSpace(Condition) ? null : Condition);
@@ -133,7 +136,7 @@ else
         "Back in stock.");
 
     private Task Missing(Guid assetId) => Act(
-        () => Assets.MissingAsync(
+        () => Register.MissingAsync(
             assetId, "Not returned when they left", Clock.Today),
         "Marked lost, with who had it last.");
 

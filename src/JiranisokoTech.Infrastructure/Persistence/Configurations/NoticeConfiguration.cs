@@ -64,3 +64,68 @@ public sealed class NoticeRuleConfiguration : IEntityTypeConfiguration<NoticeRul
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
+
+public sealed class AnnouncementConfiguration : IEntityTypeConfiguration<Announcement>
+{
+    public void Configure(EntityTypeBuilder<Announcement> builder)
+    {
+        builder.ToTable("announcements");
+
+        builder.HasKey(one => one.Id);
+
+        builder.Property(one => one.Title).HasMaxLength(200).IsRequired();
+        builder.Property(one => one.Body).HasMaxLength(20_000).IsRequired();
+        builder.Property(one => one.State).HasConversion<int>().IsRequired();
+        builder.Property(one => one.Outcome).HasMaxLength(1_100);
+
+        builder.Ignore(one => one.IsPosted);
+        builder.Ignore(one => one.HasAnybodyAcknowledged);
+
+        /*
+         * The board's own query: what is up, not expired, for the whole firm or one department.
+         * It runs for everybody who opens the page, which is everybody.
+         */
+        builder.HasIndex(one => new { one.State, one.ExpiresOn, one.DepartmentId })
+            .HasDatabaseName("IX_announcements_up");
+
+        /*
+         * Restrict on the author, not Cascade — the opposite of the decision a notice makes one
+         * class above, and for the opposite reason. A notice addressed to nobody is evidence of
+         * nothing; an announcement is the firm speaking, and it is evidence regardless of who
+         * typed it, so deleting their staff record must not take it away.
+         *
+         * Restrict rather than SetNull because the column is not nullable and should not be: an
+         * unattributed announcement is a notice board with anonymous posts on it, which is a
+         * rumour mill. Nothing in this system deletes an employee anyway — people leave, and
+         * leaving keeps the row — so the restriction costs nothing and says what it means.
+         */
+        builder.HasOne<Employee>()
+            .WithMany()
+            .HasForeignKey(one => one.ByEmployeeId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<Department>()
+            .WithMany()
+            .HasForeignKey(one => one.DepartmentId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.OwnsMany(one => one.Acknowledgements, said =>
+        {
+            said.ToTable("announcement_acknowledgements");
+            said.WithOwner().HasForeignKey("AnnouncementId");
+
+            said.HasKey(row => row.Id);
+
+            said.Property(row => row.EmployeeId).IsRequired();
+            said.Property(row => row.At).IsRequired();
+
+            /*
+             * One per person per announcement. Unlike a team membership this one IS expressible
+             * as a unique index, because neither column is nullable — and it is worth having,
+             * because the button sits on a page people reload and a double row would make more
+             * people appear to have answered than did.
+             */
+            said.HasIndex("AnnouncementId", "EmployeeId").IsUnique();
+        });
+    }
+}

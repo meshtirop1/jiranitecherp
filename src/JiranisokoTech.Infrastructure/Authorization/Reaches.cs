@@ -111,4 +111,86 @@ public sealed class Reaches(AppDbContext database)
 
         return Reach.LimitedTo(headed.Concat(own));
     }
+
+    /// <summary>
+    /// Whose goals and reviews somebody may open.
+    /// </summary>
+    /// <remarks>
+    /// Their own, always, plus everybody below them in the reporting line — and that is a
+    /// different rule from the roster's, on purpose. The roster narrows by department, because a
+    /// staff list is about the shape of the firm; performance narrows by who answers to whom,
+    /// because an appraisal is a line-management relationship. A head of engineering who is not
+    /// in somebody's chain has no business in their review, and the two rules disagree about that
+    /// case precisely because they should.
+    ///
+    /// The whole chain rather than direct reports only, for the reason the department reach gives
+    /// for going down the tree: a head with three team leads under them answers for everybody
+    /// below those leads, and a reach that stopped at the first level would hide most of their own
+    /// organisation.
+    ///
+    /// Somebody with no staff record reaches nothing, not even themselves — there is nobody to be.
+    /// </remarks>
+    public async Task<IReadOnlySet<Guid>> PerformanceAsync(
+        IReadOnlySet<string> permissions,
+        Guid? employeeId,
+        CancellationToken cancellationToken = default)
+    {
+        /*
+         * Everybody, for HR. Unlike the other two reaches this one returns a set of people rather
+         * than a Reach, so "everything" has to be enumerated — which is fine at this size and is
+         * the honest answer: the caller is going to list them.
+         */
+        if (permissions.Contains(Permissions.GoalsViewAll))
+        {
+            return (await database.Employees
+                .AsNoTracking()
+                .Select(employee => employee.Id)
+                .ToListAsync(cancellationToken))
+                .ToHashSet();
+        }
+
+        if (employeeId is not { } person)
+        {
+            return new HashSet<Guid>();
+        }
+
+        var reach = new HashSet<Guid> { person };
+
+        if (!permissions.Contains(Permissions.GoalsManage))
+        {
+            return reach;
+        }
+
+        var lines = await database.Employees
+            .AsNoTracking()
+            .Select(employee => new { employee.Id, employee.ReportsToId })
+            .ToListAsync(cancellationToken);
+
+        /*
+         * Walked here rather than asked of the database one level at a time, the same decision
+         * IPeopleRepository.ReportingLinesAsync explains: this is a firm of tens of people, and a
+         * round trip per level of an org chart is a query count that depends on how tall the firm
+         * is. When that stops being true this becomes a recursive query.
+         *
+         * The loop terminates on a set that stopped growing rather than on a depth, so a cycle in
+         * the reporting lines cannot hang it. Nothing should be able to create one — the service
+         * refuses a loop — but a reach that hangs for ever is a worse way to find out.
+         */
+        var added = true;
+
+        while (added)
+        {
+            added = false;
+
+            foreach (var line in lines)
+            {
+                if (line.ReportsToId is { } above && reach.Contains(above) && reach.Add(line.Id))
+                {
+                    added = true;
+                }
+            }
+        }
+
+        return reach;
+    }
 }

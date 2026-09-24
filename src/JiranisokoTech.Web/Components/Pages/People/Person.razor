@@ -16,6 +16,7 @@
 @inject DocumentService Files
 @inject IPeopleRepository Staff
 @inject IClock Clock
+@inject TeamService TeamsService
 
 @*
     Static, like everything that changes something.
@@ -88,6 +89,31 @@ else
     <dl class="facts">
         <dt>Department</dt>
         <dd>@(Row.DepartmentName ?? "None")</dd>
+
+        @*
+            Their teams, next to their department, because the pair is what this page is asked
+            for: the department is where they sit and the teams are what they are working on.
+            Behind teams.view rather than shown to everybody who may open a staff record — the
+            two permissions are held by different people on purpose.
+        *@
+        <AuthorizeView Policy="@TeamsPolicy" Context="maySeeTeams">
+            <dt>Teams</dt>
+            <dd>
+                @if (Teams.Count == 0)
+                {
+                    <span class="subtle">On no team at the moment</span>
+                }
+                else
+                {
+                    <ul class="plain">
+                        @foreach (var team in Teams)
+                        {
+                            <li><a href="/teams/@team.Slug">@team.Name</a></li>
+                        }
+                    </ul>
+                }
+            </dd>
+        </AuthorizeView>
 
         <dt>Reports to</dt>
         <dd>
@@ -278,6 +304,8 @@ else
     private const string ManagePolicy =
         PermissionClaim.PolicyPrefix + Permissions.EmployeesManage;
 
+    private const string TeamsPolicy = PermissionClaim.PolicyPrefix + Permissions.TeamsView;
+
     [Parameter]
     public Guid Id { get; set; }
 
@@ -374,6 +402,8 @@ else
     private List<PersonRow> Candidates { get; set; } = [];
 
     private Dictionary<Guid, string> Departments { get; set; } = [];
+
+    private List<Team> Teams { get; set; } = [];
 
     private List<Attachment> Attached { get; set; } = [];
 
@@ -488,6 +518,7 @@ else
         Photo = (await Files.ForAsync(AttachedTo.Photo, Id)).LastOrDefault();
         Reports = roster.Where(person => person.ReportsToId == Id).ToList();
         Departments = await People.DepartmentNamesAsync();
+        Teams = await TeamsService.ForEmployeeAsync(Id);
 
         // Read only when it is going to be drawn. The query is cheap, but this
         // is a personnel file, and holding one in the state of a page rendered

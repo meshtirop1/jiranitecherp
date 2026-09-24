@@ -36,6 +36,79 @@ public static class Permissions
     public const string DepartmentsView = "departments.view";
     public const string DepartmentsManage = "departments.manage";
 
+    /// <summary>
+    /// See the teams and who is on them.
+    /// </summary>
+    /// <remarks>
+    /// Separate from departments.view, because they answer different questions and are held by
+    /// different people. A department is a piece of the firm's structure; a team is who is
+    /// working on what this month, and that is something everybody who works here needs to be
+    /// able to look up — an engineer who cannot find out which team owns a service has to ask
+    /// somebody, and asking somebody is the thing this replaces.
+    /// </remarks>
+    public const string TeamsView = "teams.view";
+
+    /// <summary>
+    /// Form a team, and move people on and off it.
+    /// </summary>
+    /// <remarks>
+    /// Wider than departments.manage on purpose. Opening a department is a change to the shape
+    /// of the firm and belongs to HR and the owner; putting three people on a team for a
+    /// quarter is a delivery decision, and a system where a delivery manager has to raise a
+    /// ticket with HR to do it is one where the teams in the system stop matching the teams in
+    /// the building.
+    /// </remarks>
+    public const string TeamsManage = "teams.manage";
+
+    /// <summary>
+    /// Say something to everybody who works here.
+    /// </summary>
+    /// <remarks>
+    /// Its own permission and a narrow one. A firm-wide announcement is the single message in
+    /// this system that cannot be unsaid — everybody sees it, it is attributed to whoever posted
+    /// it, and taking it down leaves a record that it was up. Reading the board needs no
+    /// permission at all, for the reason the notice centre needs none: it is addressed to
+    /// everybody who works here, and a door to a room everybody may enter is just a door.
+    /// </remarks>
+    public const string AnnouncementsPost = "announcements.post";
+
+    /// <summary>
+    /// Open the performance area: your own goals, and your own review once it has been shared.
+    /// </summary>
+    /// <remarks>
+    /// Held by everybody, and it is not a privilege — a performance system whose subject cannot
+    /// read their own goals is a file kept about somebody. It says nothing about anybody else's:
+    /// that is the next two.
+    /// </remarks>
+    public const string GoalsView = "goals.view";
+
+    /// <summary>
+    /// Set and close goals with other people, run review cycles, write the manager's half.
+    /// </summary>
+    /// <remarks>
+    /// One permission rather than three, because the three are the same job: the person who sets
+    /// a goal with somebody is the person who closes it with them and writes about it at review
+    /// time, and splitting them would produce a manager who can start a conversation and not
+    /// finish it.
+    ///
+    /// It does not carry the right to read everybody's. Whose reviews somebody may open is
+    /// decided by the reporting line — see Reaches.PerformanceAsync — because performance is a
+    /// line-management relationship and not a departmental one. A head of department who is not
+    /// in somebody's chain has no business in their appraisal.
+    /// </remarks>
+    public const string GoalsManage = "goals.manage";
+
+    /// <summary>
+    /// Read anybody's goals and shared reviews.
+    /// </summary>
+    /// <remarks>
+    /// HR, and nobody else by default. A separate permission for the same reason
+    /// employees.view_all is separate from employees.view: the narrowing has to be additive, or
+    /// granting somebody the ability to run reviews for their own team would quietly hand them
+    /// the appraisals of everybody in the firm.
+    /// </remarks>
+    public const string GoalsViewAll = "goals.view_all";
+
     // --- recruitment -------------------------------------------------------
     public const string RequisitionsCreate = "requisitions.create";
     public const string RequisitionsView = "requisitions.view";
@@ -391,6 +464,9 @@ public static class Permissions
 
         EmployeesView, EmployeesViewAll, EmployeesManage, EmployeesPay,
         DepartmentsView, DepartmentsManage,
+        TeamsView, TeamsManage,
+        AnnouncementsPost,
+        GoalsView, GoalsManage, GoalsViewAll,
 
         PayrollView, PayrollRun, PayrollPay, PayrollRates,
 
@@ -483,6 +559,20 @@ public static class Roles
 
                 Permissions.DepartmentsView,
 
+                /*
+                 * HR keeps the teams as well as the departments, and a team's membership is
+                 * what tells HR who to ask about somebody at review time.
+                 */
+                Permissions.TeamsView, Permissions.TeamsManage,
+
+                // HR says the firm-wide things: the office is shut, the leave rules have
+                // changed, somebody has joined.
+                Permissions.AnnouncementsPost,
+
+                // HR runs the review cycles and is the one role that reads across the firm,
+                // because somebody has to be able to answer "have the reviews been done".
+                Permissions.GoalsView, Permissions.GoalsManage, Permissions.GoalsViewAll,
+
                 // HR sits at step one of the hiring chain, so HR must be able to
                 // decide one. Without this the chain opens on a step nobody in
                 // the firm can answer.
@@ -509,6 +599,22 @@ public static class Roles
             [DepartmentHead] =
             [
                 Permissions.DepartmentsView, Permissions.EmployeesView, Permissions.UsersView,
+
+                // A head forms the teams inside what they answer for, and a team that
+                // crosses into another department is the ordinary case rather than a
+                // trespass — which is the whole reason teams are not sub-departments.
+                Permissions.TeamsView, Permissions.TeamsManage,
+
+                // And addresses their own department, which is what the department field on
+                // an announcement is for. Nothing stops them addressing the whole firm; the
+                // post carries their name, which is the check that actually works.
+                Permissions.AnnouncementsPost,
+
+                // Sets goals and writes reviews for the people who report to them, and not for
+                // anybody else — which is the reporting line's decision rather than this
+                // permission's. No view_all: heading a department is not a reason to read the
+                // appraisals of people in another one.
+                Permissions.GoalsView, Permissions.GoalsManage,
                 Permissions.ProjectsViewAll,
 
                 /*
@@ -579,6 +685,14 @@ public static class Roles
             [
                 Permissions.DepartmentsView, Permissions.EmployeesView,
 
+                // A delivery manager assembles the team that does the work, which is the
+                // reason teams.manage is not held by HR alone.
+                Permissions.TeamsView, Permissions.TeamsManage,
+
+                // Their own goals and their own review. A delivery manager runs the board
+                // rather than the line, so somebody's appraisal is not theirs to write.
+                Permissions.GoalsView,
+
                 // A delivery manager staffs work from across the firm, so their roster
                 // cannot stop at the department they happen to sit in.
                 Permissions.EmployeesViewAll,
@@ -626,6 +740,14 @@ public static class Roles
             [Developer] =
             [
                 Permissions.ProjectsViewMember,
+
+                // Read, not write. Finding out which team owns a service is something
+                // everybody who works here needs to do; deciding who is on one is not.
+                Permissions.TeamsView,
+
+                // Their own goals, and their own review once it has been shared. Withholding
+                // this would make the performance system a file kept about somebody.
+                Permissions.GoalsView,
 
                 // An engineer can open the board and see what is theirs. This
                 // is a delivery system; the people doing the delivering are its

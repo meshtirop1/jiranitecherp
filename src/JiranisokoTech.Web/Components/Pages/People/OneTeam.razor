@@ -1,0 +1,400 @@
+@page "/teams/{Handle}"
+@rendermode InteractiveServer
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.People
+@using JiranisokoTech.Domain.People
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.TeamsView)]
+@inject TeamService Service
+@inject PeopleQueries People
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    One team: who is on it now, who used to be, and who runs it.
+
+    Found by its short name rather than its identifier, because a team's address is the thing
+    somebody pastes into a message — and unlike the name it does not follow a rename, so a link
+    saved in March still works in September.
+*@
+
+<PageTitle>@(Team?.Name ?? "Team") — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/teams">Teams</a></nav>
+
+@if (Team is null)
+{
+    <p class="empty">There is no team at that address.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Team.Name</h1>
+
+        <p class="subtle">
+            @if (!Team.IsActive)
+            {
+                <span class="pill pill--quiet">disbanded</span>
+            }
+            <span class="subtle">@(Team.Purpose ?? "Nobody has said what it is for.")</span>
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <dl class="facts">
+        <dt>Lead</dt>
+        <dd>
+            @if (Team.LeadEmployeeId is { } lead)
+            {
+                <a href="/people/@lead">@PersonName(lead)</a>
+            }
+            else
+            {
+                <span class="subtle">Nobody yet</span>
+            }
+        </dd>
+
+        <dt>On it</dt>
+        <dd>@Count(Team.Size, "person", "people")</dd>
+
+        @*
+            Stated on the page rather than left to be inferred. Somebody looking at a team of
+            four from three departments is the case that explains why this is not a
+            sub-department, and the page is where that explanation is cheapest.
+        *@
+        <dt>Departments</dt>
+        <dd>
+            @Spread
+            <span class="subtle">
+                A team crosses departments as a matter of course. Nobody here has been moved
+                out of the department that answers for them.
+            </span>
+        </dd>
+    </dl>
+
+    <section class="standing">
+        <h2>On the team</h2>
+
+        @if (Team.Current.Count == 0)
+        {
+            <p class="empty">Nobody is on it yet.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Who is on this team</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Department</th>
+                        <th scope="col">Since</th>
+                        <AuthorizeView Policy="@Managing" Context="mayManage">
+                            <th scope="col"><span class="visually-hidden">Actions</span></th>
+                        </AuthorizeView>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var membership in Team.Current)
+                    {
+                        <tr>
+                            <td>
+                                <a href="/people/@membership.EmployeeId">
+                                    @PersonName(membership.EmployeeId)
+                                </a>
+                                @if (Team.LeadEmployeeId == membership.EmployeeId)
+                                {
+                                    <span class="pill pill--done">lead</span>
+                                }
+                            </td>
+                            <td>@DepartmentOf(membership.EmployeeId)</td>
+                            <td>@membership.JoinedOn.ToString("d MMM yyyy")</td>
+                            <AuthorizeView Policy="@Managing" Context="mayManage">
+                                <td class="row-actions">
+                                    @if (Team.LeadEmployeeId != membership.EmployeeId)
+                                    {
+                                        <button type="button" class="button--quiet"
+                                                @onclick="() => Lead(membership.EmployeeId)">
+                                            Make lead
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="button--quiet"
+                                                @onclick="() => Lead(null)">
+                                            Nobody leads
+                                        </button>
+                                    }
+
+                                    <button type="button" class="button--quiet"
+                                            @onclick="() => Leave(membership.EmployeeId)">
+                                        Take off
+                                    </button>
+                                </td>
+                            </AuthorizeView>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <AuthorizeView Policy="@Managing" Context="mayManage">
+        @if (Team.IsActive)
+        {
+            <section class="standing">
+                <h2>Put somebody on it</h2>
+
+                <div class="fields">
+                    <label>
+                        <span>Who</span>
+                        <select @bind="Joining">
+                            <option value="">Choose somebody</option>
+                            @foreach (var person in Available)
+                            {
+                                <option value="@person.Key">@person.Value</option>
+                            }
+                        </select>
+                        <span class="subtle">
+                            Anybody on the staff list who is not already on this team. Joining
+                            changes nothing about their department, their manager or their leave.
+                        </span>
+                    </label>
+
+                    <label>
+                        <span>From</span>
+                        <input type="date" @bind="JoiningOn" />
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="Join">Put them on</button>
+                </div>
+            </section>
+        }
+
+        <section class="standing">
+            <h2>The team itself</h2>
+
+            <div class="fields">
+                <label>
+                    <span>Name</span>
+                    <input @bind="Name" />
+                </label>
+
+                <label>
+                    <span>What it is for</span>
+                    <input @bind="Purpose" />
+                </label>
+            </div>
+
+            <div class="row-actions">
+                <button type="button" @onclick="Save">Save it</button>
+
+                @if (Team.IsActive)
+                {
+                    <button type="button" class="danger" @onclick="Disband">Disband it</button>
+                }
+                else
+                {
+                    <button type="button" class="button--quiet" @onclick="Reform">Re-form it</button>
+                }
+            </div>
+
+            <p class="subtle">
+                Disbanding ends everybody's spell on the team and keeps the record. Nothing is
+                deleted: what anybody wrote about this team's work still names it.
+            </p>
+        </section>
+    </AuthorizeView>
+
+    @if (Past.Count > 0)
+    {
+        <section class="standing">
+            <h2>Used to be on it</h2>
+
+            @*
+                Kept, because "who was on the platform team when this decision was taken" is a
+                question somebody asks six months later, and a membership table that only knows
+                about now cannot answer it.
+            *@
+            <table class="grid">
+                <caption class="visually-hidden">People who have left this team</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">From</th>
+                        <th scope="col">Until</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var membership in Past)
+                    {
+                        <tr class="row--closed">
+                            <td>@PersonName(membership.EmployeeId)</td>
+                            <td>@membership.JoinedOn.ToString("d MMM yyyy")</td>
+                            <td>@membership.LeftOn!.Value.ToString("d MMM yyyy")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+}
+
+@code {
+    private const string Managing = PermissionClaim.PolicyPrefix + Permissions.TeamsManage;
+
+    [Parameter]
+    public string Handle { get; set; } = string.Empty;
+
+    private Team? Team { get; set; }
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private Dictionary<Guid, string> Departments { get; set; } = [];
+
+    private Dictionary<Guid, Guid?> Where { get; set; } = [];
+
+    private List<PersonRow> Staff { get; set; } = [];
+
+    private Guid? Joining { get; set; }
+
+    private DateTime JoiningOn { get; set; }
+
+    private string Name { get; set; } = string.Empty;
+
+    private string Purpose { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private List<TeamMembership> Past =>
+        [.. Team?.Members.Where(one => !one.IsCurrent) ?? []];
+
+    /// <summary>
+    /// Who could be put on this team.
+    /// </summary>
+    /// <remarks>
+    /// Leavers are left out, and so is anybody already on it. A picker that offers somebody who
+    /// cannot be added is a picker whose next screen is a refusal, and the refusal is the one
+    /// place a person is least willing to read.
+    /// </remarks>
+    private IEnumerable<KeyValuePair<Guid, string>> Available =>
+        Staff
+            .Where(one => one.Status != EmploymentStatus.Left)
+            .Where(one => Team is null || !Team.Has(one.Id))
+            .OrderBy(one => one.FullName, StringComparer.CurrentCulture)
+            .Select(one => new KeyValuePair<Guid, string>(one.Id, one.FullName));
+
+    private string Spread
+    {
+        get
+        {
+            var departments = (Team?.Current ?? [])
+                .Select(one => Where.GetValueOrDefault(one.EmployeeId))
+                .Where(one => one is not null)
+                .Select(one => Departments.GetValueOrDefault(one!.Value))
+                .Where(one => one is not null)
+                .Distinct()
+                .OrderBy(one => one, StringComparer.CurrentCulture)
+                .ToList();
+
+            return departments.Count == 0 ? "—" : string.Join(", ", departments);
+        }
+    }
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Team = await Service.ByHandleAsync(Handle);
+
+        Names = await People.NamesAsync();
+        Departments = await People.DepartmentNamesAsync();
+        Where = await People.DepartmentOfEachAsync();
+        Staff = await People.RosterAsync();
+
+        if (Team is null)
+        {
+            return;
+        }
+
+        Name = Team.Name;
+        Purpose = Team.Purpose ?? string.Empty;
+
+        if (JoiningOn == default)
+        {
+            JoiningOn = Clock.Today.ToDateTime(TimeOnly.MinValue);
+        }
+    }
+
+    private Task Join() => Act(
+        async () =>
+        {
+            if (Joining is not { } who)
+            {
+                throw new ArgumentException("Say who is joining.");
+            }
+
+            await Service.JoinAsync(Team!.Id, who, DateOnly.FromDateTime(JoiningOn));
+
+            Joining = null;
+        },
+        "They are on the team.");
+
+    private Task Leave(Guid employeeId) => Act(
+        () => Service.LeaveAsync(Team!.Id, employeeId), "Taken off. The spell is kept.");
+
+    private Task Lead(Guid? employeeId) => Act(
+        () => Service.LeadAsync(Team!.Id, employeeId),
+        employeeId is null ? "The team has no lead." : "Recorded.");
+
+    private Task Save() => Act(
+        () => Service.DescribeAsync(
+            Team!.Id, Name, string.IsNullOrWhiteSpace(Purpose) ? null : Purpose),
+        "Saved.");
+
+    private Task Disband() => Act(() => Service.DisbandAsync(Team!.Id), "Disbanded.");
+
+    private Task Reform() => Act(() => Service.ReformAsync(Team!.Id), "Re-formed.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private string PersonName(Guid employeeId) =>
+        Names.GetValueOrDefault(employeeId) ?? "Somebody who has been removed";
+
+    private string DepartmentOf(Guid employeeId) =>
+        Where.GetValueOrDefault(employeeId) is { } department
+            ? Departments.GetValueOrDefault(department) ?? "—"
+            : "—";
+
+    private static string Count(int many, string one, string more) =>
+        $"{many} {(many == 1 ? one : more)}";
+}

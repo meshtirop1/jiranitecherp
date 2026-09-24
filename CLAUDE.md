@@ -109,10 +109,27 @@ Each of these cost real time. They are written down so they cost it once.
   and then tested against the running container is tested in its previous version, and
   the result looks like a fix that did not work. Rebuild before believing a browser.
 - **RZ10012 "markup element with unexpected name" on the first build after editing
-  a Razor file** that uses a component from the same project is an incremental-build
-  artifact, not a missing `@using`. The component's generated type is not there yet
-  on that pass. Build a second time before adding a using directive that the
-  compiler will then tell you is unnecessary.
+  a Razor file** that uses a component from the same project is *usually* an
+  incremental-build artifact, not a missing `@using`. The component's generated type
+  is not there yet on that pass. Build a second time before adding a using directive
+  that the compiler will then tell you is unnecessary.
+
+  **Sometimes it is real, and this entry as originally written taught everybody to
+  ignore it.** The client page's whole attachments section had been a heading with
+  nothing underneath it since the shared `<Attached>` component was introduced: it
+  lives under `Components/Pages/Documents`, `_Imports.razor` reaches only
+  `Components` and `Components.Layout`, and Razor's response to a tag it cannot
+  resolve is to emit it as an unknown HTML element, which the browser drops. Nobody
+  could attach a document to a client and nothing anywhere said why. If the warning
+  survives a second build, it is a missing `@using`. `ComponentsInScopeTests` now
+  fails the build for it, so the judgement call is gone.
+- **`dotnet build` without `--no-incremental` does not show you the warnings.** It
+  reports only what it recompiled, so a project it considers unchanged contributes
+  nothing — and several commits went in claiming "0 warnings" while a clean build had
+  four, including the RZ10012 above and two `CS0108` hides that were hiding a real
+  component property. The rule in this file is that a build ends with 0 warnings; the
+  build that proves it is `dotnet build JiranisokoTech.slnx --no-incremental`, and it
+  is worth running before a commit rather than after somebody notices.
 - **A project added to the solution must be added to the Dockerfile too.** The
   restore layer copies each `.csproj` by name, so a new one makes
   `dotnet restore JiranisokoTech.slnx` fail *inside the image only*. The local
@@ -165,6 +182,15 @@ Each of these cost real time. They are written down so they cost it once.
   handler. Two pages were nearly diagnosed as "interactivity does not work in
   this application" on that evidence. Wait for the circuit (the element gains a
   `_blazorEvents_*` property) before concluding anything.
+- **A checkbox read by `document.querySelector('input[type=checkbox]')` is the
+  navigation's, not the page's.** The layout's sidebar toggle is an
+  `<input type="checkbox">` with `display: none`, and it is the first one in the
+  document on every page. Half an hour went into "Blazor is not binding this
+  checkbox" before the element being clicked turned out to be the hamburger menu.
+  When driving a page from the console, select by what is around the control —
+  `[...document.querySelectorAll('input[type=checkbox]')].find(x => x.parentElement.className === 'inline')` —
+  and confirm the element has a `_blazorEvents_*` property before concluding anything
+  about binding.
 - **`innerText` does not show a margin.** Reading a page through text extraction
   shows "05:51by Mesh Tirop" whether or not the chip beside a value is properly
   spaced, because the space is CSS rather than a text node. Confirm spacing with

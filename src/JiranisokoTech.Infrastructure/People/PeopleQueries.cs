@@ -138,6 +138,22 @@ public sealed class PeopleQueries(AppDbContext database)
             .ToDictionaryAsync(
                 department => department.Id, department => department.Name, cancellationToken);
 
+    /// <summary>
+    /// Which department each person sits in.
+    /// </summary>
+    /// <remarks>
+    /// The whole staff list in one dictionary, for the same reason the reporting lines are
+    /// loaded that way: this is a firm of tens of people and the caller needs every row at
+    /// once. The teams page uses it to say which departments a team spans, which is the fact
+    /// that makes a team visibly not a department.
+    /// </remarks>
+    public Task<Dictionary<Guid, Guid?>> DepartmentOfEachAsync(
+        CancellationToken cancellationToken = default) =>
+        database.Employees
+            .AsNoTracking()
+            .Select(employee => new { employee.Id, employee.DepartmentId })
+            .ToDictionaryAsync(one => one.Id, one => one.DepartmentId, cancellationToken);
+
     public async Task<List<DepartmentRow>> DepartmentsAsync(
         bool includeClosed = true, CancellationToken cancellationToken = default)
     {

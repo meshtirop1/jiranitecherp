@@ -1,0 +1,358 @@
+@page "/announcements"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Notices
+@using JiranisokoTech.Domain.Notices
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject AnnouncementService Service
+@inject PeopleQueries People
+@inject NavigationManager Navigation
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    The firm's notice board.
+
+    Section 6. No permission beyond being signed in, for the reason the notice centre has none:
+    this is addressed to everybody who works here, and a door to a room everybody may enter is
+    just a door. Posting is a permission, because a firm-wide message is the one thing in this
+    system that cannot be unsaid.
+
+    One row read by many. There is no read count anywhere on this page, deliberately: a number
+    saying how many people opened something is a number nobody acts on, and it invites the belief
+    that whoever did not open it does not know. What this page does show is who has acknowledged
+    the few announcements that ask to be acknowledged, because that is a real act by a real
+    person and can be chased.
+*@
+
+<PageTitle>Announcements — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Announcements</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Done is not null)
+{
+    <p class="done" role="status">@Done</p>
+}
+
+@if (Outstanding.Count > 0)
+{
+    <section class="standing">
+        <h2>Waiting on you</h2>
+
+        <p class="instructions">
+            These ask you to say you have read them. Most announcements do not — these are the
+            ones that change something you are expected to do.
+        </p>
+
+        @foreach (var one in Outstanding)
+        {
+            <article class="entry">
+                <h3>@one.Title</h3>
+                <p class="subtle">
+                    @Who(one.ByEmployeeId)
+                    <span class="subtle">@one.PostedAt!.Value.ToLocalTime().ToString("d MMM yyyy")</span>
+                </p>
+                <p class="as-typed">@one.Body</p>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="() => Acknowledge(one.Id)">
+                        I have read this
+                    </button>
+                </div>
+            </article>
+        }
+    </section>
+}
+
+<section class="standing">
+    <h2>On the board</h2>
+
+    @if (Board.Count == 0)
+    {
+        <p class="empty">Nothing is on the board.</p>
+    }
+    else
+    {
+        @foreach (var one in Board)
+        {
+            <article class="entry">
+                <h3>@one.Title</h3>
+
+                <p class="subtle">
+                    @Who(one.ByEmployeeId)
+                    <span class="subtle">@one.PostedAt!.Value.ToLocalTime().ToString("d MMM yyyy")</span>
+                    @if (one.DepartmentId is { } department)
+                    {
+                        <span class="pill pill--quiet">@DepartmentName(department)</span>
+                    }
+                    @if (one.NeedsAcknowledgement && Me is { } me && one.AcknowledgedBy(me))
+                    {
+                        <span class="pill pill--done">you have read this</span>
+                    }
+                    @if (one.ExpiresOn is { } expires)
+                    {
+                        <span class="subtle">until @expires.ToString("d MMM yyyy")</span>
+                    }
+                </p>
+
+                <p class="as-typed">@one.Body</p>
+
+                <AuthorizeView Policy="@Posting" Context="mayPost">
+                    <p class="subtle"><a href="/announcements/@one.Id">Manage this one</a></p>
+                </AuthorizeView>
+            </article>
+        }
+    }
+</section>
+
+<AuthorizeView Policy="@Posting" Context="mayPost">
+    <section class="standing">
+        <h2>Write one</h2>
+
+        <div class="fields">
+            <label>
+                <span>Heading</span>
+                <input @bind="Title" placeholder="The office is closed on Friday" />
+            </label>
+
+            <label>
+                <span>Who it is for</span>
+                <select @bind="DepartmentId">
+                    <option value="">Everybody</option>
+                    @foreach (var (id, name) in Departments.OrderBy(one => one.Value))
+                    {
+                        <option value="@id">@name</option>
+                    }
+                </select>
+                <span class="subtle">
+                    This narrows whose board it appears on. It is not a permission — the board is
+                    read by everybody who works here, so nothing confidential belongs on it.
+                </span>
+            </label>
+        </div>
+
+        <label class="stack">
+            <span>What it says</span>
+            <textarea rows="6" @bind="Body"
+                      placeholder="Line breaks are kept. Write it the way you would say it."></textarea>
+        </label>
+
+        <p class="subtle">
+            <label class="inline">
+                <input type="checkbox" @bind="NeedsAcknowledgement" />
+                <span>Ask people to say they have read it</span>
+            </label>
+        </p>
+
+        <p class="subtle">
+            Leave that off for anything that is simply worth knowing. Asking twenty people to
+            press a button about the office being shut teaches them to press the button without
+            reading. Turn it on for something that changes what somebody is expected to do — and
+            note that once anybody has answered, the words are fixed.
+        </p>
+
+        <div class="row-actions">
+            <button type="button" @onclick="Write">Write it as a draft</button>
+        </div>
+
+        <p class="subtle">
+            It goes up when you post it, from its own page. A firm-wide announcement is the one
+            message here that cannot be unsaid, so nothing is posted by the same press that
+            writes it.
+        </p>
+    </section>
+
+    @if (Mine.Count > 0)
+    {
+        <section class="standing">
+            <h2>Not up yet, and taken down</h2>
+
+            <table class="grid">
+                <caption class="visually-hidden">Drafts and withdrawn announcements</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Heading</th>
+                        <th scope="col">State</th>
+                        <th scope="col">Written</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var one in Mine)
+                    {
+                        <tr class="@(one.State == AnnouncementState.Draft ? null : "row--closed")">
+                            <td><a href="/announcements/@one.Id">@one.Title</a></td>
+                            <td>
+                                <span class="pill @PillFor(one.State)">@Say(one.State)</span>
+                            </td>
+                            <td>@one.WrittenAt.ToLocalTime().ToString("d MMM yyyy")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+</AuthorizeView>
+
+@code {
+    private const string Posting = PermissionClaim.PolicyPrefix + Permissions.AnnouncementsPost;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private Guid? Me { get; set; }
+
+    private Guid? MyDepartment { get; set; }
+
+    private List<Announcement> Board { get; set; } = [];
+
+    private List<Announcement> Outstanding { get; set; } = [];
+
+    private List<Announcement> Mine { get; set; } = [];
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private Dictionary<Guid, string> Departments { get; set; } = [];
+
+    private string Title { get; set; } = string.Empty;
+
+    private string Body { get; set; } = string.Empty;
+
+    private Guid? DepartmentId { get; set; }
+
+    private bool NeedsAcknowledgement { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private string Headline
+    {
+        get
+        {
+            if (Outstanding.Count > 0)
+            {
+                return Outstanding.Count == 1
+                    ? "One is waiting for you to say you have read it."
+                    : $"{Outstanding.Count} are waiting for you to say you have read them.";
+            }
+
+            return Board.Count switch
+            {
+                0 => "Nothing is on the board.",
+                1 => "One announcement.",
+                var many => $"{many} announcements.",
+            };
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        Me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        Names = await People.NamesAsync();
+        Departments = await People.DepartmentNamesAsync();
+
+        /*
+         * Somebody signed in without a staff record — a service account, or an administrator
+         * who does not work here — sees the firm-wide board and nothing addressed to a
+         * department. They cannot acknowledge anything, because an acknowledgement is a person
+         * saying they have read it and there is no person to name.
+         */
+        MyDepartment = Me is { } me
+            ? (await People.DepartmentOfEachAsync()).GetValueOrDefault(me)
+            : null;
+
+        Board = await Service.UpForAsync(MyDepartment);
+
+        Outstanding = Me is { } who
+            ? await Service.OutstandingForAsync(who, MyDepartment)
+            : [];
+
+        if (user.HasClaim(PermissionClaim.Type, Permissions.AnnouncementsPost))
+        {
+            Mine = [.. (await Service.AllAsync())
+                .Where(one => one.State != AnnouncementState.Posted)];
+        }
+    }
+
+    private async Task Write()
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            if (Me is not { } me)
+            {
+                throw new InvalidOperationException(
+                    "An announcement carries the name of whoever posted it, and this account is "
+                    + "not linked to a staff record.");
+            }
+
+            var announcement = await Service.WriteAsync(
+                Title, Body, me, DepartmentId, NeedsAcknowledgement);
+
+            Navigation.NavigateTo($"/announcements/{announcement.Id}");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private async Task Acknowledge(Guid id)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await Service.AcknowledgeAsync(id, Me!.Value);
+            Done = "Recorded. Thank you.";
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private string Who(Guid employeeId) =>
+        Names.GetValueOrDefault(employeeId) ?? "Somebody no longer on the staff list";
+
+    private string DepartmentName(Guid id) => Departments.GetValueOrDefault(id) ?? "a department";
+
+    private static string Say(AnnouncementState state) => state switch
+    {
+        AnnouncementState.Draft => "Draft",
+        AnnouncementState.Posted => "Up",
+        _ => "Taken down",
+    };
+
+    private static string PillFor(AnnouncementState state) => state switch
+    {
+        AnnouncementState.Posted => "pill--done",
+        AnnouncementState.Draft => "pill--wait",
+        _ => "pill--quiet",
+    };
+}

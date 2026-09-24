@@ -79,6 +79,15 @@
                 </div>
 
                 @*
+                    Beside the notice centre, because the pair is what somebody checks: one is
+                    addressed to them and the other to everybody. No permission on either —
+                    both are for whoever works here.
+                *@
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="announcements">Announcements</NavLink>
+                </div>
+
+                @*
                     Next to the incidents, because the first thing anybody does in
                     one is ask what the broken thing is and who owns it.
                 *@
@@ -272,6 +281,30 @@
                                Context="departments">
                     <div class="nav-item px-3">
                         <NavLink class="nav-link" href="departments">Departments</NavLink>
+                    </div>
+                </AuthorizeView>
+
+                @*
+                    Its own permission rather than departments.view, because everybody who works
+                    here needs to be able to look up which team owns what, and not everybody has
+                    any business reading the shape of the firm.
+                *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.TeamsView)"
+                               Context="teams">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="teams">Teams</NavLink>
+                    </div>
+                </AuthorizeView>
+
+                @*
+                    Everybody has this one. A performance system whose subject cannot read their
+                    own goals is a file kept about somebody, and whose else they can read is
+                    decided inside the page by the reporting line rather than here.
+                *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.GoalsView)"
+                               Context="goals">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="performance">Performance</NavLink>
                     </div>
                 </AuthorizeView>
 

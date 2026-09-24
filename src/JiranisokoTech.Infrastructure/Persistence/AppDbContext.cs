@@ -47,6 +47,28 @@ public class AppDbContext(
     public DbSet<Employee> Employees => Set<Employee>();
 
     /// <summary>
+    /// The teams, which are not departments.
+    /// </summary>
+    /// <remarks>
+    /// A department is where somebody sits and a team is what they are working on. Keeping them
+    /// as separate tables is what lets a team cross departments without taking anybody out of
+    /// the one that answers for them.
+    /// </remarks>
+    public DbSet<Team> Teams => Set<Team>();
+
+    /// <summary>
+    /// What people are trying to achieve, and the rounds of reviews they are discussed in.
+    /// </summary>
+    /// <remarks>
+    /// Two sets and nothing joining them, deliberately: a rating is never computed from goal
+    /// outcomes. See the note on the service.
+    /// </remarks>
+    public DbSet<Domain.Performance.Goal> Goals => Set<Domain.Performance.Goal>();
+
+    public DbSet<Domain.Performance.ReviewCycle> ReviewCycles =>
+        Set<Domain.Performance.ReviewCycle>();
+
+    /// <summary>
     /// What still has to happen when somebody leaves.
     /// </summary>
     /// <remarks>
@@ -115,6 +137,17 @@ public class AppDbContext(
 
     /// <summary>What each person wants emailed as well as recorded. Section 59.</summary>
     public DbSet<Domain.Notices.NoticeRule> NoticeRules => Set<Domain.Notices.NoticeRule>();
+
+    /// <summary>
+    /// The notice board: one row read by many.
+    /// </summary>
+    /// <remarks>
+    /// The opposite shape from a notice, which is one row per person. A firm-wide message written
+    /// as notices would cost a row a head, would need every one of them edited to fix a typo, and
+    /// would never reach whoever is hired next week.
+    /// </remarks>
+    public DbSet<Domain.Notices.Announcement> Announcements =>
+        Set<Domain.Notices.Announcement>();
 
     public DbSet<ApprovalRequest> Approvals => Set<ApprovalRequest>();
 

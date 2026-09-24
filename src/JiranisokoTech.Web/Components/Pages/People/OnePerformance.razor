@@ -1,0 +1,517 @@
+@page "/performance/{EmployeeId:guid}"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.People
+@using JiranisokoTech.Domain.Performance
+@using JiranisokoTech.Infrastructure.Authorization
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.GoalsView)]
+@inject PerformanceService Service
+@inject PeopleQueries People
+@inject Reaches Reaches
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    One person's goals and reviews.
+
+    Who may open this is decided by the reporting line, not by the URL: a reach is computed and
+    anybody outside it is told they cannot see it. That check is here rather than in an attribute
+    because the answer depends on which person is being asked about, which an attribute cannot
+    know.
+
+    Everything about what the manager wrote and whether the subject may read it yet is decided in
+    the domain, by Review.ManagerNoteFor. This page cannot reach the text another way, which is
+    the point of it being the only accessor.
+*@
+
+<PageTitle>@(Name ?? "Performance") — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/performance">Performance</a></nav>
+
+@if (!Loaded)
+{
+    <p class="empty">Reading.</p>
+}
+else if (!MaySee)
+{
+    <p class="empty">
+        You cannot see this person's goals and reviews. Performance follows the reporting line:
+        your own, and anybody who answers to you.
+    </p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Name</h1>
+        <p class="subtle">
+            @(IsMe ? "Your goals and reviews" : "Goals and reviews")
+            <span class="subtle">@Headline</span>
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <section class="standing">
+        <h2>Goals</h2>
+
+        @if (Goals.Count == 0)
+        {
+            <p class="empty">Nothing has been set yet.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Goals</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Goal</th>
+                        <th scope="col">How it will be judged</th>
+                        <th scope="col">Runs</th>
+                        <th scope="col">Where it got to</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var goal in Goals)
+                    {
+                        <tr class="@(goal.IsOpen ? null : "row--closed")">
+                            <td>
+                                <a href="/performance/goals/@goal.Id">@goal.Title</a>
+                                @if (goal.Notes.Count > 0)
+                                {
+                                    <span class="subtle">
+                                        @Count(goal.Notes.Count, "note", "notes")
+                                    </span>
+                                }
+                            </td>
+                            <td><span class="subtle">@goal.Measure</span></td>
+                            <td>
+                                @goal.To.ToString("d MMM yyyy")
+                                @if (goal.IsOverdueOn(Today))
+                                {
+                                    <span class="pill pill--danger">past its date</span>
+                                }
+                            </td>
+                            <td>
+                                @if (goal.Outcome is { } outcome)
+                                {
+                                    <span class="pill @PillFor(outcome)">@Say(outcome)</span>
+                                }
+                                else
+                                {
+                                    <span class="pill pill--wait">open</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    @if (MayManage && !IsMe)
+    {
+        <section class="standing">
+            <h2>Set a goal</h2>
+
+            <div class="fields">
+                <label>
+                    <span>The goal</span>
+                    <input @bind="Title" placeholder="Run the deployment rota single-handed" />
+                </label>
+
+                <label>
+                    <span>How anybody will know</span>
+                    <input @bind="Measure"
+                           placeholder="The rota is written down and two others have deployed" />
+                    <span class="subtle">
+                        Required, and the rule here that does the work. "Improve communication" is
+                        not a goal; it is a mood, and at review time it can be argued either way
+                        by whoever is more confident.
+                    </span>
+                </label>
+            </div>
+
+            <div class="fields">
+                <label>
+                    <span>From</span>
+                    <input type="date" @bind="From" />
+                </label>
+
+                <label>
+                    <span>By</span>
+                    <input type="date" @bind="To" />
+                </label>
+
+                <label>
+                    <span>Part of</span>
+                    <select @bind="CycleId">
+                        <option value="">No cycle</option>
+                        @foreach (var cycle in Cycles.Where(one => !one.IsClosed))
+                        {
+                            <option value="@cycle.Id">@cycle.Name</option>
+                        }
+                    </select>
+                </label>
+            </div>
+
+            <div class="row-actions">
+                <button type="button" @onclick="SetGoal">Set it</button>
+            </div>
+        </section>
+    }
+
+    <section class="standing">
+        <h2>Reviews</h2>
+
+        @if (Cycles.Count == 0)
+        {
+            <p class="empty">No review cycle has covered this person.</p>
+        }
+        else
+        {
+            @foreach (var cycle in Cycles)
+            {
+                var review = cycle.For(EmployeeId);
+
+                if (review is null)
+                {
+                    continue;
+                }
+
+                <article class="entry">
+                    <h3>
+                        @cycle.Name
+                        <span class="subtle">
+                            @cycle.From.ToString("MMM yyyy") to @cycle.To.ToString("MMM yyyy")
+                        </span>
+                        @if (cycle.IsClosed)
+                        {
+                            <span class="pill pill--quiet">cycle closed</span>
+                        }
+                        @if (review.IsShared)
+                        {
+                            <span class="pill pill--done">shared</span>
+                        }
+                    </h3>
+
+                    <dl class="facts">
+                        <dt>@(IsMe ? "What you wrote" : "What they wrote")</dt>
+                        <dd>
+                            @if (review.SelfNote is { } self)
+                            {
+                                <span class="as-typed">@self</span>
+                            }
+                            else
+                            {
+                                <span class="subtle">Nothing yet</span>
+                            }
+                        </dd>
+
+                        <dt>What their manager wrote</dt>
+                        <dd>
+                            @if (Me is { } reader && review.ManagerNoteFor(reader) is { } theirs)
+                            {
+                                <span class="as-typed">@theirs</span>
+
+                                @if (review.RatingFor(reader) is { } band)
+                                {
+                                    <span class="pill @BandPill(band)">@Band(band)</span>
+                                }
+                            }
+                            else if (IsMe && review.HasManagerNote)
+                            {
+                                @*
+                                    Said plainly rather than shown as an empty box. Somebody who
+                                    knows their manager has written something and cannot read it
+                                    yet is in a better position than somebody who thinks nobody
+                                    has bothered.
+                                *@
+                                <span class="subtle">
+                                    Written and not shared yet. You will see it when your manager
+                                    shares it, which is when the conversation happens.
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="subtle">Nothing yet</span>
+                            }
+                        </dd>
+                    </dl>
+
+                    @if (IsMe && !review.IsShared && !cycle.IsClosed)
+                    {
+                        <div class="fields">
+                            <label class="stack">
+                                <span>Your half</span>
+                                <textarea rows="6" @bind="SelfNotes[cycle.Id]"></textarea>
+                            </label>
+                        </div>
+
+                        <div class="row-actions">
+                            <button type="button" @onclick="() => WriteSelf(cycle.Id)">
+                                Save your half
+                            </button>
+                        </div>
+                    }
+
+                    @if (MayManage && !IsMe && !cycle.IsClosed)
+                    {
+                        <div class="fields">
+                            <label class="stack">
+                                <span>Your half, about them</span>
+                                <textarea rows="6" @bind="ManagerNotes[cycle.Id]"></textarea>
+                            </label>
+
+                            <label>
+                                <span>Band</span>
+                                <select @bind="Bands[cycle.Id]">
+                                    <option value="">No band</option>
+                                    <option value="@ReviewRating.Below">Below</option>
+                                    <option value="@ReviewRating.Meeting">Meeting</option>
+                                    <option value="@ReviewRating.Exceeding">Exceeding</option>
+                                </select>
+                                <span class="subtle">
+                                    Three bands rather than five, and optional. Nobody can say
+                                    what separates a three from a four, so the number gets argued
+                                    about instead of the work.
+                                </span>
+                            </label>
+                        </div>
+
+                        <div class="row-actions">
+                            <button type="button" @onclick="() => WriteManager(cycle.Id)">
+                                Save, keeping it private
+                            </button>
+
+                            @if (review.HasManagerNote && !review.IsShared)
+                            {
+                                <button type="button" @onclick="() => Share(cycle.Id)">
+                                    Share it with them
+                                </button>
+                            }
+                        </div>
+
+                        <p class="subtle">
+                            Saving does not show them anything. Sharing does, and cannot be
+                            undone — which is the right way round: the cycle cannot be closed
+                            while anything is written and unshared, because that would leave a
+                            verdict about somebody they were never shown.
+                        </p>
+                    }
+                </article>
+            }
+        }
+    </section>
+}
+
+@code {
+    [Parameter]
+    public Guid EmployeeId { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private Guid? Me { get; set; }
+
+    private bool Loaded { get; set; }
+
+    private bool MaySee { get; set; }
+
+    private bool MayManage { get; set; }
+
+    private string? Name { get; set; }
+
+    private List<Goal> Goals { get; set; } = [];
+
+    private List<ReviewCycle> Cycles { get; set; } = [];
+
+    private Dictionary<Guid, string> SelfNotes { get; set; } = [];
+
+    private Dictionary<Guid, string> ManagerNotes { get; set; } = [];
+
+    private Dictionary<Guid, ReviewRating?> Bands { get; set; } = [];
+
+    private string Title { get; set; } = string.Empty;
+
+    private string Measure { get; set; } = string.Empty;
+
+    private DateTime From { get; set; }
+
+    private DateTime To { get; set; }
+
+    private Guid? CycleId { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private bool IsMe => Me == EmployeeId;
+
+    private DateOnly Today => Clock.Today;
+
+    private string Headline
+    {
+        get
+        {
+            var open = Goals.Count(one => one.IsOpen);
+            var late = Goals.Count(one => one.IsOverdueOn(Today));
+
+            return late > 0
+                ? $"{Count(open, "open goal", "open goals")}, {late} past their date"
+                : Count(open, "open goal", "open goals");
+        }
+    }
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthenticationState).User;
+        var held = user.FindAll(PermissionClaim.Type).Select(claim => claim.Value).ToHashSet();
+
+        Me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        MayManage = held.Contains(Permissions.GoalsManage);
+
+        var reach = await Reaches.PerformanceAsync(held, Me);
+
+        MaySee = reach.Contains(EmployeeId);
+        Loaded = true;
+
+        if (!MaySee)
+        {
+            return;
+        }
+
+        Name = (await People.NamesAsync()).GetValueOrDefault(EmployeeId);
+        Goals = await Service.GoalsForAsync(EmployeeId);
+        Cycles = await Service.CyclesForAsync(EmployeeId);
+
+        if (From == default)
+        {
+            From = Today.ToDateTime(TimeOnly.MinValue);
+            To = Today.AddMonths(6).ToDateTime(TimeOnly.MinValue);
+        }
+
+        /*
+         * The boxes are seeded from what is stored on the first read and left alone afterwards,
+         * so that a save does not overwrite what somebody is in the middle of typing in the box
+         * next to it. Interactive rendering keeps the component alive between presses, which is
+         * why a plain flag works here and would not on a statically rendered page.
+         */
+        foreach (var cycle in Cycles)
+        {
+            var review = cycle.For(EmployeeId);
+
+            if (review is null)
+            {
+                continue;
+            }
+
+            SelfNotes.TryAdd(cycle.Id, review.SelfNote ?? string.Empty);
+
+            if (Me is { } reader)
+            {
+                ManagerNotes.TryAdd(cycle.Id, review.ManagerNoteFor(reader) ?? string.Empty);
+                Bands.TryAdd(cycle.Id, review.RatingFor(reader));
+            }
+        }
+    }
+
+    private Task SetGoal() => Act(
+        async () =>
+        {
+            await Service.SetGoalAsync(
+                EmployeeId,
+                Me!.Value,
+                Title,
+                Measure,
+                DateOnly.FromDateTime(From),
+                DateOnly.FromDateTime(To),
+                CycleId);
+
+            Title = string.Empty;
+            Measure = string.Empty;
+        },
+        "Set.");
+
+    private Task WriteSelf(Guid cycleId) => Act(
+        () => Service.WriteSelfAsync(cycleId, EmployeeId, SelfNotes[cycleId]),
+        "Saved. Your manager can read this.");
+
+    private Task WriteManager(Guid cycleId) => Act(
+        () => Service.WriteManagerAsync(
+            cycleId, EmployeeId, Me!.Value, ManagerNotes[cycleId], Bands[cycleId]),
+        "Saved, and still private.");
+
+    private Task Share(Guid cycleId) => Act(
+        () => Service.ShareAsync(cycleId, EmployeeId), "Shared. They can read it now.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        /*
+         * The stored values are re-read so that what the manager just saved is reflected, and the
+         * boxes keep whatever is in them because TryAdd does not overwrite.
+         */
+        await LoadAsync();
+    }
+
+    private static string Count(int many, string one, string more) =>
+        $"{many} {(many == 1 ? one : more)}";
+
+    private static string Say(GoalOutcome outcome) => outcome switch
+    {
+        GoalOutcome.Achieved => "achieved",
+        GoalOutcome.Partly => "partly",
+        GoalOutcome.Missed => "missed",
+        _ => "dropped",
+    };
+
+    private static string PillFor(GoalOutcome outcome) => outcome switch
+    {
+        GoalOutcome.Achieved => "pill--done",
+        GoalOutcome.Partly => "pill--wait",
+        GoalOutcome.Missed => "pill--danger",
+        _ => "pill--quiet",
+    };
+
+    private static string Band(ReviewRating band) => band switch
+    {
+        ReviewRating.Below => "below",
+        ReviewRating.Meeting => "meeting",
+        _ => "exceeding",
+    };
+
+    private static string BandPill(ReviewRating band) => band switch
+    {
+        ReviewRating.Below => "pill--danger",
+        ReviewRating.Meeting => "pill--done",
+        _ => "pill--done",
+    };
+}

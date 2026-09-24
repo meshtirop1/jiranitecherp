@@ -1,0 +1,435 @@
+@page "/performance"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.People
+@using JiranisokoTech.Domain.Performance
+@using JiranisokoTech.Infrastructure.Authorization
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.GoalsView)]
+@inject PerformanceService Service
+@inject PeopleQueries People
+@inject Reaches Reaches
+@inject NavigationManager Navigation
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    Goals, and the review cycles they are talked about in.
+
+    Section 6. Everybody who works here can open this and see their own; whose else somebody sees
+    is decided by the reporting line rather than by their department, because an appraisal is a
+    line-management relationship. That is a deliberate disagreement with the roster, which narrows
+    by department — see Reaches.PerformanceAsync.
+
+    Nothing on this page adds up a score. A goal has an outcome and a review has a band, and the
+    band is never computed from the outcomes: the arithmetic is right there, and using it is what
+    turns setting goals into negotiating how easy this year's should be.
+*@
+
+<PageTitle>Performance — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Performance</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Done is not null)
+{
+    <p class="done" role="status">@Done</p>
+}
+
+@if (Me is null)
+{
+    <p class="empty">
+        This sign-in is not linked to a staff record, so there is nobody here to have goals.
+    </p>
+}
+else
+{
+    <section class="standing">
+        <h2>Your goals</h2>
+
+        @if (Mine.Count == 0)
+        {
+            <p class="empty">Nothing has been set with you yet.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Your goals</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Goal</th>
+                        <th scope="col">How it will be judged</th>
+                        <th scope="col">By</th>
+                        <th scope="col">Where it got to</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var goal in Mine)
+                    {
+                        <tr class="@(goal.IsOpen ? null : "row--closed")">
+                            <td><a href="/performance/goals/@goal.Id">@goal.Title</a></td>
+                            <td><span class="subtle">@goal.Measure</span></td>
+                            <td>
+                                @goal.To.ToString("d MMM yyyy")
+                                @if (goal.IsOverdueOn(Today))
+                                {
+                                    <span class="pill pill--danger">past its date</span>
+                                }
+                            </td>
+                            <td>
+                                @if (goal.Outcome is { } outcome)
+                                {
+                                    <span class="pill @PillFor(outcome)">@Say(outcome)</span>
+                                }
+                                else
+                                {
+                                    <span class="pill pill--wait">open</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="standing">
+        <h2>Your reviews</h2>
+
+        @if (MyCycles.Count == 0)
+        {
+            <p class="empty">No review cycle has covered you yet.</p>
+        }
+        else
+        {
+            <ul class="plain">
+                @foreach (var cycle in MyCycles)
+                {
+                    var review = cycle.For(Me.Value);
+
+                    <li>
+                        <a href="/performance/@Me">@cycle.Name</a>
+                        <span class="subtle">
+                            @cycle.From.ToString("MMM yyyy") to @cycle.To.ToString("MMM yyyy")
+                        </span>
+                        @if (review is null)
+                        {
+                            <span class="pill pill--quiet">not in it</span>
+                        }
+                        else if (review.IsShared)
+                        {
+                            <span class="pill pill--done">shared with you</span>
+                        }
+                        else if (review.HasSelfNote)
+                        {
+                            <span class="pill pill--wait">your half written</span>
+                        }
+                        else
+                        {
+                            <span class="pill pill--wait">waiting on you</span>
+                        }
+                    </li>
+                }
+            </ul>
+
+            <p class="subtle">
+                A manager's half stays private until they share it. That is not a delay in this
+                page: reading a half-written appraisal of yourself is the one real harm this
+                feature could do, so the rule is in the domain rather than on a screen.
+            </p>
+        }
+    </section>
+}
+
+<AuthorizeView Policy="@Managing" Context="mayManage">
+    <section class="standing">
+        <h2>People you answer for</h2>
+
+        @if (Others.Count == 0)
+        {
+            <p class="empty">Nobody reports to you.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Goals of people who report to you</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Who</th>
+                        <th scope="col">Open goals</th>
+                        <th scope="col">Past their date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var (id, name) in Others.OrderBy(one => one.Value))
+                    {
+                        <tr>
+                            <td><a href="/performance/@id">@name</a></td>
+                            <td>@Open(id)</td>
+                            <td>
+                                @if (Late(id) is var late && late > 0)
+                                {
+                                    <span class="pill pill--danger">@late</span>
+                                }
+                                else
+                                {
+                                    <span class="subtle">none</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="standing">
+        <h2>Review cycles</h2>
+
+        @if (Cycles.Count == 0)
+        {
+            <p class="empty">No cycle has been opened.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Review cycles</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Cycle</th>
+                        <th scope="col">Period</th>
+                        <th scope="col">In it</th>
+                        <th scope="col">Nothing written</th>
+                        <th scope="col">Written, not shared</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var cycle in Cycles)
+                    {
+                        <tr class="@(cycle.IsClosed ? "row--closed" : null)">
+                            <td>
+                                <a href="/performance/cycles/@cycle.Id">@cycle.Name</a>
+                                @if (cycle.IsClosed)
+                                {
+                                    <span class="pill pill--quiet">closed</span>
+                                }
+                            </td>
+                            <td>
+                                @cycle.From.ToString("d MMM yyyy")
+                                <span class="subtle">to @cycle.To.ToString("d MMM yyyy")</span>
+                            </td>
+                            <td>@cycle.Reviews.Count</td>
+                            <td>@cycle.Awaiting.Count</td>
+                            @*
+                                The column the cycle cannot be closed with anything in. A verdict
+                                written about somebody and never shown to them is the fault this
+                                whole feature has to avoid.
+                            *@
+                            <td>
+                                @if (cycle.NotShared.Count > 0)
+                                {
+                                    <span class="pill pill--danger">@cycle.NotShared.Count</span>
+                                }
+                                else
+                                {
+                                    <span class="subtle">none</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        <h3>Open a cycle</h3>
+
+        <div class="fields">
+            <label>
+                <span>What it is called</span>
+                <input @bind="CycleName" placeholder="2026, mid-year" />
+            </label>
+
+            <label>
+                <span>Period from</span>
+                <input type="date" @bind="From" />
+            </label>
+
+            <label>
+                <span>to</span>
+                <input type="date" @bind="To" />
+            </label>
+        </div>
+
+        <div class="row-actions">
+            <button type="button" @onclick="OpenCycle">Open it</button>
+        </div>
+
+        <p class="subtle">
+            Opening a cycle puts everybody who works here in it, with their manager taken from the
+            reporting line as it stands today and then kept. A list that filled up as people
+            participated could not show who had not, which is the only thing anybody wants from
+            it.
+        </p>
+    </section>
+</AuthorizeView>
+
+@code {
+    private const string Managing = PermissionClaim.PolicyPrefix + Permissions.GoalsManage;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private Guid? Me { get; set; }
+
+    private List<Goal> Mine { get; set; } = [];
+
+    private List<ReviewCycle> MyCycles { get; set; } = [];
+
+    private List<ReviewCycle> Cycles { get; set; } = [];
+
+    private Dictionary<Guid, string> Others { get; set; } = [];
+
+    private Dictionary<Guid, int> OpenGoals { get; set; } = [];
+
+    private Dictionary<Guid, int> LateGoals { get; set; } = [];
+
+    private string CycleName { get; set; } = string.Empty;
+
+    private DateTime From { get; set; }
+
+    private DateTime To { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private DateOnly Today => Clock.Today;
+
+    private string Headline
+    {
+        get
+        {
+            if (Me is null)
+            {
+                return "This sign-in is not linked to a staff record.";
+            }
+
+            var open = Mine.Count(one => one.IsOpen);
+            var late = Mine.Count(one => one.IsOverdueOn(Today));
+
+            return late > 0
+                ? $"{Count(open, "open goal", "open goals")}, {late} past their date."
+                : $"{Count(open, "open goal", "open goals")}.";
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        Me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        if (From == default)
+        {
+            From = new DateTime(Today.Year, 1, 1);
+            To = Today.ToDateTime(TimeOnly.MinValue);
+        }
+
+        if (Me is not { } me)
+        {
+            return;
+        }
+
+        Mine = await Service.GoalsForAsync(me);
+        MyCycles = await Service.CyclesForAsync(me);
+
+        if (!user.HasClaim(PermissionClaim.Type, Permissions.GoalsManage))
+        {
+            return;
+        }
+
+        /*
+         * Everybody this reader may open, less themselves — their own goals are in the section
+         * above and listing them twice would make the table below read as though somebody
+         * reports to themselves.
+         */
+        var reach = await Reaches.PerformanceAsync(
+            user.FindAll(PermissionClaim.Type).Select(claim => claim.Value).ToHashSet(), me);
+
+        var names = await People.NamesAsync();
+
+        Others = reach
+            .Where(one => one != me && names.ContainsKey(one))
+            .ToDictionary(one => one, one => names[one]);
+
+        Cycles = await Service.CyclesAsync();
+
+        var overdue = await Service.OverdueAsync([.. Others.Keys]);
+
+        LateGoals = overdue
+            .GroupBy(one => one.ForEmployeeId)
+            .ToDictionary(group => group.Key, group => group.Count());
+
+        OpenGoals = [];
+
+        foreach (var person in Others.Keys)
+        {
+            OpenGoals[person] = (await Service.GoalsForAsync(person)).Count(one => one.IsOpen);
+        }
+    }
+
+    private async Task OpenCycle()
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            var cycle = await Service.OpenCycleAsync(
+                CycleName, DateOnly.FromDateTime(From), DateOnly.FromDateTime(To));
+
+            Navigation.NavigateTo($"/performance/cycles/{cycle.Id}");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private int Open(Guid employeeId) => OpenGoals.GetValueOrDefault(employeeId);
+
+    private int Late(Guid employeeId) => LateGoals.GetValueOrDefault(employeeId);
+
+    private static string Count(int many, string one, string more) =>
+        $"{many} {(many == 1 ? one : more)}";
+
+    private static string Say(GoalOutcome outcome) => outcome switch
+    {
+        GoalOutcome.Achieved => "achieved",
+        GoalOutcome.Partly => "partly",
+        GoalOutcome.Missed => "missed",
+        _ => "dropped",
+    };
+
+    private static string PillFor(GoalOutcome outcome) => outcome switch
+    {
+        GoalOutcome.Achieved => "pill--done",
+        GoalOutcome.Partly => "pill--wait",
+        GoalOutcome.Missed => "pill--danger",
+        _ => "pill--quiet",
+    };
+}

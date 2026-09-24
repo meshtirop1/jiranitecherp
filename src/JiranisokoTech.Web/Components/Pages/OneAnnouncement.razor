@@ -1,0 +1,392 @@
+@page "/announcements/{Id:guid}"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Notices
+@using JiranisokoTech.Domain.Notices
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject AnnouncementService Service
+@inject PeopleQueries People
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    One announcement, and what has happened to it.
+
+    Readable by anybody signed in, because a link to an announcement has to keep working after it
+    comes off the board — which is the point of it coming off rather than being deleted: somebody
+    asking in September what the rule was in March needs the page, not an apology.
+
+    A draft is the exception and is shown to whoever may post. It is nothing the firm has said
+    yet.
+*@
+
+<PageTitle>@(Announcement?.Title ?? "Announcement") — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/announcements">Announcements</a></nav>
+
+@if (Announcement is null)
+{
+    <p class="empty">That announcement is not on file.</p>
+}
+else if (Announcement.State == AnnouncementState.Draft && !MayPost)
+{
+    @*
+        Not "no such thing", because there is one and lying about it would be worse. It is simply
+        not something the firm has said yet.
+    *@
+    <p class="empty">That announcement has not been posted.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Announcement.Title</h1>
+
+        <p class="subtle">
+            <span class="pill @PillFor(Announcement.State)">@Say(Announcement.State)</span>
+            @if (Announcement.NeedsAcknowledgement)
+            {
+                <span class="pill pill--wait">asks to be acknowledged</span>
+            }
+            @if (Announcement.HasExpiredOn(Clock.Today))
+            {
+                <span class="pill pill--quiet">off the board</span>
+            }
+            <span class="subtle">@Who(Announcement.ByEmployeeId)</span>
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <p class="as-typed">@Announcement.Body</p>
+
+    <dl class="facts">
+        <dt>For</dt>
+        <dd>
+            @if (Announcement.DepartmentId is { } department)
+            {
+                @DepartmentName(department)
+                <span class="subtle">only that department's board</span>
+            }
+            else
+            {
+                @:Everybody who works here
+            }
+        </dd>
+
+        <dt>Written</dt>
+        <dd>
+            @Announcement.WrittenAt.ToLocalTime().ToString("d MMM yyyy")
+            @if (Announcement.PostedAt is { } posted)
+            {
+                <span class="subtle">up @posted.ToLocalTime().ToString("d MMM yyyy")</span>
+            }
+        </dd>
+
+        <dt>Stays up</dt>
+        <dd>
+            @if (Announcement.ExpiresOn is { } expires)
+            {
+                @($"until {expires:d MMMM yyyy}")
+            }
+            else
+            {
+                <span class="subtle">no end date</span>
+            }
+        </dd>
+
+        @if (Announcement.Outcome is { } outcome)
+        {
+            <dt>What happened</dt>
+            <dd>@outcome</dd>
+        }
+    </dl>
+
+    @if (Announcement.NeedsAcknowledgement)
+    {
+        <section class="standing">
+            <h2>Who has said they have read it</h2>
+
+            @*
+                The only count on either of these pages, and the reason it is here rather than a
+                read receipt: this is an act somebody performed, so it can be chased. How many
+                people opened a page cannot.
+            *@
+            @if (Announcement.Acknowledgements.Count == 0)
+            {
+                <p class="empty">Nobody yet.</p>
+            }
+            else
+            {
+                <table class="grid">
+                    <caption class="visually-hidden">Acknowledgements</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Who</th>
+                            <th scope="col">When</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var said in Announcement.Acknowledgements)
+                        {
+                            <tr>
+                                <td>@Who(said.EmployeeId)</td>
+                                <td>@said.At.ToLocalTime().ToString("d MMM yyyy, HH:mm")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            @if (Announcement.IsUpOn(Clock.Today) && Me is { } me && !Announcement.AcknowledgedBy(me))
+            {
+                <div class="row-actions">
+                    <button type="button" @onclick="Acknowledge">I have read this</button>
+                </div>
+            }
+        </section>
+    }
+
+    <AuthorizeView Policy="@Posting" Context="mayPost">
+        @if (Announcement.State != AnnouncementState.Withdrawn)
+        {
+            <section class="standing">
+                <h2>Change it</h2>
+
+                @if (Announcement.HasAnybodyAcknowledged)
+                {
+                    <p class="instructions">
+                        The words are fixed. @Count(Announcement.Acknowledgements.Count) already
+                        said they have read this and agreed to what it says, and rewriting it
+                        would leave their answer on a document that has changed since. Post a new
+                        announcement instead.
+                    </p>
+                }
+                else
+                {
+                    <div class="fields">
+                        <label>
+                            <span>Heading</span>
+                            <input @bind="Title" />
+                        </label>
+
+                        <label>
+                            <span>Who it is for</span>
+                            <select @bind="DepartmentId">
+                                <option value="">Everybody</option>
+                                @foreach (var (id, name) in Departments.OrderBy(one => one.Value))
+                                {
+                                    <option value="@id">@name</option>
+                                }
+                            </select>
+                        </label>
+
+                        <label>
+                            <span>Comes off the board</span>
+                            <input type="date" @bind="ExpiresOn" />
+                            <span class="subtle">
+                                Leave it empty to leave it up. Coming off the board is not being
+                                deleted — this page keeps working.
+                            </span>
+                        </label>
+                    </div>
+
+                    <label class="stack">
+                        <span>What it says</span>
+                        <textarea rows="8" @bind="Body"></textarea>
+                    </label>
+
+                    @if (!Announcement.IsPosted)
+                    {
+                        @*
+                            Changeable only while it is a draft. Once it is up, whether it asked
+                            to be acknowledged is part of what people were shown: turning it on
+                            afterwards asks people who already read it a question that was not
+                            there, and turning it off throws away answers already given.
+                        *@
+                        <p class="subtle">
+                            <label class="inline">
+                                <input type="checkbox" @bind="NeedsAcknowledgement" />
+                                <span>Ask people to say they have read it</span>
+                            </label>
+                        </p>
+                    }
+
+                    <div class="row-actions">
+                        <button type="button" @onclick="Save">Save it</button>
+                    </div>
+                }
+            </section>
+
+            <section class="standing">
+                <h2>@(Announcement.IsPosted ? "Taking it down" : "Putting it up")</h2>
+
+                @if (!Announcement.IsPosted)
+                {
+                    <p class="subtle">
+                        Everybody @(Announcement.DepartmentId is null ? "who works here" : "in that department")
+                        will see this. It cannot be unsaid — taking it down afterwards leaves a
+                        record that it was up.
+                    </p>
+
+                    <div class="row-actions">
+                        <button type="button" @onclick="Post">Put it on the board</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="fields">
+                        <label>
+                            <span>Why it is coming down</span>
+                            <input @bind="Why" placeholder="the date was wrong" />
+                        </label>
+                    </div>
+
+                    <div class="row-actions">
+                        <button type="button" class="danger" @onclick="Withdraw">Take it down</button>
+                    </div>
+
+                    <p class="subtle">
+                        Nothing is deleted. People read it, and an announcement that vanished
+                        leaves everybody who acted on it holding an instruction this system says
+                        was never given.
+                    </p>
+                }
+            </section>
+        }
+    </AuthorizeView>
+}
+
+@code {
+    private const string Posting = PermissionClaim.PolicyPrefix + Permissions.AnnouncementsPost;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private Announcement? Announcement { get; set; }
+
+    private Guid? Me { get; set; }
+
+    private bool MayPost { get; set; }
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private Dictionary<Guid, string> Departments { get; set; } = [];
+
+    private string Title { get; set; } = string.Empty;
+
+    private string Body { get; set; } = string.Empty;
+
+    private Guid? DepartmentId { get; set; }
+
+    private DateTime? ExpiresOn { get; set; }
+
+    private bool NeedsAcknowledgement { get; set; }
+
+    private string Why { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        Me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        MayPost = user.HasClaim(PermissionClaim.Type, Permissions.AnnouncementsPost);
+
+        Announcement = await Service.OneAsync(Id);
+        Names = await People.NamesAsync();
+        Departments = await People.DepartmentNamesAsync();
+
+        if (Announcement is null)
+        {
+            return;
+        }
+
+        Title = Announcement.Title;
+        Body = Announcement.Body;
+        DepartmentId = Announcement.DepartmentId;
+        ExpiresOn = Announcement.ExpiresOn?.ToDateTime(TimeOnly.MinValue);
+        NeedsAcknowledgement = Announcement.NeedsAcknowledgement;
+    }
+
+    private Task Save() => Act(
+        () => Service.SayAsync(
+            Id,
+            Title,
+            Body,
+            DepartmentId,
+            ExpiresOn is { } off ? DateOnly.FromDateTime(off) : null,
+            // Only sent while it can still change, so that saving a typo on something already up
+            // does not produce a refusal about a setting nobody was trying to touch.
+            Announcement!.IsPosted ? null : NeedsAcknowledgement),
+        "Saved.");
+
+    private Task Post() => Act(() => Service.PostAsync(Id), "It is on the board.");
+
+    private Task Withdraw() => Act(
+        () => Service.WithdrawAsync(Id, Why), "Taken down. The record stays.");
+
+    private Task Acknowledge() => Act(
+        () => Service.AcknowledgeAsync(Id, Me!.Value), "Recorded. Thank you.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private string Who(Guid employeeId) =>
+        Names.GetValueOrDefault(employeeId) ?? "Somebody no longer on the staff list";
+
+    private string DepartmentName(Guid id) => Departments.GetValueOrDefault(id) ?? "a department";
+
+    private static string Count(int many) =>
+        many == 1 ? "One person has" : $"{many} people have";
+
+    private static string Say(AnnouncementState state) => state switch
+    {
+        AnnouncementState.Draft => "Draft",
+        AnnouncementState.Posted => "Up",
+        _ => "Taken down",
+    };
+
+    private static string PillFor(AnnouncementState state) => state switch
+    {
+        AnnouncementState.Posted => "pill--done",
+        AnnouncementState.Draft => "pill--wait",
+        _ => "pill--quiet",
+    };
+}

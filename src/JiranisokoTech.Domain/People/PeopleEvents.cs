@@ -89,3 +89,26 @@ public sealed record EmployeeTermsChanged(
     string FullName,
     ContractType? Contract,
     PayFrequency? Frequency) : DomainEvent;
+
+/// <summary>A team was formed.</summary>
+public sealed record TeamFormed(Guid TeamId, string Name, string Slug) : DomainEvent;
+
+/// <summary>
+/// Somebody joined a team.
+/// </summary>
+/// <remarks>
+/// Carries the team's name as well as its identifier, because the thing a handler wants to say
+/// is "you are on Platform" and a handler that had to go and look that up would be a second
+/// query for a string that was in hand when the event was raised.
+/// </remarks>
+public sealed record TeamJoined(
+    Guid TeamId, string Name, Guid EmployeeId, DateOnly On) : DomainEvent;
+
+public sealed record TeamLeft(
+    Guid TeamId, string Name, Guid EmployeeId, DateOnly On) : DomainEvent;
+
+/// <summary>A team has a new lead, or none.</summary>
+public sealed record TeamLeadChanged(
+    Guid TeamId, Guid? FromEmployeeId, Guid? ToEmployeeId) : DomainEvent;
+
+public sealed record TeamDisbanded(Guid TeamId, string Name, DateOnly On) : DomainEvent;

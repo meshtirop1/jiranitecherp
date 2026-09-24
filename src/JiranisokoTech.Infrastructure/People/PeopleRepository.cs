@@ -38,6 +38,19 @@ public sealed class PeopleRepository(AppDbContext database) : IPeopleRepository
             .Where(employee => employee.ReportsToId == managerId)
             .ToListAsync(cancellationToken);
 
+    public Task<List<Employee>> EverybodyHereAsync(
+        CancellationToken cancellationToken = default) =>
+        database.Employees
+            /*
+             * Suspended as well as active. Somebody off for three months was here for the nine
+             * before it, and leaving them out of a cycle would mean the one person whose year
+             * most needs discussing is the one nobody is asked about.
+             */
+            .Where(employee => employee.Status == EmploymentStatus.Active
+                || employee.Status == EmploymentStatus.Suspended)
+            .OrderBy(employee => employee.FullName)
+            .ToListAsync(cancellationToken);
+
     public Task<List<Department>> HeadedByAsync(
         Guid employeeId, CancellationToken cancellationToken = default) =>
         database.Departments

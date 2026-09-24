@@ -9,6 +9,7 @@
 @using JiranisokoTech.Domain.Contracts
 @using JiranisokoTech.Domain.Documents
 @using JiranisokoTech.Infrastructure.Business
+@using JiranisokoTech.Web.Components.Pages.Documents
 @using JiranisokoTech.Infrastructure.People
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ClientsView)]
@@ -16,7 +17,6 @@
 @inject ClientService Service
 @inject ContractService Contracting
 @inject ContactService ContactBook
-@inject DocumentService Files
 @inject PeopleQueries People
 @inject IClock Clock
 @inject NavigationManager Navigation
@@ -321,6 +321,13 @@ else
             One component, because five screens attach documents and each had its own copy
             of a list and an upload form — so versioning added in one of them would have
             been missing from the other four.
+
+            It needs the @@using above, and did not have it. The component lives under
+            Pages/Documents and _Imports.razor reaches only Components and Components.Layout,
+            so <Attached> resolved to nothing: Razor emitted it as an unknown HTML element and
+            the browser dropped it, leaving this section as a heading with nothing underneath.
+            The compiler said so — RZ10012 — and the warning was invisible on an incremental
+            build, which is the only kind anybody had been running.
         *@
         <Attached Kind="AttachedTo.Client" OwnerId="Id" ManagePolicy="@ManagePolicy"
                   Empty="Nothing attached. Contracts and signed orders belong here." />
@@ -352,15 +359,6 @@ else
     {
         get => _state;
         set => _state = value ?? new StatusInput();
-    }
-
-    private AttachInput _attaching = new();
-
-    [SupplyParameterFromForm(FormName = "attach")]
-    private AttachInput Attaching
-    {
-        get => _attaching;
-        set => _attaching = value ?? new AttachInput();
     }
 
     private ContactInput _person = new();
@@ -396,8 +394,6 @@ else
 
     private List<InvoiceRow> Invoices { get; set; } = [];
 
-    private List<Attachment> Attached { get; set; } = [];
-
     private string? Refusal { get; set; }
 
     private bool _loaded;
@@ -428,7 +424,6 @@ else
         Contacts = await Queries.ContactsAsync(Id);
         Contracts = await Queries.ContractsAsync(clientId: Id);
         Invoices = await Queries.InvoicesAsync(clientId: Id);
-        Attached = await Files.ForAsync(AttachedTo.Client, Id);
 
         // Only before the form has been posted, or a refused change would show
         // the stored value rather than the one somebody chose.
@@ -472,23 +467,6 @@ else
             await LoadAsync();
         }
     }
-
-    private Task Detach(Guid file) => TryAsync(() => Files.RemoveAsync(file));
-
-    private Task Attach() => TryAsync(async () =>
-    {
-        var file = Request?.Request.Form.Files["document"];
-
-        if (file is not { Length: > 0 })
-        {
-            throw new InvalidOperationException("Choose a file first.");
-        }
-
-        await using var contents = file.OpenReadStream();
-
-        await Files.AttachAsync(
-            AttachedTo.Client, Id, contents, file.FileName, file.Length, Me, Attaching.Note);
-    });
 
     private async Task TryAsync(Func<Task> act)
     {
@@ -552,11 +530,5 @@ else
         [Required(ErrorMessage = "Say what the agreement is for.")]
         [StringLength(300)]
         public string Title { get; set; } = string.Empty;
-    }
-
-    private sealed class AttachInput
-    {
-        [StringLength(500)]
-        public string? Note { get; set; }
     }
 }

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using JiranisokoTech.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace JiranisokoTech.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260924111606_Teams")]
+    partial class Teams
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1449,59 +1452,6 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                     b.ToTable("recurring_expenses", (string)null);
                 });
 
-            modelBuilder.Entity("JiranisokoTech.Domain.Notices.Announcement", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Body")
-                        .IsRequired()
-                        .HasMaxLength(20000)
-                        .HasColumnType("character varying(20000)");
-
-                    b.Property<Guid>("ByEmployeeId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("DepartmentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateOnly?>("ExpiresOn")
-                        .HasColumnType("date");
-
-                    b.Property<bool>("NeedsAcknowledgement")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Outcome")
-                        .HasMaxLength(1100)
-                        .HasColumnType("character varying(1100)");
-
-                    b.Property<DateTimeOffset?>("PostedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("State")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<DateTimeOffset>("WrittenAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ByEmployeeId");
-
-                    b.HasIndex("DepartmentId");
-
-                    b.HasIndex("State", "ExpiresOn", "DepartmentId")
-                        .HasDatabaseName("IX_announcements_up");
-
-                    b.ToTable("announcements", (string)null);
-                });
-
             modelBuilder.Entity("JiranisokoTech.Domain.Notices.Notice", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1965,94 +1915,6 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("teams", (string)null);
-                });
-
-            modelBuilder.Entity("JiranisokoTech.Domain.Performance.Goal", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset?>("ClosedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("CycleId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Detail")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<Guid>("ForEmployeeId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateOnly>("From")
-                        .HasColumnType("date");
-
-                    b.Property<string>("Measure")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<int?>("Outcome")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset>("SetAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("SetByEmployeeId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<DateOnly>("To")
-                        .HasColumnType("date");
-
-                    b.Property<string>("Verdict")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CycleId");
-
-                    b.HasIndex("ForEmployeeId", "Outcome", "To")
-                        .HasDatabaseName("IX_goals_for_open_by");
-
-                    b.ToTable("goals", (string)null);
-                });
-
-            modelBuilder.Entity("JiranisokoTech.Domain.Performance.ReviewCycle", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset?>("ClosedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateOnly>("From")
-                        .HasColumnType("date");
-
-                    b.Property<bool>("IsClosed")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
-
-                    b.Property<DateOnly>("To")
-                        .HasColumnType("date");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IsClosed");
-
-                    b.ToTable("review_cycles", (string)null);
                 });
 
             modelBuilder.Entity("JiranisokoTech.Domain.Platform.Flag", b =>
@@ -3879,47 +3741,6 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                     b.Navigation("Charges");
                 });
 
-            modelBuilder.Entity("JiranisokoTech.Domain.Notices.Announcement", b =>
-                {
-                    b.HasOne("JiranisokoTech.Domain.People.Employee", null)
-                        .WithMany()
-                        .HasForeignKey("ByEmployeeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("JiranisokoTech.Domain.People.Department", null)
-                        .WithMany()
-                        .HasForeignKey("DepartmentId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.OwnsMany("JiranisokoTech.Domain.Notices.Acknowledgement", "Acknowledgements", b1 =>
-                        {
-                            b1.Property<Guid>("Id")
-                                .HasColumnType("uuid");
-
-                            b1.Property<Guid>("AnnouncementId")
-                                .HasColumnType("uuid");
-
-                            b1.Property<DateTimeOffset>("At")
-                                .HasColumnType("timestamp with time zone");
-
-                            b1.Property<Guid>("EmployeeId")
-                                .HasColumnType("uuid");
-
-                            b1.HasKey("Id");
-
-                            b1.HasIndex("AnnouncementId", "EmployeeId")
-                                .IsUnique();
-
-                            b1.ToTable("announcement_acknowledgements", (string)null);
-
-                            b1.WithOwner()
-                                .HasForeignKey("AnnouncementId");
-                        });
-
-                    b.Navigation("Acknowledgements");
-                });
-
             modelBuilder.Entity("JiranisokoTech.Domain.Notices.Notice", b =>
                 {
                     b.HasOne("JiranisokoTech.Domain.People.Employee", null)
@@ -4181,96 +4002,6 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                         });
 
                     b.Navigation("Members");
-                });
-
-            modelBuilder.Entity("JiranisokoTech.Domain.Performance.Goal", b =>
-                {
-                    b.HasOne("JiranisokoTech.Domain.People.Employee", null)
-                        .WithMany()
-                        .HasForeignKey("ForEmployeeId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.OwnsMany("JiranisokoTech.Domain.Performance.GoalNote", "Notes", b1 =>
-                        {
-                            b1.Property<Guid>("Id")
-                                .HasColumnType("uuid");
-
-                            b1.Property<DateTimeOffset>("At")
-                                .HasColumnType("timestamp with time zone");
-
-                            b1.Property<Guid>("ByEmployeeId")
-                                .HasColumnType("uuid");
-
-                            b1.Property<Guid>("GoalId")
-                                .HasColumnType("uuid");
-
-                            b1.Property<string>("Note")
-                                .IsRequired()
-                                .HasMaxLength(4000)
-                                .HasColumnType("character varying(4000)");
-
-                            b1.HasKey("Id");
-
-                            b1.HasIndex("GoalId");
-
-                            b1.ToTable("goal_notes", (string)null);
-
-                            b1.WithOwner()
-                                .HasForeignKey("GoalId");
-                        });
-
-                    b.Navigation("Notes");
-                });
-
-            modelBuilder.Entity("JiranisokoTech.Domain.Performance.ReviewCycle", b =>
-                {
-                    b.OwnsMany("JiranisokoTech.Domain.Performance.Review", "Reviews", b1 =>
-                        {
-                            b1.Property<Guid>("Id")
-                                .HasColumnType("uuid");
-
-                            b1.Property<Guid>("CycleId")
-                                .HasColumnType("uuid");
-
-                            b1.Property<Guid>("EmployeeId")
-                                .HasColumnType("uuid");
-
-                            b1.Property<Guid?>("ManagerEmployeeId")
-                                .HasColumnType("uuid");
-
-                            b1.Property<string>("ManagerNote")
-                                .HasMaxLength(10000)
-                                .HasColumnType("character varying(10000)");
-
-                            b1.Property<DateTimeOffset?>("ManagerWrittenAt")
-                                .HasColumnType("timestamp with time zone");
-
-                            b1.Property<int?>("Rating")
-                                .HasColumnType("integer");
-
-                            b1.Property<string>("SelfNote")
-                                .HasMaxLength(10000)
-                                .HasColumnType("character varying(10000)");
-
-                            b1.Property<DateTimeOffset?>("SelfWrittenAt")
-                                .HasColumnType("timestamp with time zone");
-
-                            b1.Property<DateTimeOffset?>("SharedAt")
-                                .HasColumnType("timestamp with time zone");
-
-                            b1.HasKey("Id");
-
-                            b1.HasIndex("CycleId", "EmployeeId")
-                                .IsUnique();
-
-                            b1.ToTable("reviews", (string)null);
-
-                            b1.WithOwner()
-                                .HasForeignKey("CycleId");
-                        });
-
-                    b.Navigation("Reviews");
                 });
 
             modelBuilder.Entity("JiranisokoTech.Domain.Platform.Flag", b =>

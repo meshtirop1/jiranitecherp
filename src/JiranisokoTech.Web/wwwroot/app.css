@@ -1457,8 +1457,36 @@ code.key {
 .facts dd > .subtle,
 .facts dd > code,
 .page-head h1 > .subtle,
-.page-head h1 > .pill {
+.page-head h1 > .pill,
+/*
+ * And the same again for the line under the heading, which is the third place this fault has
+ * appeared and the one the two rules above walked straight past. Twenty-odd pages put their
+ * state on a <p class="subtle"> beneath the h1 — a pill for the state, another for the kind,
+ * then the name in a span — and it rendered as "DraftMesh Tirop" and "Signed NDAMutual
+ * non-disclosure" on every one of them.
+ *
+ * Found by looking at a page, again: innerText shows no difference between a chip that is
+ * spaced and one that is not, because the space is CSS rather than a text node, so reading the
+ * page through text extraction had confirmed these headings for weeks. The measurement that
+ * settled it was comparing the pill's right edge with the next element's left edge, which were
+ * the same number to five decimal places.
+ */
+.page-head p > .subtle,
+.page-head p > .pill,
+.page-head p > code {
     margin-left: 0.35rem;
+}
+
+/*
+ * Except the first one on that line, which sits under the heading and should line up with it
+ * rather than a third of a space in. The table and definition-list versions cannot do this —
+ * there the chip usually follows a text node, so :first-child is true for a chip that needs the
+ * margin — but here the paragraph holds nothing but chips, so the first one is genuinely first.
+ */
+.page-head p > .subtle:first-child,
+.page-head p > .pill:first-child,
+.page-head p > code:first-child {
+    margin-left: 0;
 }
 
 /* Search results, grouped by what they are. The group heading counts rather

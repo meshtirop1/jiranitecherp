@@ -146,7 +146,14 @@ public sealed class Release : Entity, IAuditable
     /// candidates, or a check in application code that two people pressing a button in the same
     /// minute both pass.
     /// </remarks>
-    public string Number { get; private set; }
+    /*
+     * Initialised here as well as in both constructors, because the real one sets it through
+     * the Version setter and the compiler cannot see through a property to know that. Without
+     * this the build carries a nullability warning, and this repository's rule is that a build
+     * ends with none — a project full of warnings is a project where the next real one is
+     * invisible.
+     */
+    public string Number { get; private set; } = string.Empty;
 
     /// <summary>The first number, stored so that the database can order and constrain it.</summary>
     public int Major { get; private set; }

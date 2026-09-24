@@ -1,0 +1,236 @@
+@page "/teams"
+@rendermode InteractiveServer
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.People
+@using JiranisokoTech.Domain.People
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.TeamsView)]
+@inject TeamService Service
+@inject PeopleQueries People
+@inject NavigationManager Navigation
+
+@*
+    Who is working on what.
+
+    Section 6, and the row asks for teams "distinct from departments" — so the page says how
+    they differ rather than leaving somebody to work it out from two screens that look alike.
+    A department is where somebody sits: one of them, on their staff record, deciding who
+    approves their leave. A team is what they are working on, several at a time, and crossing
+    departments as a matter of course.
+
+    Interactive rather than statically rendered, because putting somebody on a team needs a
+    picker and a date inside a row. A per-row form with fields in it cannot bind under static
+    rendering — the model is matched by one exact form name and a row has an id in it — and
+    that has cost this codebase six separate faults, each of which looked like a broken
+    handler rather than a naming problem.
+*@
+
+<PageTitle>Teams — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Teams</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+<p class="instructions">
+    A team is what somebody is working on. It is not a department: a person sits in one
+    department, which decides who they answer to and who signs off their leave, and joins as
+    many teams as the work needs — including teams made of people from three different
+    departments, which is the ordinary case here rather than the exception.
+    <a href="/departments">The departments are here.</a>
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<AuthorizeView Policy="@Managing" Context="mayManage">
+    <section class="standing">
+        <h2>Form one</h2>
+
+        <div class="fields">
+            <label>
+                <span>Name</span>
+                <input @bind="Name" placeholder="Platform" />
+            </label>
+
+            <label>
+                <span>What it is for</span>
+                <input @bind="Purpose" placeholder="Keeps the deployment pipeline and the hosting" />
+                <span class="subtle">
+                    A team nobody can describe in a sentence is usually two teams or none.
+                </span>
+            </label>
+        </div>
+
+        <div class="row-actions">
+            <button type="button" @onclick="Form">Form the team</button>
+        </div>
+    </section>
+</AuthorizeView>
+
+<section class="standing">
+    <h2>Teams</h2>
+
+    @if (Rows.Count == 0)
+    {
+        <p class="empty">No teams yet.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">The teams and who is on them</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Address</th>
+                    <th scope="col">Lead</th>
+                    <th scope="col">On it</th>
+                    <th scope="col">Departments</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var team in Rows)
+                {
+                    <tr class="@(team.IsActive ? null : "row--closed")">
+                        <td>
+                            <a href="/teams/@team.Slug">@team.Name</a>
+                            @if (!team.IsActive)
+                            {
+                                <span class="pill pill--quiet">disbanded</span>
+                            }
+                            @if (team.Purpose is { } purpose)
+                            {
+                                <span class="subtle">@purpose</span>
+                            }
+                        </td>
+                        <td><code>@team.Slug</code></td>
+                        <td>@(PersonName(team.LeadEmployeeId) ?? "Nobody yet")</td>
+                        <td>@Count(team.Size, "person", "people")</td>
+                        @*
+                            The column that makes the distinction visible instead of
+                            asserted. A team spanning three departments is the case a
+                            sub-department could not have expressed at all.
+                        *@
+                        <td>@Spread(team)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <AuthorizeView Policy="@Managing" Context="mayManage">
+        <p class="subtle">
+            <label class="inline">
+                <input type="checkbox" @bind="ShowDisbanded" @bind:after="LoadAsync" />
+                <span>Show disbanded teams</span>
+            </label>
+        </p>
+    </AuthorizeView>
+</section>
+
+@code {
+    private const string Managing = PermissionClaim.PolicyPrefix + Permissions.TeamsManage;
+
+    private List<Team> Rows { get; set; } = [];
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private Dictionary<Guid, string> Departments { get; set; } = [];
+
+    private Dictionary<Guid, Guid?> Where { get; set; } = [];
+
+    private string Name { get; set; } = string.Empty;
+
+    private string Purpose { get; set; } = string.Empty;
+
+    private bool ShowDisbanded { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string Headline
+    {
+        get
+        {
+            if (Rows.Count == 0)
+            {
+                return "No teams yet.";
+            }
+
+            var live = Rows.Count(one => one.IsActive);
+            var crossing = Rows.Count(one => one.IsActive && Spread(one).Contains(','));
+
+            /*
+             * Three sentences rather than one with a plural in it. "1 team, 1 of them across more
+             * than one department" is what a format string produces and not what anybody says,
+             * and a headline that reads as though it was assembled makes the page look unfinished
+             * before anybody has read a row of it.
+             */
+            return (live, crossing) switch
+            {
+                (_, 0) => $"{Count(live, "team", "teams")}.",
+                (1, _) => "One team, and it spans more than one department.",
+                (_, 1) => $"{live} teams, one of them spanning more than one department.",
+                _ => $"{live} teams, {crossing} of them spanning more than one department.",
+            };
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Rows = await Service.AllAsync(ShowDisbanded);
+        Names = await People.NamesAsync();
+        Departments = await People.DepartmentNamesAsync();
+        Where = await People.DepartmentOfEachAsync();
+    }
+
+    private async Task Form()
+    {
+        Refusal = null;
+
+        try
+        {
+            var team = await Service.FormAsync(Name, null, Purpose);
+
+            Navigation.NavigateTo($"/teams/{team.Slug}");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private string? PersonName(Guid? employeeId) =>
+        employeeId is { } who ? Names.GetValueOrDefault(who) : null;
+
+    /// <summary>
+    /// Which departments the people on this team come from.
+    /// </summary>
+    /// <remarks>
+    /// Read from the staff records rather than stored on the team, because it is not a fact
+    /// about the team — it is what the team happens to be made of this week, and storing it
+    /// would be a second copy to keep in step with every transfer.
+    /// </remarks>
+    private string Spread(Team team)
+    {
+        var departments = team.Current
+            .Select(one => Where.GetValueOrDefault(one.EmployeeId))
+            .Where(one => one is not null)
+            .Select(one => Departments.GetValueOrDefault(one!.Value))
+            .Where(one => one is not null)
+            .Distinct()
+            .OrderBy(one => one, StringComparer.CurrentCulture)
+            .ToList();
+
+        return departments.Count == 0 ? "—" : string.Join(", ", departments);
+    }
+
+    private static string Count(int many, string one, string more) =>
+        $"{many} {(many == 1 ? one : more)}";
+}

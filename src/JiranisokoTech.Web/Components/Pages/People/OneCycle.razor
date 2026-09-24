@@ -1,0 +1,295 @@
+@page "/performance/cycles/{Id:guid}"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.People
+@using JiranisokoTech.Domain.Performance
+@using JiranisokoTech.Infrastructure.Authorization
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.GoalsManage)]
+@inject PerformanceService Service
+@inject PeopleQueries People
+@inject Reaches Reaches
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    One round of reviews: who is in it, and where each one got to.
+
+    This is the page that answers "have the reviews been done", which is the only reason a cycle
+    exists as a thing rather than a date on each review. The two columns that matter are the two
+    that are easy to leave out: nobody has written anything, and somebody has written something
+    and not shared it. The second is the worse of the two — a verdict about a person that the
+    person has never seen — and it is what the cycle refuses to close over.
+
+    Narrowed to the people this reader may open, so a head of department sees their own chain and
+    HR sees the firm. The count says which, because a list somebody cannot reconcile with the
+    total above it reads as a fault in the list.
+*@
+
+<PageTitle>@(Cycle?.Name ?? "Review cycle") — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/performance">Performance</a></nav>
+
+@if (Cycle is null)
+{
+    <p class="empty">That review cycle does not exist.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Cycle.Name</h1>
+
+        <p class="subtle">
+            @if (Cycle.IsClosed)
+            {
+                <span class="pill pill--quiet">closed</span>
+            }
+            <span class="subtle">
+                @Cycle.From.ToString("d MMM yyyy") to @Cycle.To.ToString("d MMM yyyy")
+            </span>
+            <span class="subtle">@Headline</span>
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <section class="standing">
+        <h2>Reviews</h2>
+
+        @if (Visible.Count == 0)
+        {
+            <p class="empty">Nobody in this cycle is somebody you answer for.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Who is in this cycle and where each review is</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Who</th>
+                        <th scope="col">Their half</th>
+                        <th scope="col">Manager's half</th>
+                        <th scope="col">Shared</th>
+                        <th scope="col">Manager</th>
+                        <th scope="col"><span class="visually-hidden">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var review in Visible)
+                    {
+                        <tr>
+                            <td>
+                                <a href="/performance/@review.EmployeeId">
+                                    @Who(review.EmployeeId)
+                                </a>
+                            </td>
+                            <td>
+                                @if (review.HasSelfNote)
+                                {
+                                    <span class="pill pill--done">written</span>
+                                }
+                                else
+                                {
+                                    <span class="pill pill--wait">waiting</span>
+                                }
+                            </td>
+                            <td>
+                                @if (review.HasManagerNote)
+                                {
+                                    <span class="pill pill--done">written</span>
+                                }
+                                else
+                                {
+                                    <span class="pill pill--wait">waiting</span>
+                                }
+                            </td>
+                            <td>
+                                @if (review.IsShared)
+                                {
+                                    @review.SharedAt!.Value.ToLocalTime().ToString("d MMM yyyy")
+                                }
+                                else if (review.HasManagerNote)
+                                {
+                                    <span class="pill pill--danger">not shared</span>
+                                }
+                                else
+                                {
+                                    <span class="subtle">—</span>
+                                }
+                            </td>
+                            <td>
+                                @if (review.ManagerEmployeeId is { } manager)
+                                {
+                                    @Who(manager)
+                                }
+                                else
+                                {
+                                    <span class="subtle">nobody above them</span>
+                                }
+                            </td>
+                            <td class="row-actions">
+                                @*
+                                    Only while the review is empty. This is for the person who
+                                    left in the first week of the cycle, where the review is a
+                                    form nobody is going to fill in and it sits on the chase list
+                                    for ever. Once anything is written it is somebody's own
+                                    account of their year, and the domain refuses to remove it.
+                                *@
+                                @if (!Cycle.IsClosed
+                                    && !review.HasSelfNote
+                                    && !review.HasManagerNote)
+                                {
+                                    <button type="button" class="button--quiet"
+                                            @onclick="() => Exclude(review.EmployeeId)">
+                                        Take out
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="subtle">—</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="standing">
+        <h2>The cycle itself</h2>
+
+        <div class="fields">
+            <label>
+                <span>What it is called</span>
+                <input @bind="Name" />
+            </label>
+        </div>
+
+        <div class="row-actions">
+            <button type="button" @onclick="Rename">Save the name</button>
+
+            @if (Cycle.IsClosed)
+            {
+                <button type="button" class="button--quiet" @onclick="Reopen">Reopen it</button>
+            }
+            else
+            {
+                <button type="button" class="danger" @onclick="Close">Close it</button>
+            }
+        </div>
+
+        <p class="subtle">
+            Closing refuses while anybody's half is written and unshared. A closed cycle holding a
+            review its subject was never shown is a private verdict about somebody kept in a
+            system that person can sign into, about a conversation that never happened.
+        </p>
+    </section>
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private ReviewCycle? Cycle { get; set; }
+
+    private List<Review> Visible { get; set; } = [];
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string Name { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private string Headline
+    {
+        get
+        {
+            if (Cycle is null)
+            {
+                return string.Empty;
+            }
+
+            var unshared = Visible.Count(one => one.HasManagerNote && !one.IsShared);
+            var waiting = Visible.Count(one => !one.HasManagerNote);
+
+            return unshared > 0
+                ? $"{Visible.Count} you answer for, {waiting} not written, {unshared} not shared"
+                : $"{Visible.Count} you answer for, {waiting} not written";
+        }
+    }
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthenticationState).User;
+        var held = user.FindAll(PermissionClaim.Type).Select(claim => claim.Value).ToHashSet();
+
+        Guid? me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        Cycle = await Service.CycleAsync(Id);
+        Names = await People.NamesAsync();
+
+        if (Cycle is null)
+        {
+            return;
+        }
+
+        var reach = await Reaches.PerformanceAsync(held, me);
+
+        Visible = [.. Cycle.Reviews
+            .Where(one => reach.Contains(one.EmployeeId))
+            .OrderBy(one => Who(one.EmployeeId), StringComparer.CurrentCulture)];
+
+        Name = Cycle.Name;
+    }
+
+    private Task Rename() => Act(
+        () => Service.RenameCycleAsync(Id, Name), "Saved.");
+
+    private Task Exclude(Guid employeeId) => Act(
+        () => Service.ExcludeAsync(Id, employeeId), "Taken out of the cycle.");
+
+    private Task Close() => Act(() => Service.CloseCycleAsync(Id), "Closed.");
+
+    private Task Reopen() => Act(() => Service.ReopenCycleAsync(Id), "Open again.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private string Who(Guid employeeId) =>
+        Names.GetValueOrDefault(employeeId) ?? "Somebody no longer on the staff list";
+}
