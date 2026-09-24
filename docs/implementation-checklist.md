@@ -46,7 +46,7 @@ timesheet rather than typed into it. What is built is an ERP that a software
 company could run its business on, and the part that makes it developer-native
 is no longer the part that is missing.
 
-By section: **39 done, 3 partial, 56 not started, 1 excluded by agreement.**
+By section: **40 done, 3 partial, 55 not started, 1 excluded by agreement.**
 
 That count was recomputed from the tables below rather than adjusted, because the
 figure previously here did not add up to anything the tables said and had been
