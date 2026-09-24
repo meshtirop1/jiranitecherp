@@ -67,6 +67,13 @@ public static class IdentityConfiguration
 
         // Where an account has been used, and whether this sign-in is from somewhere new.
         services.AddScoped<SignInPlaces>();
+
+        /*
+         * How many times one address has failed, which Identity's own lockout cannot see: it
+         * counts per account, and a password tried against every address in turn never gives
+         * any single account enough failures to lock.
+         */
+        services.AddScoped<SignInThrottle>();
         services.AddScoped<TwoFactor>();
 
         /*

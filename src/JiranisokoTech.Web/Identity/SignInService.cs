@@ -20,6 +20,7 @@ public sealed class SignInService(
     UserManager<ApplicationUser> users,
     AppDbContext database,
     SignInPlaces places,
+    SignInThrottle throttle,
     IClock clock,
     ILogger<SignInService> logger)
 {
@@ -40,6 +41,24 @@ public sealed class SignInService(
         string? userAgent,
         CancellationToken cancellationToken = default)
     {
+        /*
+         * Asked before the address is even looked up, so that an address which has already
+         * failed fifteen times in a quarter of an hour cannot use this form as an oracle for
+         * which accounts exist. The timing of a lookup that happens and one that does not is
+         * a difference somebody can measure.
+         */
+        if (await throttle.TooManyFailuresAsync(ipAddress, cancellationToken))
+        {
+            logger.LogWarning(
+                "Sign-in refused: {Address} has failed {Count} times in the last {Minutes} "
+                + "minutes.",
+                ipAddress,
+                SignInThrottle.MostFailures,
+                SignInThrottle.Window.TotalMinutes);
+
+            return SignInOutcome.TooManyAttempts;
+        }
+
         var user = await users.FindByEmailAsync(email);
 
         if (user is null)

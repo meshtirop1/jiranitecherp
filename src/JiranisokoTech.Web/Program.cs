@@ -100,6 +100,7 @@ builder.Services.AddRateLimiter(options =>
 {
     options.AddCareersLimit();
     options.AddRecoveryLimit();
+    options.AddSignInLimit();
     options.AddApiLimits();
     options.AddWebhookLimits();
 });

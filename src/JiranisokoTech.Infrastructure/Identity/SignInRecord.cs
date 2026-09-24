@@ -129,4 +129,19 @@ public enum SignInOutcome
     /// somebody reading their own history can see it happened.
     /// </remarks>
     RecoveryCodeUsed = 6,
+
+    /// <summary>
+    /// The address this came from has failed too often and must wait.
+    /// </summary>
+    /// <remarks>
+    /// Appended rather than slotted in, because these values are stored as integers and
+    /// renumbering them would silently rewrite the history of every sign-in ever recorded.
+    ///
+    /// It is an outcome the caller is told and, deliberately, one that is never written down.
+    /// A refusal that never reached the password check has nothing to add to a history that
+    /// already holds the fifteen failures which caused it — and recording it would let
+    /// somebody grow this table at whatever rate they liked, which is the growth the
+    /// retention sweep exists to bound rather than to encourage.
+    /// </remarks>
+    TooManyAttempts = 7,
 }

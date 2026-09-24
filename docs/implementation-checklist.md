@@ -15,7 +15,7 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 24 September 2026 · 1087 tests · verified against PostgreSQL in
+Last updated: 24 September 2026 · 1093 tests · verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
 container, a lost opportunity surviving its client record being deleted, the
 builds and deployments tables applying to a real Postgres, an abandoned event
@@ -69,7 +69,7 @@ pass rather than adjusted by the size of the change.
 
 | | § | Item | Note |
 | --- | --- | --- | --- |
-| ✅ | 4 | Authentication | Sign-in, throttled, sign-in trail, two-step |
+| ✅ | 4 | Authentication | Sign-in, sign-in trail, two-step — and **throttled properly, which it was not.** The word was in this row from the start and it meant Identity's lockout, which counts failures per account. That is the one axis the attack this firm invites is blind to: a list of addresses and twenty common passwords, one password tried against every address in turn, so no account ever accumulates enough failures to lock. Sign-in was also the only public form in the application with no rate limit at all, while the careers and recovery forms had carried one since they were written. Two now, the same division as the recovery form: sixty posts per address in five minutes in memory, which bounds a flood and is loose enough that the whole office behind one address never meets it, and **fifteen failures per address in fifteen minutes written down**, which is the half that catches a spray and survives a restart. The evidence was already being collected — `SignInRecord` has recorded every attempt with its address since it was added, and its own remark called the failures "the more useful half" — and nothing read it |
 | ✅ | 4 | MFA / 2FA | TOTP, QR, recovery codes. Offered, not compulsory |
 | ✅ | 4 | Session and device management | Sign out everywhere, plus where the account has been used and an email the first time it is used somewhere new. Called "places" not "devices", because cookie auth gives no way to end one session |
 | ✅ | 4 | Self-service password reset | An anonymous `/forgot-password` page that reissues the same set-password link an administrator would. Answers an address with an account and one without in identical words, because a form a stranger can post to that answers differently is a way of testing a list of addresses against this firm's staff. Throttled twice: five posts per address per fifteen minutes in memory, and three links per **recipient** per hour written down — the second is the one that survives a restart and the one that stops somebody burying an inbox |
@@ -84,7 +84,7 @@ pass rather than adjusted by the size of the change.
 | ✅ | 45 | Health endpoints | `/health` and `/ready`, liveness thinner than readiness |
 | ✅ | 45 | Observability | Structured logging, counters at a gated /metrics, spans on the background work, and one screen showing all three queues and every scheduled job |
 | ✅ | 46 | Testing foundation | 652 tests, run inside the image build |
-| ✅ | 54 | Security | Headers, CSRF, rate limiting, secure cookies, server-side authorization, hashing |
+| ✅ | 54 | Security | Headers, CSRF, secure cookies, server-side authorization, hashing — and rate limiting on all four of the public surfaces now rather than three. The careers form, the recovery form and the API and webhook endpoints each had a limit; sign-in, the form that guards the accounts, had none. See §4 |
 | ✅ | 78 | Architecture | Domain ← Application ← Infrastructure ← Web, enforced by project references |
 | ✅ | 86 | Environment configuration | `.env.example`, no secrets committed |
 | ✅ | 87 | Deployment | Docker and Compose, built and run, migrations verified against real PostgreSQL |

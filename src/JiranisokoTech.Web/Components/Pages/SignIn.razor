@@ -3,8 +3,10 @@
 @using JiranisokoTech.Infrastructure.Identity
 @using JiranisokoTech.Web.Identity
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.RateLimiting
 @layout BareLayout
 @attribute [AllowAnonymous]
+@attribute [EnableRateLimiting(SignInLimits.Limit)]
 @inject SignInService Authentication
 @inject NavigationManager Navigation
 
@@ -164,6 +166,17 @@
         {
             SignInOutcome.LockedOut =>
                 "Too many attempts. Try again in fifteen minutes.",
+
+            /*
+             * Said plainly, and it gives nothing away. It describes this connection rather
+             * than any account, so it is the same sentence whether the addresses being tried
+             * exist or not — and somebody in the office who has walked into a throttle
+             * triggered by a colleague needs to know that waiting is the fix rather than
+             * concluding their password has stopped working.
+             */
+            SignInOutcome.TooManyAttempts =>
+                "Too many failed attempts from this connection. Try again in fifteen minutes.",
+
             SignInOutcome.Deactivated =>
                 "Access to this account has been withdrawn. Speak to your administrator.",
             _ => "Those details do not match an account.",
