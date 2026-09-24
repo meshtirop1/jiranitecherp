@@ -43,7 +43,12 @@
     <p class="done" role="status">@Done</p>
 }
 
-<form method="get" class="filters">
+@*
+    The dropdowns submit themselves on change, so the button below stops being a step and
+    becomes the fallback for a browser running no JavaScript. The address still carries the
+    filter, which is what makes one of these screens something somebody can send to a colleague.
+*@
+<form method="get" class="filters" data-narrow-submit>
     <label>
         <span>Year</span>
         <select name="year">

@@ -65,65 +65,23 @@ else
 
                     <AuthorizeView Policy="@CreatePolicy" Context="manage">
                         <td class="row-actions">
-                            @if (row.Status == RequisitionStatus.Draft)
-                            {
-                                @*
-                                    Submitting opens the approval chain by
-                                    itself, up the reporting line. Nothing here
-                                    chooses the approvers.
-                                *@
-                                <form method="post" @formname="@($"submit-{row.Id}")"
-                                      @onsubmit="() => Submit(row.Id)">
-                                    <AntiforgeryToken />
-                                    <button type="submit">Send for approval</button>
-                                </form>
-                            }
-
-                            @if (row.Status == RequisitionStatus.Approved)
-                            {
-                                <a class="button button--quiet" href="/hiring/postings">
-                                    Advertise it
-                                </a>
-
-                                @*
-                                    Headcount can move after approval because a
-                                    second post is agreed far more often than a
-                                    fresh requisition is raised for it — and a
-                                    change here is on the audit trail with the
-                                    approval it came after.
-                                *@
-                                <EditForm Model="Headcount" method="post"
-                                          FormName="@($"headcount-{row.Id}")"
-                                          OnValidSubmit="() => Resize(row.Id)" class="inline">
-                                    <DataAnnotationsValidator />
-                                    <InputNumber @bind-Value="Headcount.Wanted" min="1" max="99" />
-                                    <button type="submit" class="button button--quiet">
-                                        Change headcount
-                                    </button>
-                                    <ValidationMessage For="() => Headcount.Wanted" />
-                                </EditForm>
-                            }
-
-                            @if (row.Status is RequisitionStatus.Approved
-                                or RequisitionStatus.Draft)
-                            {
-                                @*
-                                    Closing says the firm has stopped looking,
-                                    and it takes down any advert still running —
-                                    an advert outliving the requisition behind it
-                                    is the most common complaint about hiring
-                                    anywhere.
-                                *@
-                                <EditForm Model="Closing" method="post"
-                                          FormName="@($"close-{row.Id}")"
-                                          OnValidSubmit="() => Close(row.Id)" class="inline">
-                                    <DataAnnotationsValidator />
-                                    <InputText @bind-Value="Closing.Reason"
-                                               placeholder="Why we stopped" />
-                                    <button type="submit" class="danger">Stop looking</button>
-                                    <ValidationMessage For="() => Closing.Reason" />
-                                </EditForm>
-                            }
+                            @*
+                                An interactive island inside a statically rendered page. The
+                                page stays static because the raise form at the foot of it is a
+                                real POST that HiringPageTests fills in and sends; these
+                                controls could not work statically at all. See the component.
+                            *@
+                            @*
+                                Every value prefixed with @, including the string. Razor reads
+                                an unprefixed attribute on a string parameter as a literal, so
+                                JobTitle="row.JobTitle" compiles, renders, and passes the words
+                                "row.JobTitle" — which showed up in the control's aria-label and
+                                nowhere a sighted reader would ever have seen it.
+                            *@
+                            <RequisitionActions Id="@row.Id"
+                                                JobTitle="@row.JobTitle"
+                                                Status="@row.Status"
+                                                Headcount="@row.Headcount" />
                         </td>
                     </AuthorizeView>
                 </tr>
@@ -179,23 +137,7 @@ else
 </AuthorizeView>
 
 @code {
-    private HeadcountInput _headcount = new();
 
-    [SupplyParameterFromForm(FormName = "headcount")]
-    private HeadcountInput Headcount
-    {
-        get => _headcount;
-        set => _headcount = value ?? new HeadcountInput();
-    }
-
-    private ClosingInput _closing = new();
-
-    [SupplyParameterFromForm(FormName = "close")]
-    private ClosingInput Closing
-    {
-        get => _closing;
-        set => _closing = value ?? new ClosingInput();
-    }
 
     private const string CreatePolicy =
         PermissionClaim.PolicyPrefix + Permissions.RequisitionsCreate;
@@ -265,49 +207,8 @@ else
         Input = new RaiseInput();
     }, "Raised. Send it for approval when it is ready.");
 
-    private Task Submit(Guid id) =>
-        Run(() => Service.SubmitAsync(id), "Sent. The approvers will be told.");
 
-    private Task Resize(Guid id) => Run(
-        () => Service.ChangeHeadcountAsync(id, Headcount.Wanted),
-        $"Now hiring {Headcount.Wanted}.");
 
-    /// <summary>
-    /// Stop looking, and take down whatever is still advertised.
-    /// </summary>
-    /// <remarks>
-    /// The service returns how many adverts it closed, which is worth repeating
-    /// back: somebody closing a requisition usually does not know an advert is
-    /// still running against it, and that advert is what keeps applications
-    /// arriving for a job nobody intends to fill.
-    /// </remarks>
-    private async Task Close(Guid id)
-    {
-        Refusal = null;
-        Done = null;
-
-        try
-        {
-            var taken = await Service.CloseRequisitionAsync(id, Closing.Reason);
-
-            // Said back, because somebody closing a requisition usually does not
-            // know an advert is still running against it — and that advert is
-            // what keeps applications arriving for a job nobody intends to fill.
-            Done = taken switch
-            {
-                0 => "Closed. Nothing was being advertised.",
-                1 => "Closed, and the advert has been taken down.",
-                _ => $"Closed, and {taken} adverts have been taken down.",
-            };
-        }
-        catch (Exception exception) when (
-            exception is InvalidOperationException or ArgumentException)
-        {
-            Refusal = exception.Message;
-        }
-
-        await LoadAsync();
-    }
 
     private async Task Run(Func<Task> work, string done)
     {
@@ -346,16 +247,5 @@ else
         public string Justification { get; set; } = string.Empty;
     }
 
-    private sealed class HeadcountInput
-    {
-        [Range(1, 99, ErrorMessage = "Between one and ninety-nine.")]
-        public int Wanted { get; set; } = 1;
-    }
 
-    private sealed class ClosingInput
-    {
-        [Required(ErrorMessage = "Say why the firm stopped looking.")]
-        [StringLength(500)]
-        public string Reason { get; set; } = string.Empty;
-    }
 }

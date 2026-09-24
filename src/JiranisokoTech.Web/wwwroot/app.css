@@ -610,6 +610,26 @@ h1:focus {
     color: var(--ink-quiet);
 }
 
+/*
+ * What a row says back after something was done to it.
+ *
+ * Beside the control rather than at the top of the page, which is the whole point of doing the
+ * work without a reload: a banner above a table of twenty rows tells somebody that something
+ * happened and makes them find out which row it happened to.
+ */
+.row-said {
+    font-size: var(--text-sm);
+    color: var(--ink-mid);
+    margin-left: 0.4rem;
+}
+
+/* A refusal that belongs to one row, said where the control is rather than above the table. */
+.row-refused {
+    font-size: var(--text-sm);
+    color: var(--danger);
+    margin: 0.2rem 0 0;
+}
+
 .row-actions {
     display: flex;
     gap: 0.5rem;

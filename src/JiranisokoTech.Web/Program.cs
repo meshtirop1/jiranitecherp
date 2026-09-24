@@ -58,7 +58,16 @@ builder.Services.AddCascadingAuthenticationState();
 // Who is acting, read from the request. This is what makes the audit trail
 // name people instead of recording a null on every entry.
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
+/*
+ * Who is acting. Two halves, because there are two ways to be here: a request, which carries a
+ * principal on its HttpContext, and an interactive circuit, which carries none at all. Without
+ * the second, every save made from an interactive screen would write an audit entry with no
+ * actor — the change recorded, the page working, and the trail saying somebody unknown did it.
+ */
+builder.Services.AddScoped<CircuitUser>();
+builder.Services.AddScoped<
+    Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler, CircuitUserHandler>();
+builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 
 builder.Services.AddScoped<RoleSeeder>();
 builder.Services.AddScoped<OwnerSeeder>();

@@ -44,7 +44,15 @@
         refuses inline script — deliberately, and loosening it has already cost this
         application one outage.
     *@
-    <script src="palette.js"></script>
+    @*
+        Through Assets, like the others. This tag read src="palette.js" bare, so the file was
+        served unfingerprinted while nav.js was served as nav.<hash>.js — which means an edit to
+        the palette reached a browser only once the cache let go of it. That is CLAUDE.md's
+        "the container serves what was built" trap in a second costume: the file on disk is
+        right, the page is wrong, and nothing anywhere says so.
+    *@
+    <script src="@Assets["palette.js"]"></script>
+    <script src="@Assets["filters.js"]"></script>
 </body>
 
 </html>

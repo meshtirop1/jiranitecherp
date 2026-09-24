@@ -35,10 +35,20 @@
     </AuthorizeView>
 </div>
 
-<form method="get" class="filters">
+@*
+    The address still carries the filter, and the button still works with no JavaScript at all.
+    What the data-narrow attributes add is that neither is needed for the common case: the
+    dropdowns submit themselves on change, and the search box narrows the rows already on the
+    screen as somebody types.
+
+    The box narrows what was fetched; the button fetches. Those are different things when the
+    list is capped, which is why the count below says "N of M" — see the note on it.
+*@
+<form method="get" class="filters" data-narrow-submit>
     <label>
         <span>Search</span>
-        <input type="search" name="q" value="@Search" placeholder="Name or job title" />
+        <input type="search" name="q" value="@Search" placeholder="Name or job title"
+               data-narrow="people" />
     </label>
 
     <label>
@@ -63,6 +73,10 @@
         </select>
     </label>
 
+    @*
+        Still here, and still the thing that works when the script does not. It also remains the
+        only way to reach rows the server did not send, which is the case the box cannot cover.
+    *@
     <button type="submit">Filter</button>
     <a class="filters__clear" href="/people">Clear</a>
 </form>
@@ -73,7 +87,13 @@
 }
 else
 {
-    <p class="count">@Rows.Count of @Total</p>
+    @*
+        Rewritten as the box narrows, so the number always describes what is on the screen. The
+        total it is counted against is the server's, which keeps the sentence honest: narrowing
+        to two rows of the twelve fetched says "2 of 40" rather than pretending the firm has two
+        people in it.
+    *@
+    <p class="count"><span data-narrow-count="people" data-narrow-of="@Total">@Rows.Count of @Total</span></p>
 
     <table class="grid">
         <thead>
@@ -89,7 +109,15 @@ else
         <tbody>
             @foreach (var person in Rows)
             {
-                <tr>
+                @*
+                    data-narrow-text holds exactly what the server matches on — the name and the
+                    job title, and not the department or the status, which have their own
+                    dropdowns. Matching the whole row's text instead would narrow on a
+                    department name typed into a box labelled "Name or job title", and a filter
+                    that quietly does more than it says is worse than one that does less.
+                *@
+                <tr data-narrow-row="people"
+                    data-narrow-text="@($"{person.FullName} {person.JobTitle}")">
                     <td><a href="/people/@person.Id">@person.FullName</a></td>
                     <td>@(person.JobTitle ?? "—")</td>
                     <td>@(person.DepartmentName ?? "—")</td>

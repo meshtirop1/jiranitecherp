@@ -1,0 +1,246 @@
+@using JiranisokoTech.Application.Recruitment
+@using JiranisokoTech.Domain.Recruitment
+@rendermode InteractiveServer
+@inject RecruitmentService Service
+
+@*
+    The actions on one requisition, and the reason this is a component at all.
+
+    Two of these controls were broken, silently and in different ways. A form rendered once per
+    row needs a name of its own, because Blazor refuses a page holding two forms called the same
+    thing — so they were named headcount-{id} and close-{id}. But a model is bound by
+    [SupplyParameterFromForm(FormName = "headcount")], which matches one exact name and has
+    nowhere to put a row's id. Nothing typed into either control ever reached a handler.
+
+    The two failed differently, and the second is the worse. Closing a requisition submitted an
+    empty reason, failed [Required], and printed "Say why the firm stopped looking" underneath
+    the sentence somebody had just finished writing. Changing the headcount did not fail at all:
+    HeadcountInput.Wanted defaults to 1, so the control quietly set the headcount to one whatever
+    was in the box, and said "Now hiring 1" as though that had been asked for.
+
+    Under static rendering there is no fix that keeps a control per row — every row's fields
+    would have to be folded into one form posting a hidden id. Under a circuit the problem does
+    not exist: the value is held per component instance, the button carries the id in a closure,
+    and no form has a name because no form is posted.
+
+    It is a child rather than a render mode on the page, because the page must stay static: the
+    raise form at the foot of it is a real POST, and HiringPageTests fills and posts it to check
+    that an account with no staff record is told so. A page that stopped accepting that post
+    would be a page no test could press.
+*@
+
+@if (Status == RequisitionStatus.Draft)
+{
+    @* Submitting opens the approval chain by itself, up the reporting line. *@
+    <button type="button" disabled="@Busy" @onclick="Submit">
+        @(Busy ? "Sending…" : "Send for approval")
+    </button>
+}
+
+@if (Status == RequisitionStatus.Approved)
+{
+    <a class="button button--quiet" href="/hiring/postings">Advertise it</a>
+
+    @*
+        Headcount can move after approval because a second post is agreed far more often than a
+        fresh requisition is raised for it — and a change here is on the audit trail with the
+        approval it came after.
+    *@
+    <div class="inline">
+        <input type="number" min="1" max="99" value="@Wanted"
+               @oninput="Typed"
+               aria-label="@($"How many for {JobTitle}")" />
+
+        <button type="button" class="button button--quiet" disabled="@Busy" @onclick="Resize">
+            @(Busy ? "Changing…" : "Change headcount")
+        </button>
+    </div>
+}
+
+@if (Status is RequisitionStatus.Approved or RequisitionStatus.Draft)
+{
+    @*
+        Closing says the firm has stopped looking, and it takes down any advert still running —
+        an advert outliving the requisition behind it is the most common complaint about hiring
+        anywhere.
+    *@
+    <div class="inline">
+        <input type="text" placeholder="Why we stopped" maxlength="500" value="@Reason"
+               @oninput="Reasoned"
+               aria-label="@($"Why the firm stopped looking for {JobTitle}")" />
+
+        <button type="button" class="danger" disabled="@Busy" @onclick="Close">
+            @(Busy ? "Stopping…" : "Stop looking")
+        </button>
+    </div>
+}
+
+@if (Said is not null)
+{
+    @*
+        Beside the control rather than at the top of the page. That is most of the value of
+        doing this without a reload: a banner above twenty rows tells somebody something
+        happened and leaves them to work out which row it happened to.
+    *@
+    <p class="row-said" role="status">@Said</p>
+}
+
+@if (Refusal is not null)
+{
+    <p class="row-refused" role="alert">@Refusal</p>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public Guid Id { get; set; }
+
+    [Parameter, EditorRequired]
+    public string JobTitle { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public RequisitionStatus Status { get; set; }
+
+    [Parameter, EditorRequired]
+    public int Headcount { get; set; }
+
+    /// <summary>
+    /// What is in the headcount box, which starts as the figure already agreed.
+    /// </summary>
+    /// <remarks>
+    /// Held here rather than on the page, and that is the correction: one model shared by every
+    /// row is what could not be bound to a form whose name carried an id. A component instance
+    /// per row has one of these each, and nothing has to be matched by name.
+    /// </remarks>
+    private int Wanted { get; set; }
+
+    private string Reason { get; set; } = string.Empty;
+
+    private bool Busy { get; set; }
+
+    private string? Said { get; set; }
+
+    private string? Refusal { get; set; }
+
+    protected override void OnParametersSet() => Wanted = Headcount;
+
+    private void Typed(ChangeEventArgs typed)
+    {
+        if (int.TryParse(typed.Value?.ToString(), out var wanted))
+        {
+            Wanted = wanted;
+        }
+
+        /*
+         * A box emptied halfway through retyping keeps the last good number rather than
+         * snapping to zero, which is what a number input does to somebody who selects all and
+         * types again. The refusal below catches a number that is genuinely out of range.
+         */
+        Said = null;
+        Refusal = null;
+    }
+
+    private void Reasoned(ChangeEventArgs typed)
+    {
+        Reason = typed.Value?.ToString() ?? string.Empty;
+        Said = null;
+        Refusal = null;
+    }
+
+    private Task Submit() => Run(
+        () => Service.SubmitAsync(Id),
+        "Sent. The approvers will be told.");
+
+    private Task Resize()
+    {
+        if (Wanted is < 1 or > 99)
+        {
+            Refusal = "Between one and ninety-nine.";
+
+            return Task.CompletedTask;
+        }
+
+        var wanted = Wanted;
+
+        return Run(
+            async () =>
+            {
+                await Service.ChangeHeadcountAsync(Id, wanted);
+                Headcount = wanted;
+            },
+            $"Now hiring {wanted}.");
+    }
+
+    /// <summary>
+    /// Stop looking, and take down whatever is still advertised.
+    /// </summary>
+    /// <remarks>
+    /// The reason is refused here rather than by a [Required] attribute, because that attribute
+    /// is exactly what used to tell somebody they had written nothing while their sentence sat
+    /// in the box beside the message.
+    ///
+    /// The service returns how many adverts it closed, which is worth repeating back: somebody
+    /// closing a requisition usually does not know an advert is still running against it, and
+    /// that advert is what keeps applications arriving for a job nobody intends to fill.
+    /// </remarks>
+    private Task Close()
+    {
+        if (string.IsNullOrWhiteSpace(Reason))
+        {
+            Refusal = "Say why the firm stopped looking.";
+
+            return Task.CompletedTask;
+        }
+
+        var reason = Reason;
+
+        return Run(
+            async () =>
+            {
+                var taken = await Service.CloseRequisitionAsync(Id, reason);
+
+                Status = RequisitionStatus.Closed;
+                Reason = string.Empty;
+
+                Said = taken switch
+                {
+                    0 => "Closed. Nothing was being advertised.",
+                    1 => "Closed, and the advert has been taken down.",
+                    _ => $"Closed, and {taken} adverts have been taken down.",
+                };
+            },
+            said: null);
+    }
+
+    /// <summary>
+    /// Do one thing, say what came of it, and leave the page exactly where it was.
+    /// </summary>
+    /// <param name="said">
+    /// What to report, or null when the work has already set its own sentence — closing counts
+    /// adverts and has more to say than "done".
+    /// </param>
+    private async Task Run(Func<Task> work, string? said)
+    {
+        Refusal = null;
+        Said = null;
+        Busy = true;
+
+        try
+        {
+            await work();
+
+            Said ??= said;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException
+            or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+        }
+        finally
+        {
+            // In a finally, because a refusal that left the button reading "Changing…" for ever
+            // would be a worse fault than the one this component was written to fix.
+            Busy = false;
+        }
+    }
+}
