@@ -277,6 +277,15 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ReleaseService>();
 
         /*
+         * Incidents and their reviews. Sections 27 and 69, which are one workflow: the only
+         * moment anybody ever starts a review is the moment an incident is resolved.
+         */
+        services.AddScoped<Application.Incidents.IIncidentRepository,
+            Incidents.IncidentRepository>();
+        services.AddScoped<Application.Incidents.IncidentService>();
+        services.AddScoped<Incidents.IncidentQueries>();
+
+        /*
          * Whether each code host can reach us at all, which no other screen can tell: a
          * missing or misspelt webhook secret refuses every delivery before a row is
          * written, so the queues read zero and the jobs read green.

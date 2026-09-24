@@ -174,6 +174,18 @@ public class AppDbContext(
     public DbSet<Contributor> Contributors => Set<Contributor>();
 
     /// <summary>
+    /// Everything that has gone wrong, and what each one taught the firm.
+    /// </summary>
+    /// <remarks>
+    /// Sections 27 and 69. The timeline lives in a table of its own beneath this one and is
+    /// append-only by construction — the aggregate exposes no way to change or remove a line —
+    /// because a record of what was known when is worthless if it can be tidied up afterwards.
+    /// </remarks>
+    public DbSet<Domain.Incidents.Incident> Incidents => Set<Domain.Incidents.Incident>();
+
+    public DbSet<Domain.Incidents.Postmortem> Postmortems => Set<Domain.Incidents.Postmortem>();
+
+    /// <summary>
     /// The versions the firm has named, and what happened to each.
     /// </summary>
     /// <remarks>

@@ -1,0 +1,767 @@
+@page "/incidents/{Number:int}"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Incidents
+@using JiranisokoTech.Domain.Incidents
+@using JiranisokoTech.Infrastructure.Incidents
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.IncidentsView)]
+@inject IncidentService Service
+@inject IIncidentRepository Incidents
+@inject IncidentQueries Queries
+@inject PeopleQueries People
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    One incident: the timeline, and the controls for running it.
+
+    The timeline is the artefact and everything else on this page is a summary of it. It is
+    append-only — there is no way to edit or delete a line, here or anywhere — because a record
+    of what was known when is worth nothing if it can be tidied up afterwards, and the moment it
+    is most tempting to tidy is the moment it is most worth having.
+
+    Interactive because it is used while things are on fire. A page that reloaded between lines
+    would be a page people keep a text file beside instead, and the text file never makes it back.
+*@
+
+<PageTitle>Incident @Number — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/incidents">Incidents</a></nav>
+
+@if (Incident is null)
+{
+    <p class="empty">There is no incident @Number.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Incident.Number @Incident.Title</h1>
+
+        <p class="subtle">
+            <span class="pill @PillFor(Incident.Status)">@Say(Incident.Status)</span>
+            <span class="pill @PillFor(Incident.Severity)">@Incident.Severity</span>
+            @if (Incident.Affects is { } what)
+            {
+                <span class="subtle">@what</span>
+            }
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <dl class="facts">
+        <dt>Started</dt>
+        <dd>
+            @Incident.StartedAt.ToLocalTime().ToString("d MMM yyyy HH:mm")
+            <span class="subtle">@Length(Incident.ToDetect) before anybody noticed</span>
+        </dd>
+
+        <dt>Reported</dt>
+        <dd>
+            @Incident.ReportedAt.ToLocalTime().ToString("d MMM yyyy HH:mm")
+            <span class="subtle">by @Who(Incident.ReportedById)</span>
+        </dd>
+
+        @if (Incident.MitigatedAt is { } mitigated)
+        {
+            <dt>Harm stopped</dt>
+            <dd>
+                @mitigated.ToLocalTime().ToString("d MMM yyyy HH:mm")
+                <span class="subtle">@Length(Incident.ToMitigate!.Value) after it began</span>
+            </dd>
+        }
+
+        @if (Incident.ResolvedAt is { } resolved)
+        {
+            <dt>Cause gone</dt>
+            <dd>
+                @resolved.ToLocalTime().ToString("d MMM yyyy HH:mm")
+                <span class="subtle">@Length(Incident.ToResolve!.Value) after it began</span>
+            </dd>
+        }
+
+        <dt>Running it</dt>
+        <dd>
+            @if (Incident.LeadId is { } lead)
+            {
+                @Who(lead)
+            }
+            else
+            {
+                <span class="subtle">nobody yet</span>
+            }
+        </dd>
+
+        @if (Incident.Cause is { } cause)
+        {
+            <dt>What broke</dt>
+            <dd>
+                @cause
+                <span class="subtle">why it was possible belongs in the review</span>
+            </dd>
+        }
+    </dl>
+
+    <section class="standing">
+        <h2>Timeline</h2>
+
+        <AuthorizeView Policy="@Raising" Context="mayWrite">
+            <div class="fields">
+                <label>
+                    <span>What happened</span>
+                    <input @bind="Line" placeholder="the queue started backing up" />
+                </label>
+
+                <label>
+                    <span>When, if not now</span>
+                    <input type="datetime-local" @bind="LineAt" />
+                    <span class="subtle">
+                        Lines written afterwards are normal and are marked as such, so a note
+                        typed at 14:40 about 14:02 sits at 14:02 and still says when it was
+                        written.
+                    </span>
+                </label>
+            </div>
+
+            <div class="row-actions">
+                @*
+                    Three buttons rather than a kind dropdown and a save button, because the
+                    kind is the only decision and making it press the button saves a control.
+                *@
+                @foreach (var kind in Kinds)
+                {
+                    var chosen = kind;
+
+                    <button type="button" class="button--quiet" @onclick="() => Add(chosen)">
+                        @Verb(chosen)
+                    </button>
+                }
+            </div>
+
+            <p class="subtle">
+                Lines are never edited and never removed — not by anybody, including whoever
+                wrote them. That is the point of keeping one.
+            </p>
+        </AuthorizeView>
+
+        @if (Timeline.Count == 0)
+        {
+            <p class="empty">Nothing written yet.</p>
+        }
+        else
+        {
+            @foreach (var note in Timeline)
+            {
+                <article class="entry">
+                    <div class="entry__head">
+                        <strong>@note.At.ToLocalTime().ToString("HH:mm")</strong>
+                        <span class="pill pill--quiet">@Verb(note.Kind)</span>
+                        <span class="subtle">@Who(note.ById)</span>
+                        @if (note.WrittenLater)
+                        {
+                            <span class="subtle">
+                                written @note.WrittenAt.ToLocalTime().ToString("d MMM HH:mm")
+                            </span>
+                        }
+                    </div>
+
+                    <p class="entry__subject">@note.Text</p>
+                </article>
+            }
+        }
+    </section>
+
+    <section class="standing">
+        <h2>What changed just before</h2>
+
+        @*
+            The first question in every incident, answered without anybody typing. Deployments
+            and releases are already here because four code hosts report them; this is the window
+            before it started, which is the only window that can have caused anything.
+
+            Suspects, and the heading says so. Most incidents do follow a change and plenty do
+            not, and a panel headed "caused by" would have somebody stop looking at the moment
+            they should start.
+        *@
+        @if (Suspects.Count == 0)
+        {
+            <p class="empty">
+                Nothing was deployed or released in the @Window hours before it started — or
+                nothing that any host told this system about.
+            </p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Changes before the incident began</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">What</th>
+                        <th scope="col">Where</th>
+                        <th scope="col">Commit</th>
+                        <th scope="col">When</th>
+                        <th scope="col">Who</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var suspect in Suspects)
+                    {
+                        <tr>
+                            <td>@suspect.What</td>
+                            <td>@suspect.Where</td>
+                            <td><code>@Short(suspect.Sha)</code></td>
+                            <td>
+                                @suspect.At.ToLocalTime().ToString("d MMM HH:mm")
+                                <span class="subtle">
+                                    @Length(Incident.StartedAt - suspect.At) before
+                                </span>
+                            </td>
+                            <td>@(suspect.Who ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <p class="subtle">
+                Suspects, not causes. Most incidents follow a change and plenty do not.
+            </p>
+        }
+    </section>
+
+    <AuthorizeView Policy="@Running" Context="mayRun">
+        <section class="standing">
+            <h2>Running it</h2>
+
+            <div class="row-actions">
+                <button type="button" class="button--quiet" @onclick="TakeOver">
+                    I am running this
+                </button>
+            </div>
+
+            <p class="subtle">Change how bad it is, and say why. The change goes in the timeline.</p>
+
+            <div class="fields">
+                <label>
+                    <span>Why the change</span>
+                    <input @bind="Why" placeholder="it is worse than we thought" />
+                </label>
+            </div>
+
+            <div class="row-actions">
+                @foreach (var level in Severities)
+                {
+                    var chosen = level;
+
+                    <button type="button"
+                            class="button @(Incident.Severity == chosen ? "" : "button--quiet")"
+                            @onclick="() => Reclassify(chosen)">
+                        @chosen
+                    </button>
+                }
+            </div>
+
+            <div class="fields">
+                <label>
+                    <span>It actually started at</span>
+                    <input type="datetime-local" @bind="Actually" />
+                    <span class="subtle">
+                        Corrected once somebody has looked at a graph. Time to detect is measured
+                        from here, so leaving it at "when we noticed" reports that this firm
+                        detects everything instantly.
+                    </span>
+                </label>
+            </div>
+
+            <div class="row-actions">
+                <button type="button" class="button--quiet" @onclick="MoveStart">
+                    Correct the start
+                </button>
+            </div>
+
+            <div class="fields">
+                <label>
+                    <span>Title</span>
+                    <input @bind="Title" />
+                </label>
+
+                <label>
+                    <span>What it affects</span>
+                    <input @bind="Affects" />
+                </label>
+            </div>
+
+            <div class="row-actions">
+                <button type="button" class="button--quiet" @onclick="Describe">
+                    Sharpen the description
+                </button>
+            </div>
+        </section>
+
+        <section class="standing">
+            <h2>Ending it</h2>
+
+            @if (Incident.Status == IncidentStatus.Open)
+            {
+                @*
+                    Two separate endings, and keeping them apart is the point of the status enum.
+                    A flag turned off at 02:14 stopped the harm; the bug that made it possible was
+                    still there at nine the next morning. People need the first number and the
+                    firm needs the second.
+                *@
+                <div class="fields">
+                    <label>
+                        <span>What stopped the harm</span>
+                        <input @bind="How" placeholder="turned the new pricing flag off" />
+                    </label>
+
+                    <label>
+                        <span>When, if not now</span>
+                        <input type="datetime-local" @bind="EndedAt" />
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="Mitigate">The harm has stopped</button>
+                </div>
+            }
+
+            @if (!Incident.IsOver)
+            {
+                <div class="fields">
+                    <label>
+                        <span>What broke, in one line</span>
+                        <input @bind="Cause"
+                               placeholder="the cache was never invalidated after a price change" />
+                        <span class="subtle">
+                            What broke, not why it was possible. The why belongs in the review,
+                            and asking for it here gets the what typed into it.
+                        </span>
+                    </label>
+
+                    <label>
+                        <span>When, if not now</span>
+                        <input type="datetime-local" @bind="EndedAt" />
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="Resolve">The cause is gone</button>
+                </div>
+            }
+            else
+            {
+                <div class="fields">
+                    <label>
+                        <span>What came back</span>
+                        <input @bind="Why" placeholder="it started again at 04:10" />
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" class="danger" @onclick="Reopen">It is not over</button>
+                </div>
+
+                <p class="subtle">
+                    The same incident rather than a new one — same start, same customers, same
+                    cause. Two records would split the timeline in half and make both durations
+                    wrong.
+                </p>
+            }
+        </section>
+    </AuthorizeView>
+
+    <section class="standing">
+        <h2>The review</h2>
+
+        @if (Review is not null)
+        {
+            <p>
+                <a href="/incidents/@Number/review">
+                    @(Review.IsAgreed ? "Agreed" : "Being written")
+                </a>
+                @if (Review.Actions.Count > 0)
+                {
+                    <span class="subtle">
+                        @Review.Actions.Count on the board
+                    </span>
+                }
+            </p>
+        }
+        else if (!Incident.IsOver)
+        {
+            <p class="empty">
+                A review is started once the incident is resolved. One written while the cause is
+                still unknown records a guess as a finding.
+            </p>
+        }
+        else
+        {
+            <AuthorizeView Policy="@Running" Context="mayReview">
+                <Authorized>
+                    <div class="row-actions">
+                        <button type="button" @onclick="BeginReview">Write the review</button>
+                    </div>
+                </Authorized>
+                <NotAuthorized>
+                    <p class="empty">Nobody has written one.</p>
+                </NotAuthorized>
+            </AuthorizeView>
+        }
+    </section>
+}
+
+@code {
+    private const string Raising = PermissionClaim.PolicyPrefix + Permissions.IncidentsRaise;
+
+    private const string Running = PermissionClaim.PolicyPrefix + Permissions.IncidentsRun;
+
+    /// <summary>How far back to look for what changed.</summary>
+    /// <remarks>
+    /// Four hours. Long enough to catch the overnight deploy that broke the morning, short
+    /// enough that the list is readable — and a window so wide that everything the firm did all
+    /// week is in it answers nothing.
+    /// </remarks>
+    private const int Window = 4;
+
+    private static readonly IncidentSeverity[] Severities =
+        [IncidentSeverity.Critical, IncidentSeverity.Major, IncidentSeverity.Minor];
+
+    private static readonly NoteKind[] Kinds =
+        [NoteKind.Observation, NoteKind.Action, NoteKind.Decision];
+
+    [Parameter]
+    public int Number { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private Incident? Incident { get; set; }
+
+    private Postmortem? Review { get; set; }
+
+    private List<IncidentNote> Timeline { get; set; } = [];
+
+    private List<Suspect> Suspects { get; set; } = [];
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string Line { get; set; } = string.Empty;
+
+    private DateTime? LineAt { get; set; }
+
+    private string Why { get; set; } = string.Empty;
+
+    private string How { get; set; } = string.Empty;
+
+    private string Cause { get; set; } = string.Empty;
+
+    private string Title { get; set; } = string.Empty;
+
+    private string Affects { get; set; } = string.Empty;
+
+    private DateTime? Actually { get; set; }
+
+    private DateTime? EndedAt { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Incident is not null && Incident.Number != Number)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        Incident = await Incidents.ByNumberAsync(Number);
+
+        if (Incident is null)
+        {
+            return;
+        }
+
+        /*
+         * Ordered by when the thing happened and then by when it was written, which is the only
+         * ordering that reads as a timeline. Two lines about the same minute, one typed live and
+         * one added later, belong in the order they were understood.
+         */
+        Timeline =
+        [
+            .. Incident.Notes
+                .OrderBy(one => one.At)
+                .ThenBy(one => one.WrittenAt)
+        ];
+
+        Names = await People.NamesAsync();
+        Review = await Incidents.ReviewForAsync(Incident.Id);
+
+        Suspects = await Queries.SuspectsAsync(
+            Incident.StartedAt, TimeSpan.FromHours(Window));
+
+        Title = Incident.Title;
+        Affects = Incident.Affects ?? string.Empty;
+    }
+
+    private async Task Add(NoteKind kind)
+    {
+        if (await Me() is not { } me)
+        {
+            Refusal = Unlinked;
+
+            return;
+        }
+
+        var at = LineAt is { } typed
+            ? new DateTimeOffset(typed, TimeZoneInfo.Local.GetUtcOffset(typed))
+            : Clock.Now;
+
+        await Act(
+            async () =>
+            {
+                await Service.NoteAsync(Incident!.Id, Line, kind, at, me);
+                Line = string.Empty;
+                LineAt = null;
+            },
+            "Written down.");
+    }
+
+    private async Task TakeOver()
+    {
+        if (await Me() is not { } me)
+        {
+            Refusal = Unlinked;
+
+            return;
+        }
+
+        await Act(() => Service.LeadAsync(Incident!.Id, me, me), "You are running it.");
+    }
+
+    private async Task Reclassify(IncidentSeverity severity)
+    {
+        if (await Me() is not { } me)
+        {
+            Refusal = Unlinked;
+
+            return;
+        }
+
+        await Act(
+            async () =>
+            {
+                await Service.ReclassifyAsync(Incident!.Id, severity, Why, me);
+                Why = string.Empty;
+            },
+            $"Now {severity}.");
+    }
+
+    private async Task MoveStart()
+    {
+        if (Actually is not { } typed)
+        {
+            Refusal = "Put a time in the box first.";
+
+            return;
+        }
+
+        if (await Me() is not { } me)
+        {
+            Refusal = Unlinked;
+
+            return;
+        }
+
+        await Act(
+            () => Service.StartedAtAsync(
+                Incident!.Id,
+                new DateTimeOffset(typed, TimeZoneInfo.Local.GetUtcOffset(typed)),
+                me),
+            "Start corrected.");
+    }
+
+    private Task Describe() => Act(
+        () => Service.DescribeAsync(
+            Incident!.Id, Title, string.IsNullOrWhiteSpace(Affects) ? null : Affects),
+        "Changed.");
+
+    private async Task Mitigate()
+    {
+        if (await Me() is not { } me)
+        {
+            Refusal = Unlinked;
+
+            return;
+        }
+
+        await Act(
+            async () =>
+            {
+                await Service.MitigateAsync(Incident!.Id, How, Ending(), me);
+                How = string.Empty;
+                EndedAt = null;
+            },
+            "The harm has stopped. The cause is still there until somebody says otherwise.");
+    }
+
+    private async Task Resolve()
+    {
+        if (await Me() is not { } me)
+        {
+            Refusal = Unlinked;
+
+            return;
+        }
+
+        await Act(
+            async () =>
+            {
+                await Service.ResolveAsync(Incident!.Id, Cause, Ending(), me);
+                Cause = string.Empty;
+                EndedAt = null;
+            },
+            "Over. Write the review while everybody still remembers.");
+    }
+
+    private async Task Reopen()
+    {
+        if (await Me() is not { } me)
+        {
+            Refusal = Unlinked;
+
+            return;
+        }
+
+        await Act(
+            async () =>
+            {
+                await Service.ReopenAsync(Incident!.Id, Why, me);
+                Why = string.Empty;
+            },
+            "Open again.");
+    }
+
+    private async Task BeginReview()
+    {
+        if (await Me() is not { } me)
+        {
+            Refusal = Unlinked;
+
+            return;
+        }
+
+        await Act(() => Service.ReviewAsync(Incident!.Id, me), "Started.");
+    }
+
+    private DateTimeOffset Ending() =>
+        EndedAt is { } typed
+            ? new DateTimeOffset(typed, TimeZoneInfo.Local.GetUtcOffset(typed))
+            : Clock.Now;
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private const string Unlinked =
+        "Your sign-in is not linked to a staff record, so nothing can be written in your name. "
+        + "An administrator can link them on the People page.";
+
+    private async Task<Guid?> Me()
+    {
+        var user = (await AuthenticationState).User;
+
+        return Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+    }
+
+    private string Who(Guid id) =>
+        Names.GetValueOrDefault(id) ?? "somebody no longer on the staff list";
+
+    private static string Short(string sha) => sha.Length > 7 ? sha[..7] : sha;
+
+    private static string Length(TimeSpan span)
+    {
+        if (span < TimeSpan.Zero)
+        {
+            return "no time";
+        }
+
+        if (span < TimeSpan.FromMinutes(1))
+        {
+            return "under a minute";
+        }
+
+        if (span < TimeSpan.FromHours(1))
+        {
+            return $"{(int)span.TotalMinutes} min";
+        }
+
+        if (span < TimeSpan.FromDays(1))
+        {
+            var hours = (int)span.TotalHours;
+
+            return span.Minutes == 0 ? $"{hours} hr" : $"{hours} hr {span.Minutes} min";
+        }
+
+        return $"{(int)span.TotalDays} days";
+    }
+
+    private static string Verb(NoteKind kind) => kind switch
+    {
+        NoteKind.Observation => "Saw",
+        NoteKind.Action => "Did",
+        _ => "Decided",
+    };
+
+    private static string Say(IncidentStatus status) => status switch
+    {
+        IncidentStatus.Open => "Open",
+        IncidentStatus.Mitigated => "Mitigated",
+        _ => "Resolved",
+    };
+
+    private static string PillFor(IncidentStatus status) => status switch
+    {
+        IncidentStatus.Open => "pill--danger",
+        IncidentStatus.Mitigated => "pill--wait",
+        _ => "pill--done",
+    };
+
+    private static string PillFor(IncidentSeverity severity) => severity switch
+    {
+        IncidentSeverity.Critical => "pill--danger",
+        IncidentSeverity.Major => "pill--wait",
+        _ => "pill--quiet",
+    };
+}

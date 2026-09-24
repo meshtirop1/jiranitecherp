@@ -1,0 +1,510 @@
+@page "/incidents/{Number:int}/review"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Incidents
+@using JiranisokoTech.Domain.Incidents
+@using JiranisokoTech.Infrastructure.Incidents
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.IncidentsView)]
+@inject IncidentService Service
+@inject IIncidentRepository Incidents
+@inject IncidentQueries Queries
+@inject PeopleQueries People
+
+@*
+    What the firm learned, and what it is doing about it.
+
+    Section 69. Four questions rather than a free-form document, because a blank page produces
+    either nothing or a narrative, and the two questions that pay — how it was noticed and what
+    would have caught it sooner — are exactly the two a narrative leaves out.
+
+    Blameless by construction rather than by convention: there is no field for who caused it and
+    nowhere to put one. A review that names a person is read by that person's manager, and the
+    next person to notice something odd at midnight decides not to mention it.
+*@
+
+<PageTitle>Review of incident @Number — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs">
+    <a href="/incidents">Incidents</a>
+    <a href="/incidents/@Number">Incident @Number</a>
+</nav>
+
+@if (Incident is null)
+{
+    <p class="empty">There is no incident @Number.</p>
+}
+else if (Postmortem is null)
+{
+    <p class="empty">
+        Nobody has started a review of this one. It is started from
+        <a href="/incidents/@Number">the incident itself</a>, and only once it is resolved.
+    </p>
+}
+else
+{
+    <div class="page-head">
+        <h1>Review of @Incident.Number @Incident.Title</h1>
+
+        <p class="subtle">
+            <span class="pill @(Postmortem.IsAgreed ? "pill--done" : "pill--wait")">
+                @(Postmortem.IsAgreed ? "Agreed" : "Draft")
+            </span>
+            @if (Postmortem.AgreedAt is { } when)
+            {
+                <span class="subtle">@when.ToLocalTime().ToString("d MMM yyyy")</span>
+
+                @if (Postmortem.AgreedById is { } by)
+                {
+                    <span class="subtle">by @Who(by)</span>
+                }
+            }
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <dl class="facts">
+        <dt>What broke</dt>
+        <dd>@(Incident.Cause ?? "not recorded")</dd>
+
+        <dt>How long</dt>
+        <dd>
+            @Length(Incident.ToResolve ?? TimeSpan.Zero)
+            <span class="subtle">
+                of which @Length(Incident.ToDetect) was before anybody noticed
+            </span>
+        </dd>
+
+        <dt>How bad</dt>
+        <dd>@Incident.Severity</dd>
+    </dl>
+
+    <AuthorizeView Policy="@Running" Context="mayWrite">
+        <Authorized>
+            @if (Postmortem.IsAgreed)
+            {
+                <section class="standing">
+                    <h2>The four questions</h2>
+
+                    @foreach (var question in Questions)
+                    {
+                        <h3>@question.Asked</h3>
+                        <p class="as-typed">@question.Said</p>
+                    }
+                </section>
+            }
+            else
+            {
+                <section class="standing">
+                    <h2>The four questions</h2>
+
+                    <p class="subtle">
+                        Nobody's name belongs in any of these. The timeline already records who
+                        did what; this is about the system that let it happen.
+                    </p>
+
+                    @foreach (var question in Questions)
+                    {
+                        <label class="stack">
+                            <span>@question.Asked</span>
+                            <span class="subtle">@question.Why</span>
+                            <textarea rows="5"
+                                      value="@question.Read()"
+                                      @onchange="e => question.Write(e.Value?.ToString())">
+                            </textarea>
+                        </label>
+                    }
+
+                    <div class="row-actions">
+                        <button type="button" @onclick="Save">Save what is written</button>
+                    </div>
+                </section>
+            }
+        </Authorized>
+        <NotAuthorized>
+                <section class="standing">
+                    <h2>The four questions</h2>
+
+                    @foreach (var question in Questions)
+                    {
+                        <h3>@question.Asked</h3>
+                        <p class="as-typed">@question.Said</p>
+                    }
+                </section>
+        </NotAuthorized>
+    </AuthorizeView>
+
+    <section class="standing">
+        <h2>What the firm is doing about it</h2>
+
+        @*
+            Real work items on the real board, and that is the decision this section turns on.
+            Corrective actions kept inside a review are a list nobody looks at again: not on the
+            board, not in anybody's week, first read during the next incident — which is when
+            somebody notices the same action was agreed last time. On the board they compete for
+            time with everything else, and that competition is the decision the firm is actually
+            making.
+        *@
+        @if (States.Count == 0)
+        {
+            <p class="empty">
+                Nothing yet.
+                @if (Postmortem.NothingToDoBecause is { } because)
+                {
+                    <span>It was agreed there was nothing to do: @because</span>
+                }
+            </p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Corrective actions</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">On the board</th>
+                        <th scope="col">What</th>
+                        <th scope="col">Where it has got to</th>
+                        <th scope="col"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var action in Postmortem.Actions)
+                    {
+                        var state = States.FirstOrDefault(one => one.WorkItemId == action.WorkItemId);
+
+                        <tr>
+                            <td><a href="/work/@action.WorkItemId">@action.Number</a></td>
+                            <td>@action.Title</td>
+                            <td>
+                                @if (state is null)
+                                {
+                                    @*
+                                        The board item is gone. Said rather than hidden: the
+                                        record that the firm agreed to do this stays, and the
+                                        fact that it can no longer be followed is the truth.
+                                    *@
+                                    <span class="subtle">no longer on the board</span>
+                                }
+                                else
+                                {
+                                    <span class="pill @(state.IsDone ? "pill--done" : "pill--wait")">
+                                        @state.Status
+                                    </span>
+                                }
+                            </td>
+                            <td>
+                                @if (!Postmortem.IsAgreed)
+                                {
+                                    <AuthorizeView Policy="@Running" Context="mayDrop">
+                                        @*
+                                            A per-row form with no fields, so it binds under any
+                                            rendering — the handler closes over the row's id.
+                                        *@
+                                        <button type="button" class="button--quiet"
+                                                @onclick="() => Drop(action.Id)">
+                                            Take it off
+                                        </button>
+                                    </AuthorizeView>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <p class="subtle">
+                Taking an action off this review leaves the board item alone. Deleting somebody's
+                work from here would be this page reaching across to destroy something a person
+                may have started.
+            </p>
+        }
+
+        @if (!Postmortem.IsAgreed)
+        {
+            <AuthorizeView Policy="@Running" Context="mayAct">
+                <div class="fields">
+                    <label>
+                        <span>Agree to do something</span>
+                        <input @bind="Action"
+                               placeholder="alert when the queue is deeper than a thousand" />
+                        <span class="subtle">
+                            This raises a real work item, at high priority, saying which incident
+                            it came from.
+                        </span>
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="PutOnTheBoard">Put it on the board</button>
+                </div>
+            </AuthorizeView>
+        }
+    </section>
+
+    <AuthorizeView Policy="@Running" Context="mayAgree">
+        <section class="standing">
+            <h2>@(Postmortem.IsAgreed ? "Agreed" : "Agree it")</h2>
+
+            @if (Postmortem.IsAgreed)
+            {
+                <p class="subtle">
+                    This is the firm's account. Reopening it leaves a record in the audit trail
+                    that it was agreed and then changed, which is the difference between
+                    correcting a document and quietly replacing one.
+                </p>
+
+                <div class="row-actions">
+                    <button type="button" class="button--quiet" @onclick="Reopen">
+                        Open it again
+                    </button>
+                </div>
+            }
+            else
+            {
+                <p class="subtle">
+                    A draft is one person's account; an agreed review is the firm's. All four
+                    questions need an answer, and there has to be either something on the board
+                    or a sentence saying why there is nothing to do.
+                </p>
+
+                @if (Postmortem.Actions.Count == 0)
+                {
+                    <div class="fields">
+                        <label>
+                            <span>Why there is nothing to do</span>
+                            <input @bind="Nothing"
+                                   placeholder="the outage was at the payment provider" />
+                            <span class="subtle">
+                                A real answer — but it has to be said rather than left as an
+                                empty list nobody notices.
+                            </span>
+                        </label>
+                    </div>
+                }
+
+                <div class="row-actions">
+                    <button type="button" @onclick="Agree">This is what we agreed</button>
+                </div>
+            }
+        </section>
+    </AuthorizeView>
+}
+
+@code {
+    private const string Running = PermissionClaim.PolicyPrefix + Permissions.IncidentsRun;
+
+    [Parameter]
+    public int Number { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private Incident? Incident { get; set; }
+
+    private Postmortem? Postmortem { get; set; }
+
+    private List<ActionState> States { get; set; } = [];
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string Happened { get; set; } = string.Empty;
+
+    private string Possible { get; set; } = string.Empty;
+
+    private string Noticed { get; set; } = string.Empty;
+
+    private string Sooner { get; set; } = string.Empty;
+
+    private string Action { get; set; } = string.Empty;
+
+    private string Nothing { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    /// <summary>
+    /// The four, with the reason each one is asked.
+    /// </summary>
+    /// <remarks>
+    /// A list rather than four blocks of markup, because the reasons are the important part and
+    /// four near-identical copies of the same label markup is how one of them ends up with the
+    /// wrong binding — a fault this codebase has had four times in per-row forms.
+    /// </remarks>
+    private Question[] Questions => [
+        new(
+            "What happened",
+            "In plain words, for somebody who was not there.",
+            () => Happened,
+            value => Happened = value),
+        new(
+            "Why it was possible",
+            "The system that permitted it — not who did it. This is the root cause.",
+            () => Possible,
+            value => Possible = value),
+        new(
+            "How it was noticed",
+            "An alert, a graph, a colleague, a customer. Usually the cheapest thing to fix.",
+            () => Noticed,
+            value => Noticed = value),
+        new(
+            "What would have caught it sooner",
+            "The thing that turns the answer above into a better one next time.",
+            () => Sooner,
+            value => Sooner = value),
+    ];
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Incident = await Incidents.ByNumberAsync(Number);
+
+        if (Incident is null)
+        {
+            return;
+        }
+
+        Postmortem = await Incidents.ReviewForAsync(Incident.Id);
+        Names = await People.NamesAsync();
+
+        if (Postmortem is null)
+        {
+            return;
+        }
+
+        Happened = Postmortem.WhatHappened;
+        Possible = Postmortem.WhyItWasPossible;
+        Noticed = Postmortem.HowItWasNoticed;
+        Sooner = Postmortem.WhatWouldHaveCaughtItSooner;
+
+        States = await Queries.ActionStatesAsync(
+            [.. Postmortem.Actions.Select(one => one.WorkItemId)]);
+    }
+
+    private Task Save() => Act(
+        () => Service.WriteReviewAsync(Incident!.Id, Happened, Possible, Noticed, Sooner),
+        "Saved.");
+
+    private async Task PutOnTheBoard()
+    {
+        if (await Me() is not { } me)
+        {
+            Refusal = Unlinked;
+
+            return;
+        }
+
+        await Act(
+            async () =>
+            {
+                await Service.ActAsync(Incident!.Id, Action, me);
+                Action = string.Empty;
+            },
+            "On the board, where it competes for time with everything else.");
+    }
+
+    private Task Drop(Guid actionId) => Act(
+        () => Service.DropActionAsync(Incident!.Id, actionId),
+        "Off the review. The board item is still there.");
+
+    private async Task Agree()
+    {
+        if (await Me() is not { } me)
+        {
+            Refusal = Unlinked;
+
+            return;
+        }
+
+        await Act(
+            () => Service.AgreeReviewAsync(
+                Incident!.Id, me, string.IsNullOrWhiteSpace(Nothing) ? null : Nothing),
+            "Agreed. This is the firm's account of it.");
+    }
+
+    private Task Reopen() => Act(
+        () => Service.ReopenReviewAsync(Incident!.Id), "Open again.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private const string Unlinked =
+        "Your sign-in is not linked to a staff record, so nothing can be recorded in your name. "
+        + "An administrator can link them on the People page.";
+
+    private async Task<Guid?> Me()
+    {
+        var user = (await AuthenticationState).User;
+
+        return Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+    }
+
+    private string Who(Guid id) =>
+        Names.GetValueOrDefault(id) ?? "somebody no longer on the staff list";
+
+    private static string Length(TimeSpan span)
+    {
+        if (span < TimeSpan.FromMinutes(1))
+        {
+            return "under a minute";
+        }
+
+        if (span < TimeSpan.FromHours(1))
+        {
+            return $"{(int)span.TotalMinutes} min";
+        }
+
+        if (span < TimeSpan.FromDays(1))
+        {
+            var hours = (int)span.TotalHours;
+
+            return span.Minutes == 0 ? $"{hours} hr" : $"{hours} hr {span.Minutes} min";
+        }
+
+        return $"{(int)span.TotalDays} days";
+    }
+
+    private sealed record Question(
+        string Asked, string Why, Func<string> Read, Action<string> Set)
+    {
+        /// <summary>What was written, or that nothing was.</summary>
+        /// <remarks>
+        /// "Not written" rather than an empty paragraph, because an unanswered question and a
+        /// question nobody asked look identical when the answer is blank — and one of those is
+        /// a review that should not have been agreed.
+        /// </remarks>
+        public string Said => Read() is { Length: > 0 } said ? said : "Not written.";
+
+        public void Write(string? value) => Set(value?.Trim() ?? string.Empty);
+    }
+}

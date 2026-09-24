@@ -119,6 +119,13 @@ Each of these cost real time. They are written down so they cost it once.
   build and the whole suite stay green, and `compose up --build` goes on serving
   the previous image rather than stopping — so the browser shows yesterday's
   application and every conclusion drawn from it is wrong.
+- **The layout cannot share the page's DbContext.** Blazor initialises
+  components concurrently, so a query injected into `NavMenu` runs at the same
+  moment as whatever the page is reading, on the same scoped `AppDbContext` —
+  which refuses a second operation while one is in flight. The result is an
+  intermittent error screen on whichever one loses the race, and it worked three
+  times before it took a page down. Anything the layout reads takes a scope of
+  its own through `IServiceScopeFactory`. `LayoutTests` fails the build for it.
 - **Nulls are distinct in a unique index.** The obvious constraint for "one
   release per version per repository" is an index over the repository and the
   version's four parts, and it enforces nothing for an ordinary release: the

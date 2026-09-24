@@ -1,0 +1,435 @@
+@page "/incidents"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Incidents
+@using JiranisokoTech.Domain.Incidents
+@using JiranisokoTech.Infrastructure.Incidents
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.IncidentsView)]
+@inject IncidentService Service
+@inject IncidentQueries Queries
+@inject PeopleQueries People
+@inject NavigationManager Navigation
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    What is wrong, and what has been.
+
+    Section 27, and the first half of the brief's fourth critical workflow — the only one of the
+    four that had nothing at all.
+
+    Interactive, and this is the page where it earns its keep. Raising an incident happens at the
+    worst possible moment, and every extra second between "something is wrong" and "it is written
+    down" is a second of timeline nobody will ever reconstruct. The start time is three buttons
+    rather than a typed timestamp for exactly that reason.
+*@
+
+<PageTitle>Incidents — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Incidents</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<AuthorizeView Policy="@Raising" Context="mayRaise">
+    <section class="standing">
+        <h2>Something is wrong</h2>
+
+        <div class="fields">
+            <label>
+                <span>What is happening</span>
+                <input @bind="Title" placeholder="Card payments are failing" />
+            </label>
+
+            <label>
+                <span>What it affects</span>
+                <input @bind="Affects" placeholder="optional — the despatch board" />
+            </label>
+        </div>
+
+        @*
+            Buttons rather than a dropdown, with the meaning of whichever is chosen underneath.
+            The severity is the thing people argue about while the incident is still happening,
+            and the argument is nearly always about what the word means rather than the facts.
+        *@
+        <p class="subtle">How bad is it?</p>
+
+        <div class="row-actions">
+            @foreach (var level in Severities)
+            {
+                var chosen = level;
+
+                <button type="button"
+                        class="button @(Severity == chosen ? "" : "button--quiet")"
+                        @onclick="() => Severity = chosen">
+                    @chosen
+                </button>
+            }
+        </div>
+
+        <p class="subtle">@Means(Severity)</p>
+
+        @*
+            When it started, not when it was noticed. The gap between the two is the number this
+            firm is least likely to have and most likely to want, and the only moment anybody
+            knows it is now — so it is three buttons rather than a field somebody skips.
+        *@
+        <p class="subtle">When did it start?</p>
+
+        <div class="row-actions">
+            @foreach (var start in Starts)
+            {
+                var minutes = start.Minutes;
+
+                <button type="button"
+                        class="button @(Exactly is null && Ago == minutes ? "" : "button--quiet")"
+                        @onclick="() => Roughly(minutes)">
+                    @start.Said
+                </button>
+            }
+        </div>
+
+        <div class="fields">
+            <label>
+                <span>Or exactly, if somebody has looked</span>
+                <input type="datetime-local" @bind="Exactly" />
+            </label>
+        </div>
+
+        <div class="row-actions">
+            <button type="button" @onclick="Report">Raise it</button>
+        </div>
+
+        <p class="subtle">
+            <strong>This tells nobody.</strong> Raising an incident here writes it down; whoever
+            needs waking up is woken up however this firm wakes people up. A button that looked
+            like it paged the on-call engineer and did not would be the most dangerous control
+            in this application.
+        </p>
+    </section>
+</AuthorizeView>
+
+<section class="standing">
+    <h2>Happening now</h2>
+
+    @if (Open.Count == 0)
+    {
+        <p class="empty">Nothing is open. @(Rows.Count == 0
+            ? "Nothing has ever been raised here."
+            : "The last one ended " + Ended + ".")</p>
+    }
+    else
+    {
+        @foreach (var row in Open)
+        {
+            <article class="entry">
+                <div class="entry__head">
+                    <a href="/incidents/@row.Number"><strong>@row.Number @row.Title</strong></a>
+                    <span class="pill @PillFor(row.Status)">@Say(row.Status)</span>
+                    <span class="pill @PillFor(row.Severity)">@row.Severity</span>
+                    <span class="subtle">going @Length(row.Ran(Now))</span>
+                </div>
+
+                @if (row.Affects is { } what)
+                {
+                    <p class="entry__subject">@what</p>
+                }
+
+                <p class="entry__subject">
+                    @if (row.LeadId is { } lead)
+                    {
+                        <span class="subtle">@Who(lead) is running it</span>
+                    }
+                    else
+                    {
+                        @*
+                            Said rather than left blank, because "nobody is running this" is the
+                            most actionable sentence this page can put in front of somebody.
+                        *@
+                        <span class="subtle">nobody is running it yet</span>
+                    }
+                </p>
+            </article>
+        }
+    }
+</section>
+
+<section class="standing">
+    <h2>Over</h2>
+
+    @if (Over.Count == 0)
+    {
+        <p class="empty">Nothing has finished yet.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Incidents that have ended</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Which</th>
+                    <th scope="col">How bad</th>
+                    <th scope="col">Started</th>
+                    <th scope="col">Unnoticed</th>
+                    <th scope="col">Lasted</th>
+                    <th scope="col">Review</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in Over)
+                {
+                    <tr>
+                        <td><a href="/incidents/@row.Number">@row.Number @row.Title</a></td>
+                        <td>
+                            <span class="pill @PillFor(row.Severity)">@row.Severity</span>
+                            @if (row.Status == IncidentStatus.Mitigated)
+                            {
+                                <span class="pill pill--wait">Mitigated</span>
+                            }
+                        </td>
+                        <td>@row.StartedAt.ToLocalTime().ToString("d MMM HH:mm")</td>
+                        @*
+                            The two columns the firm should be arguing about. How long it was
+                            wrong before anybody knew is a fact about the alerting; how long it
+                            then lasted is a fact about the response, and one of those is much
+                            cheaper to improve than the other.
+                        *@
+                        <td>@Length(row.ReportedAt - row.StartedAt)</td>
+                        <td>@Length(row.Ran(Now))</td>
+                        <td>
+                            @if (row.ReviewAgreed)
+                            {
+                                <a href="/incidents/@row.Number/review">agreed</a>
+                            }
+                            else if (row.HasReview)
+                            {
+                                <a href="/incidents/@row.Number/review">being written</a>
+                            }
+                            else if (row.ReviewMissing)
+                            {
+                                <a href="/incidents/@row.Number/review">never written</a>
+                            }
+                            else
+                            {
+                                <span class="subtle">—</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        @if (Missing > 0)
+        {
+            <p class="subtle">
+                @*
+                    Said and not enforced. Refusing to close an incident without a review would
+                    produce reviews written to close incidents, which are worse than none.
+                *@
+                @Missing of these ended without anybody writing a review, and they were not
+                minor. Nothing here forces one — a review written to clear a warning is worth
+                less than no review — but this is the list the firm would want to look at once a
+                quarter.
+            </p>
+        }
+    }
+</section>
+
+@code {
+    private const string Raising = PermissionClaim.PolicyPrefix + Permissions.IncidentsRaise;
+
+    private static readonly IncidentSeverity[] Severities =
+        [IncidentSeverity.Critical, IncidentSeverity.Major, IncidentSeverity.Minor];
+
+    /// <summary>The three answers to "when did this start" that cover nearly every incident.</summary>
+    private static readonly (int Minutes, string Said)[] Starts =
+        [(0, "Just now"), (15, "15 minutes ago"), (60, "About an hour ago")];
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private List<IncidentRow> Rows { get; set; } = [];
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string Title { get; set; } = string.Empty;
+
+    private string Affects { get; set; } = string.Empty;
+
+    private IncidentSeverity Severity { get; set; } = IncidentSeverity.Major;
+
+    private int? Ago { get; set; } = 0;
+
+    private DateTime? Exactly { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private DateTimeOffset Now => Clock.Now;
+
+    private List<IncidentRow> Open => [.. Rows.Where(one => one.IsOpen)];
+
+    private List<IncidentRow> Over => [.. Rows.Where(one => !one.IsOpen)];
+
+    private int Missing => Rows.Count(one => one.ReviewMissing);
+
+    private string Headline =>
+        Open.Count switch
+        {
+            0 => "Nothing is happening right now.",
+            1 => "One incident is open.",
+            var many => $"{many} incidents are open.",
+        };
+
+    private string Ended =>
+        Over.Count == 0
+            ? "a while ago"
+            : Length(Now - Over.Max(one => one.ResolvedAt ?? one.StartedAt)) + " ago";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Rows = await Queries.AllAsync();
+        Names = await People.NamesAsync();
+    }
+
+    private async Task Report()
+    {
+        Refusal = null;
+
+        if (await Me() is not { } me)
+        {
+            Refusal =
+                "Your sign-in is not linked to a staff record, so an incident cannot be raised "
+                + "in your name. An administrator can link them on the People page.";
+
+            return;
+        }
+
+        try
+        {
+            var incident = await Service.ReportAsync(
+                Title,
+                Severity,
+                Started(),
+                me,
+                string.IsNullOrWhiteSpace(Affects) ? null : Affects);
+
+            Navigation.NavigateTo($"/incidents/{incident.Number}");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    /// <summary>
+    /// When it started, from whichever of the two controls was used last.
+    /// </summary>
+    /// <remarks>
+    /// An exact time wins when it has been typed, because somebody who went to the trouble of
+    /// typing one has looked at something. Otherwise the button, defaulting to now — which is
+    /// wrong surprisingly often and is corrected on the incident's own page, where the
+    /// correction writes a line saying it was made.
+    /// </remarks>
+    private DateTimeOffset Started() =>
+        Exactly is { } exact
+            ? new DateTimeOffset(exact, TimeZoneInfo.Local.GetUtcOffset(exact))
+            : Clock.Now.AddMinutes(-(Ago ?? 0));
+
+    /// <summary>Choose one of the rough answers, and forget any exact one.</summary>
+    /// <remarks>
+    /// Clearing the typed time matters: without it, pressing "just now" after typing a
+    /// timestamp appears to change the answer and does not, because the exact one still wins.
+    /// </remarks>
+    private void Roughly(int minutes)
+    {
+        Ago = minutes;
+        Exactly = null;
+    }
+
+    private async Task<Guid?> Me()
+    {
+        var user = (await AuthenticationState).User;
+
+        return Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+    }
+
+    private string Who(Guid id) =>
+        Names.GetValueOrDefault(id) ?? "somebody no longer on the staff list";
+
+    /// <summary>
+    /// A duration said the way a person would say it.
+    /// </summary>
+    /// <remarks>
+    /// Never in seconds and never to two decimal places. The only thing anybody does with these
+    /// numbers is compare them to each other and to what they expected, and "2.3 hours" is
+    /// harder to do that with than "2 hours".
+    /// </remarks>
+    private static string Length(TimeSpan span)
+    {
+        if (span < TimeSpan.Zero)
+        {
+            return "no time";
+        }
+
+        if (span < TimeSpan.FromMinutes(1))
+        {
+            return "under a minute";
+        }
+
+        if (span < TimeSpan.FromHours(1))
+        {
+            return $"{(int)span.TotalMinutes} min";
+        }
+
+        if (span < TimeSpan.FromDays(1))
+        {
+            var hours = (int)span.TotalHours;
+            var minutes = span.Minutes;
+
+            return minutes == 0 ? $"{hours} hr" : $"{hours} hr {minutes} min";
+        }
+
+        return $"{(int)span.TotalDays} days";
+    }
+
+    private static string Means(IncidentSeverity severity) => severity switch
+    {
+        IncidentSeverity.Critical => "nobody can do the thing",
+        IncidentSeverity.Major => "some people cannot do some things",
+        _ => "it is wrong and people can still work",
+    };
+
+    private static string Say(IncidentStatus status) => status switch
+    {
+        IncidentStatus.Open => "Open",
+        IncidentStatus.Mitigated => "Mitigated",
+        _ => "Resolved",
+    };
+
+    private static string PillFor(IncidentStatus status) => status switch
+    {
+        IncidentStatus.Open => "pill--danger",
+        IncidentStatus.Mitigated => "pill--wait",
+        _ => "pill--done",
+    };
+
+    private static string PillFor(IncidentSeverity severity) => severity switch
+    {
+        IncidentSeverity.Critical => "pill--danger",
+        IncidentSeverity.Major => "pill--wait",
+        _ => "pill--quiet",
+    };
+}

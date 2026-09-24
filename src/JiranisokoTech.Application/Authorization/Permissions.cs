@@ -296,6 +296,38 @@ public static class Permissions
     /// </remarks>
     public const string ReleasesDeclare = "releases.declare";
 
+    // --- when something is wrong -------------------------------------------
+
+    /// <summary>Read the incidents and the reviews of them.</summary>
+    /// <remarks>
+    /// Wide on purpose — every working role holds it. An incident record is the one thing here
+    /// that gets worse the fewer people can see it: somebody who cannot look at the open
+    /// incident asks in a channel instead, and the answer they get is out of date. There is
+    /// nothing in a timeline that a colleague should be kept from, and the one field that could
+    /// have been sensitive — who caused it — deliberately does not exist.
+    /// </remarks>
+    public const string IncidentsView = "incidents.view";
+
+    /// <summary>Say that something is wrong, and write in the timeline.</summary>
+    /// <remarks>
+    /// Separate from running one and held by everybody who works here, because the person who
+    /// notices is very often not the person who will fix it. A model where whoever sees the
+    /// first symptom has to find somebody else to raise it adds twenty minutes to the top of
+    /// every incident.
+    /// </remarks>
+    public const string IncidentsRaise = "incidents.raise";
+
+    /// <summary>
+    /// Run one: severity, mitigation, resolution, and the review afterwards.
+    /// </summary>
+    /// <remarks>
+    /// One permission rather than three, and the reasoning is the same as for releases. Saying
+    /// how bad it is, saying it has stopped and saying what the firm learned are the same
+    /// authority at three points in time; splitting them produces somebody who can declare an
+    /// incident critical and cannot declare it over.
+    /// </remarks>
+    public const string IncidentsRun = "incidents.run";
+
     // --- approvals and reporting -------------------------------------------
     public const string ApprovalsDecide = "approvals.decide";
     public const string ReportsView = "reports.view";
@@ -331,6 +363,8 @@ public static class Permissions
         TasksReview, TasksDeploy,
 
         ReposView, ReposManage, ReposDeliveries, ReleasesDeclare,
+
+        IncidentsView, IncidentsRaise, IncidentsRun,
 
         ApprovalsDecide, ReportsView,
     ];
@@ -454,6 +488,11 @@ public static class Roles
                 // the one who will be asked why 1.4.0 went out.
                 Permissions.ReleasesDeclare,
 
+                // A head is woken up about their team's service, so they run
+                // incidents as well as read them.
+                Permissions.IncidentsView, Permissions.IncidentsRaise,
+                Permissions.IncidentsRun,
+
                 Permissions.ApprovalsDecide,
                 Permissions.RequisitionsCreate, Permissions.RequisitionsView,
                 Permissions.CandidatesView, Permissions.InterviewsSchedule,
@@ -488,6 +527,9 @@ public static class Roles
                 Permissions.TasksAssign, Permissions.TasksReview,
                 Permissions.ReposView,
                 Permissions.ApprovalsDecide,
+
+                Permissions.IncidentsView, Permissions.IncidentsRaise,
+                Permissions.IncidentsRun,
 
                 // Everybody who works here logs hours, asks for leave and
                 // claims money back. These are not privileges; a role without
@@ -533,6 +575,13 @@ public static class Roles
                 // the view would mean the one group whose work is being
                 // recorded is the one group that cannot check the record.
                 Permissions.ReposView,
+
+                // An engineer sees the first symptom of nearly every incident,
+                // and running one is ordinary engineering work rather than a
+                // privilege. Withholding it would mean the person already
+                // typing in the console has to find somebody to press a button.
+                Permissions.IncidentsView, Permissions.IncidentsRaise,
+                Permissions.IncidentsRun,
 
                 // Everybody who works here logs hours, asks for leave and
                 // claims money back. These are not privileges; a role without

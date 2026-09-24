@@ -15,7 +15,7 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 24 September 2026 · 1135 tests · verified against PostgreSQL in
+Last updated: 24 September 2026 · 1161 tests · verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
 container, a lost opportunity surviving its client record being deleted, the
 builds and deployments tables applying to a real Postgres, an abandoned event
@@ -33,8 +33,9 @@ is built and verified against real payload shapes from four hosts: repositories,
 commits, pull requests and reviews arrive on their own, a merged pull request
 moves the work it names to review, builds and deployments are recorded as the
 hosts report them, and the delivery inbox verifies signatures, refuses replays
-and dead-letters what it cannot handle. Still absent: infrastructure, incidents
-and assets.
+and dead-letters what it cannot handle. Incidents and their reviews now run end to end, which closes the
+last of the brief's four critical workflows. Still absent: infrastructure and
+assets.
 
 That matters more than the count suggests, because the brief's central
 philosophy is that *developers should spend as little time as possible entering
@@ -46,7 +47,7 @@ timesheet rather than typed into it. What is built is an ERP that a software
 company could run its business on, and the part that makes it developer-native
 is no longer the part that is missing.
 
-By section: **40 done, 3 partial, 55 not started, 1 excluded by agreement.**
+By section: **44 done, 3 partial, 51 not started, 1 excluded by agreement.**
 
 That count was recomputed from the tables below rather than adjusted, because the
 figure previously here did not add up to anything the tables said and had been
@@ -172,8 +173,8 @@ This block is the brief's stated centre of gravity and none of it exists.
 | --- | --- | --- |
 | ☐ | 14 | Servers, cloud, containers, databases, DNS, domains, SSL |
 | ☐ | 15 | Asset management and lifecycle |
-| ☐ | 27 | Incidents, severity, timeline, root cause |
-| ☐ | 69 | Postmortems and corrective tasks |
+| ✅ | 27 | Incidents, severity, timeline, root cause | The first half of the brief's fourth critical workflow, which had nothing at all until now. **Three timestamps, and they are three different facts**: when it started, when somebody noticed, when the harm stopped. Nearly everything anybody wants afterwards is a subtraction between two of them — how long we were broken before we knew, how long we took to stop it, how long the cause survived — and a single "created" column answers none of them. The one people most want is time to detect, and it needs the field nobody would think to add, because when it started is a judgement made later rather than a moment somebody clicked. It is correctable, and correcting it writes a line. **Mitigated is not resolved.** A flag turned off at 02:14 stopped the harm and the bug that made it possible was still there at nine the next morning; people need the first number and the firm needs the second. Most tools have open and closed, so the moment the bleeding stops is recorded as the moment the incident ended and every duration computed afterwards answers a question nobody asked. **The timeline is the artefact and everything else is a summary of it.** Lines are appended and never edited or deleted, by anybody; severity changes, start corrections, mitigations and resolutions write their own lines; and a line carries both when the thing happened and when it was typed, so a note entered at 14:40 about 14:02 sits at 14:02 and is visibly a reconstruction. A timeline made by asking people to remember is the one artefact of an incident that is always missing. **What changed just before is answered without anybody typing** — deployments from four hosts and releases the firm declared, in the window before it started, headed suspects rather than causes. **Not built, on the record:** nothing here pages, alerts or telephones anybody, and the screen says so. A button in an ERP that looked like it woke the on-call engineer and did not would be the most dangerous control in the application. There is no service catalogue either, so what an incident affects is a sentence rather than a list — §14 would change that |
+| ✅ | 69 | Postmortems and corrective tasks | The second half of §93. **Four questions rather than a blank document**: what happened, why it was possible, how it was noticed, and what would have caught it sooner. The third and fourth are the ones that pay — an incident found by a customer telephoning is a different firm from one found by an alert, and the gap between them is usually the cheapest thing on the list to fix — and they are exactly the two a free-form narrative leaves out. **Blameless by construction, not by convention.** There is no field for who caused it and nowhere to put one. A review that names somebody is read by that person's manager, and the next person to notice something odd at midnight decides not to mention it. The timeline already records who did what, because that is how the incident was run; the review is about the system that let it happen. **A corrective action is a real work item on the real board**, and this is the decision the section turns on. Actions kept inside a review are a list nobody looks at again — not on the board, not in anybody's week, first read during the next incident, which is when somebody notices the same action was agreed last time. On the board they compete for time with everything else, and that competition is the decision the firm is actually making. Their state is read back from the board rather than copied, so "what did we actually fix" is answerable a year later. **Agreeing requires an answer to "and what are we doing about it"** — either something on the board, or a sentence saying why there is nothing to do. The second is a real answer; inventing a task to look diligent wastes a week and teaches people that reviews produce make-work. Both refusals exist because a review that can be agreed while empty gets agreed while empty, in a meeting that ran over. The root cause §27 asks for lives here rather than on the incident, because writing it during the incident is guessing and a guess typed into a field marked "root cause" is believed for years |
 | ☐ | 88 | Backups with tested restore |
 | ☐ | 89 | Disaster recovery documentation |
 
@@ -252,7 +253,24 @@ requisition is raised, approved, advertised and published, and the advert is
 then found on the public careers page by somebody with no account. Technical
 assessments, a real offer object and onboarding are still absent.
 
-**§93 Incident** — **Not started.**
+**§93 Incident** — Detected → raised → severity → timeline → mitigated →
+resolved → review → corrective work → done.
+**Runs end to end**, and it was the only one of the four with nothing at all.
+Walked through in the running application: an incident raised an hour after it
+began, with the gap written into the first line of its own timeline; somebody
+taking charge; an observation and an action written down as they happened; the
+severity dropped from critical to major with the reason recorded; the harm
+stopped and then the cause removed, as two separate moments eleven minutes
+apart; a review answering the four questions; and a corrective action that
+appeared on the board as work item 10, where it competes for time with
+everything else.
+
+The two things it does not do are the two worth repeating. It pages nobody —
+raising an incident writes it down, and whoever needs waking up is woken by
+whatever this firm uses. And it enforces no review: a resolved incident that was
+not minor and has no review is listed as such, and nothing refuses to close
+without one, because a review written to clear a warning is worth less than no
+review.
 
 **§94 Finance** — Client → contract → project → work → invoice → payment →
 revenue → cost → profitability.

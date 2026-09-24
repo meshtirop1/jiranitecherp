@@ -1,5 +1,6 @@
 @using JiranisokoTech.Application.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
+@inject IServiceScopeFactory Scopes
 
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
@@ -62,6 +63,22 @@
                                Context="projects">
                     <div class="nav-item px-3">
                         <NavLink class="nav-link" href="projects">Projects</NavLink>
+                    </div>
+                </AuthorizeView>
+
+                @*
+                    Above the repositories and carrying its own count, because an
+                    open incident is the one thing in this application that should
+                    be visible from every page. The count is of open ones only —
+                    mitigated ones have stopped hurting anybody, and a number in
+                    the navigation that does not clear trains people to ignore it.
+                *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.IncidentsView)"
+                               Context="incidents">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="incidents">
+                            Incidents@(Happening > 0 ? $" ({Happening})" : "")
+                        </NavLink>
                     </div>
                 </AuthorizeView>
 
@@ -281,3 +298,36 @@
         </AuthorizeView>
     </nav>
 </div>
+
+@code {
+    /// <summary>How many incidents are open right now.</summary>
+    /// <remarks>
+    /// Read once per render of the navigation, which is once per page. It is a count over an
+    /// index on the status column — see the index on incidents — and it is the cheapest query
+    /// in the application.
+    /// </remarks>
+    private int Happening { get; set; }
+
+    /// <summary>
+    /// Counted in a scope of its own, which is not an optimisation.
+    /// </summary>
+    /// <remarks>
+    /// <b>The navigation cannot share the page's database context.</b> Blazor initialises
+    /// components concurrently, so this ran at the same moment as whatever the page was reading,
+    /// on the same scoped <c>AppDbContext</c> — and a DbContext refuses a second operation while
+    /// one is in flight. The result was an intermittent error screen on whichever page happened
+    /// to lose the race, which is the worst kind: it worked the first three times it was tried.
+    ///
+    /// Everything else in this application reads the database from a page, and a page is one
+    /// component with one unit of work. The layout is the exception, because it renders beside
+    /// every page rather than instead of one, so it gets its own scope and disposes it.
+    /// </remarks>
+    protected override async Task OnInitializedAsync()
+    {
+        await using var scope = Scopes.CreateAsyncScope();
+
+        Happening = await scope.ServiceProvider
+            .GetRequiredService<JiranisokoTech.Infrastructure.Incidents.IncidentQueries>()
+            .OpenAsync();
+    }
+}
