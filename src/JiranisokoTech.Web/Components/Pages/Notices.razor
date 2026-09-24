@@ -1,0 +1,268 @@
+@page "/notices"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Notices
+@using JiranisokoTech.Domain.Notices
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject NoticeService Service
+@inject PeopleQueries People
+
+@*
+    What has happened that somebody thought you would want to know.
+
+    Sections 32 and 59, on one page, because the place to tune what reaches you is the place you
+    read it — a preferences screen somewhere else is one nobody finds until they are already
+    annoyed.
+
+    No permission on this page beyond being signed in, deliberately. A notice is addressed to one
+    person and this page shows only theirs; a permission would be a door to a room with one chair
+    in it. The ownership check is in the service rather than here, because a notice identifier in
+    a URL is a thing anybody can type.
+
+    Interactive, because reading a notice is the lightest possible action and a page load for
+    each one would make the list take longer to clear than to read.
+*@
+
+<PageTitle>Notices — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Notices</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+@if (Me is null)
+{
+    <p class="empty">
+        Your sign-in is not linked to a staff record, so nothing is addressed to you yet. An
+        administrator can link them on the People page.
+    </p>
+}
+else
+{
+    <p class="instructions">
+        Things that happened, not things to do. What is waiting on you is on
+        <a href="/">the home page</a>, worked out from what you are allowed to do rather than
+        from anything stored — two lists of tasks would be two answers to one question, and they
+        would disagree the first time a rule changed.
+    </p>
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    @if (All.Count == 0)
+    {
+        <p class="empty">Nothing yet.</p>
+    }
+    else
+    {
+        @if (Unread > 0)
+        {
+            <div class="row-actions">
+                <button type="button" class="button--quiet" @onclick="ReadEverything">
+                    Mark all @Unread read
+                </button>
+            </div>
+        }
+
+        @foreach (var notice in All)
+        {
+            var it = notice;
+
+            <article class="entry @(it.IsUnread ? "" : "row--closed")">
+                <div class="entry__head">
+                    <strong>@it.At.ToLocalTime().ToString("d MMM HH:mm")</strong>
+
+                    <span class="pill @PillFor(it.Kind)">@Said(it.Kind)</span>
+
+                    @if (it.IsUnread)
+                    {
+                        <span class="pill pill--wait">unread</span>
+                    }
+                </div>
+
+                <p class="entry__subject">
+                    @if (it.Link is { } link)
+                    {
+                        <a href="@link">@it.Subject</a>
+                    }
+                    else
+                    {
+                        @it.Subject
+                    }
+                </p>
+
+                <div class="row-actions">
+                    @*
+                        Per-row buttons with no fields, so each handler closes over the notice —
+                        the trap that has silently broken six controls in this application.
+                    *@
+                    @if (it.IsUnread)
+                    {
+                        <button type="button" class="button--quiet" @onclick="() => Read(it.Id)">
+                            Mark it read
+                        </button>
+                    }
+                    else
+                    {
+                        @*
+                            Because people open something on a telephone, find it needs ten
+                            minutes they do not have, and want it back. Without this they leave
+                            the whole list unread and the count stops meaning anything.
+                        *@
+                        <button type="button" class="button--quiet"
+                                @onclick="() => NotRead(it.Id)">
+                            Put it back
+                        </button>
+                    }
+                </div>
+            </article>
+        }
+
+        @if (All.Count == NoticeService.MostShown)
+        {
+            <p class="subtle">
+                The last @NoticeService.MostShown. Older ones are still recorded and are not
+                shown here — said rather than left to be inferred from a list that stops.
+            </p>
+        }
+    }
+
+    <section class="standing">
+        <h2>What reaches you by email</h2>
+
+        <p class="subtle">
+            <strong>Everything is recorded either way.</strong> What you are choosing here is
+            what interrupts you, not what the system remembers — a record with holes in it is
+            worse than no record, because months later you cannot tell whether a thing did not
+            happen or merely was not written down.
+        </p>
+
+        <table class="grid">
+            <caption class="visually-hidden">Which notices are emailed</caption>
+            <thead>
+                <tr>
+                    <th scope="col">When</th>
+                    <th scope="col">Recorded</th>
+                    <th scope="col">Emailed</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var kind in Kinds)
+                {
+                    var it = kind;
+                    var emailed = Rules.GetValueOrDefault(it, NoticeRule.EmailedByDefault(it));
+
+                    <tr>
+                        <td>@Means(it)</td>
+                        <td><span class="pill pill--done">always</span></td>
+                        <td>
+                            <button type="button"
+                                    class="button @(emailed ? "" : "button--quiet")"
+                                    @onclick="() => SetRule(it, !emailed)">
+                                @(emailed ? "Yes" : "No")
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+@code {
+    private static readonly NoticeKind[] Kinds = Enum.GetValues<NoticeKind>();
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private Guid? Me { get; set; }
+
+    private List<Notice> All { get; set; } = [];
+
+    private Dictionary<NoticeKind, bool> Rules { get; set; } = [];
+
+    private string? Done { get; set; }
+
+    private int Unread => All.Count(one => one.IsUnread);
+
+    private string Headline =>
+        Me is null
+            ? "Nothing is addressed to you."
+            : Unread switch
+            {
+                0 when All.Count == 0 => "Nothing has happened that concerns you yet.",
+                0 => "Nothing unread.",
+                1 => "One unread.",
+                var many => $"{many} unread.",
+            };
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        Me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        if (Me is not { } me)
+        {
+            return;
+        }
+
+        All = await Service.ForAsync(me);
+        Rules = await Service.RulesForAsync(me);
+    }
+
+    private Task Read(Guid id) => Act(() => Service.ReadAsync(Me!.Value, id));
+
+    private Task NotRead(Guid id) => Act(() => Service.NotReadAsync(Me!.Value, id));
+
+    private Task ReadEverything() => Act(
+        () => Service.ReadEverythingAsync(Me!.Value), "All read.");
+
+    private Task SetRule(NoticeKind kind, bool byEmail) => Act(
+        () => Service.SetRuleAsync(Me!.Value, kind, byEmail),
+        byEmail
+            ? "That will be emailed as well as recorded."
+            : "That will be recorded and not emailed.");
+
+    private async Task Act(Func<Task> work, string? done = null)
+    {
+        Done = null;
+
+        await work();
+
+        Done = done;
+
+        await LoadAsync();
+    }
+
+    private static string Said(NoticeKind kind) => kind switch
+    {
+        NoticeKind.WorkGiven => "Work",
+        NoticeKind.WorkTaken => "Work",
+        NoticeKind.RequestSettled => "Decision",
+        _ => "Incident",
+    };
+
+    private static string Means(NoticeKind kind) => kind switch
+    {
+        NoticeKind.WorkGiven => "You are given a piece of work",
+        NoticeKind.WorkTaken => "A piece of work leaves your list",
+        NoticeKind.RequestSettled => "Something you asked for is decided",
+        _ => "Something you own is broken",
+    };
+
+    private static string PillFor(NoticeKind kind) => kind switch
+    {
+        NoticeKind.IncidentRaised => "pill--danger",
+        NoticeKind.RequestSettled => "pill--active",
+        _ => "pill--quiet",
+    };
+}

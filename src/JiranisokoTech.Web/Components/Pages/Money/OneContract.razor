@@ -383,7 +383,7 @@ else
 
         // Only before a form has been posted, or a refused change would show the
         // stored figures back rather than the ones somebody typed.
-        if (!_loaded)
+        if (!_loaded && FirstLook.ThisTime(Request))
         {
             Terms.Title = Contract.Title;
             Terms.Value = Contract.Value is { } worth ? worth.MinorUnits / 100m : 0m;

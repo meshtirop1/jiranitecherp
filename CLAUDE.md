@@ -119,6 +119,17 @@ Each of these cost real time. They are written down so they cost it once.
   build and the whole suite stay green, and `compose up --build` goes on serving
   the previous image rather than stopping — so the browser shows yesterday's
   application and every conclusion drawn from it is wrong.
+- **A `_loaded` flag does not survive a form post.** A page that seeds a
+  control with the stored value — the select showing who work is assigned to —
+  must stop doing that once a form has been posted, or it overwrites the model
+  the handler is about to read. Four pages guarded that with a `_loaded` field
+  set on the first pass, which does nothing under static rendering: **every
+  request is a new component instance**, so on the POST the flag is false again,
+  the seeding runs, and the service is called with the value that was already
+  there. It does what it is told, which is nothing, and the page says
+  "Assigned." Guard on the request method instead — see `FirstLook` — and keep
+  the flag for the interactive case. `FormsThatChangeThingsTests` posts the real
+  form and asserts the row.
 - **A directory default that is relative lands inside the image.** The file mail
   transport writes to `mail`, which resolves to `/app/mail` — owned by root,
   inside the image, unwritable by the non-root user the container runs as. So

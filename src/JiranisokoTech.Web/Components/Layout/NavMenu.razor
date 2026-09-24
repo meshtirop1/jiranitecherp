@@ -67,6 +67,18 @@
                 </AuthorizeView>
 
                 @*
+                    Second only to the home page, and carrying its own count. A
+                    notice is addressed to one person, so there is no permission
+                    on it — the link is shown to anybody signed in, and the page
+                    says plainly when a sign-in is not linked to a staff record.
+                *@
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="notices">
+                        Notices@(Unread > 0 ? $" ({Unread})" : "")
+                    </NavLink>
+                </div>
+
+                @*
                     Next to the incidents, because the first thing anybody does in
                     one is ask what the broken thing is and who owns it.
                 *@
@@ -333,6 +345,12 @@
     /// component with one unit of work. The layout is the exception, because it renders beside
     /// every page rather than instead of one, so it gets its own scope and disposes it.
     /// </remarks>
+    /// <summary>How many notices this reader has not read.</summary>
+    private int Unread { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? Authentication { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
         await using var scope = Scopes.CreateAsyncScope();
@@ -340,5 +358,35 @@
         Happening = await scope.ServiceProvider
             .GetRequiredService<JiranisokoTech.Infrastructure.Incidents.IncidentQueries>()
             .OpenAsync();
+
+        /*
+         * In the same scope, and after the count above rather than beside it. Both read the
+         * database, and the layout's scope is a single DbContext like any other — two awaits in
+         * parallel here would reproduce exactly the race that put the incidents count in its own
+         * scope in the first place.
+         */
+        if (Authentication is null)
+        {
+            return;
+        }
+
+        var user = (await Authentication).User;
+
+        if (!Guid.TryParse(
+            user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
+            out var account))
+        {
+            return;
+        }
+
+        var people = scope.ServiceProvider
+            .GetRequiredService<JiranisokoTech.Infrastructure.People.PeopleQueries>();
+
+        if (await people.EmployeeForAccountAsync(account) is { } me)
+        {
+            Unread = await scope.ServiceProvider
+                .GetRequiredService<JiranisokoTech.Application.Notices.NoticeService>()
+                .UnreadForAsync(me);
+        }
     }
 }

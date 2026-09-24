@@ -57,6 +57,12 @@ public class ReachabilityTests
             "ApiKeyAuthenticationHandler, on every authenticated API request.",
         ["ResolveAsync"] =
             "ApiKeyAuthenticationHandler, to turn a bearer token into a key.",
+
+        ["TellAsync"] =
+            "TellPeopleTheirWorkMoved and TellSomebodyTheirRequestWasSettled, from the "
+            + "WorkItemAssigned and ApprovalSettled events. Deliberately not reachable from a "
+            + "screen: a notice written from a page could exist for something that then failed "
+            + "to save, and unlike an email it would sit there being wrong.",
     };
 
     [Fact]

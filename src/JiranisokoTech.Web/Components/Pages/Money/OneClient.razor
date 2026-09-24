@@ -432,7 +432,7 @@ else
 
         // Only before the form has been posted, or a refused change would show
         // the stored value rather than the one somebody chose.
-        if (!_loaded)
+        if (!_loaded && FirstLook.ThisTime(Request))
         {
             State.Status = Client.Status;
             _loaded = true;

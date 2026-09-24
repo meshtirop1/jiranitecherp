@@ -193,6 +193,19 @@ public static class ServiceCollectionExtensions
          */
         services.AddScoped<Application.Platform.IFlagRepository, Platform.FlagRepository>();
         services.AddScoped<Application.Platform.FlagService>();
+
+        /*
+         * The notice centre, and the two handlers that fill it. Sections 32 and 59. Nothing
+         * calls the service from a page: notices are written by event handlers, through the
+         * outbox, so one cannot exist for something that then failed to save.
+         */
+        services.AddScoped<Application.Notices.INoticeRepository, Notices.NoticeRepository>();
+        services.AddSingleton<Application.Notices.IWhereThisLives, Notices.WhereThisLives>();
+        services.AddScoped<Application.Notices.NoticeService>();
+        services.AddScoped<IDomainEventHandler<Domain.Work.WorkItemAssigned>,
+            Application.Notices.TellPeopleTheirWorkMoved>();
+        services.AddScoped<IDomainEventHandler<Domain.Approvals.ApprovalSettled>,
+            Application.Notices.TellSomebodyTheirRequestWasSettled>();
         services.AddScoped<RecruitmentQueries>();
         services.AddScoped<ICvStore, FileCvStore>();
 

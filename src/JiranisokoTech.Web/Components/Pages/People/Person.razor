@@ -503,7 +503,7 @@ else
 
         // Only on the first pass: after a post, these hold what was submitted,
         // and overwriting them would discard the change being made.
-        if (!_loaded && Row is not null)
+        if (!_loaded && Row is not null && FirstLook.ThisTime(Request))
         {
             Line.ManagerId = Row.ReportsToId;
             Placement.DepartmentId = Row.DepartmentId;

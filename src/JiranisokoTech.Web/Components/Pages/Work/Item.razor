@@ -409,6 +409,10 @@ else
         set => _assignment = value ?? new AssignmentInput();
     }
 
+    /// <summary>The request, only to tell a first look from a form post.</summary>
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
 
@@ -525,7 +529,13 @@ else
             Evidence = await Engineering.EvidenceForAsync(Row.Id);
         }
 
-        if (!_loaded && Row is not null)
+        /*
+         * Only on a first look. The _loaded flag alone was not enough: under static
+         * rendering every request is a new component instance, so on the POST it was false
+         * again and this overwrote the assignee somebody had just chosen with the one already
+         * stored — and the page then said "Assigned." See FirstLook.
+         */
+        if (!_loaded && Row is not null && FirstLook.ThisTime(Request))
         {
             Assignment.AssigneeId = Row.AssigneeId;
             _loaded = true;

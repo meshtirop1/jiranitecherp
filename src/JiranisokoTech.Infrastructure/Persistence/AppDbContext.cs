@@ -103,6 +103,19 @@ public class AppDbContext(
     /// </remarks>
     public DbSet<Domain.Platform.Flag> Flags => Set<Domain.Platform.Flag>();
 
+    /// <summary>
+    /// Things that happened, addressed to one person each.
+    /// </summary>
+    /// <remarks>
+    /// Section 32, and deliberately not a list of things to do — the home page has answered
+    /// "what is waiting on you" since section 35, from what the reader may do rather than from
+    /// anything stored, and a second answer to one question is two answers that disagree.
+    /// </remarks>
+    public DbSet<Domain.Notices.Notice> Notices => Set<Domain.Notices.Notice>();
+
+    /// <summary>What each person wants emailed as well as recorded. Section 59.</summary>
+    public DbSet<Domain.Notices.NoticeRule> NoticeRules => Set<Domain.Notices.NoticeRule>();
+
     public DbSet<ApprovalRequest> Approvals => Set<ApprovalRequest>();
 
     public DbSet<Client> Clients => Set<Client>();

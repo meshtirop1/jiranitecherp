@@ -207,6 +207,38 @@ public static class Letters
         return Compose(toAddress, toName, "Things running out soon", text, link: null);
     }
 
+    /// <summary>
+    /// One thing happened, and somebody thought this person would want to know.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately the plainest letter in this file: one line and a link. It carries the same
+    /// sentence the notice centre shows, because two wordings of one fact is two things to keep
+    /// in step and one of them will drift.
+    /// </remarks>
+    public static EmailMessage SomethingHappened(
+        string toAddress, string toName, string subject, string? link)
+    {
+        var text = link is { Length: > 0 }
+            ? $"""
+                Hello {toName},
+
+                {subject}
+
+                {link}
+
+                {Signature}
+                """
+            : $"""
+                Hello {toName},
+
+                {subject}
+
+                {Signature}
+                """;
+
+        return Compose(toAddress, toName, subject, text, link);
+    }
+
     /// <summary>Somebody is waiting on this person to decide something.</summary>
     public static EmailMessage AwaitingDecision(
         string toAddress,
