@@ -1440,12 +1440,24 @@ code.key {
  * third of a space as one that follows a value. That is the trade, and it is the right way
  * round — a column of pills all starting in the same place looks deliberate, while a date
  * glued to a word looks broken.
+ *
+ * Definition lists were left out of this when it was written, and they have exactly the same
+ * fault for exactly the same reason: seventeen pages lay their facts out as a .facts list, and
+ * every one of them puts a value in a dd with a qualifier after it. It rendered as
+ * "7a77…aaaapushed 20 Sep" on the release page and as a pay run's cost run into the words
+ * explaining it. Found by reading a page rather than by any test, which is what the original
+ * comment says about the table version and is apparently worth saying twice.
  */
 .grid td > .pill,
 .grid td > .subtle,
 .grid td > code,
 .grid td li > .pill,
-.grid td li > .subtle {
+.grid td li > .subtle,
+.facts dd > .pill,
+.facts dd > .subtle,
+.facts dd > code,
+.page-head h1 > .subtle,
+.page-head h1 > .pill {
     margin-left: 0.35rem;
 }
 

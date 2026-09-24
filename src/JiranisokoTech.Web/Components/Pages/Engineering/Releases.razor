@@ -1,0 +1,409 @@
+@page "/repositories/releases"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Engineering
+@using JiranisokoTech.Domain.Engineering
+@using JiranisokoTech.Infrastructure.Engineering
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ReposView)]
+@inject ReleaseService Service
+@inject EngineeringQueries Queries
+@inject PeopleQueries People
+@inject NavigationManager Navigation
+
+@*
+    What the firm has shipped, and what it is running.
+
+    Section 67, and the last link in section 91's chain. Everything either side of this page
+    arrives on its own from a code host; a release is the one step a person takes, which is why
+    this is the only page in the engineering section with a form on it that writes something
+    nobody was told by a webhook.
+
+    Interactive, and for one reason: a release names a commit, and asking somebody to paste forty
+    characters of hex they have to go and find in another window is how a release ends up
+    pointing at the wrong thing. The commits are already here. Choosing one from the list of what
+    was actually pushed is both quicker and impossible to get wrong by typing.
+*@
+
+<PageTitle>Releases — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/repositories">Repositories</a></nav>
+
+<div class="page-head">
+    <h1>Releases</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+<p class="instructions">
+    A version this firm can name. Commits, builds and deployments arrive here on their own —
+    this is the part somebody says: that what is in production is called 1.4.0, what is in it,
+    and if it had to come back, why.
+</p>
+
+@if (Repositories.Count == 0)
+{
+    <p class="empty">
+        No repository is connected yet, so there is nothing to release. Connect one on the
+        <a href="/repositories">repositories page</a> first.
+    </p>
+}
+else
+{
+    <section class="standing">
+        <div class="fields">
+            <label>
+                <span>Repository</span>
+                <select @bind="Chosen" @bind:after="LoadAsync">
+                    @foreach (var repository in Repositories)
+                    {
+                        <option value="@repository.Id">@repository.FullName</option>
+                    }
+                </select>
+            </label>
+        </div>
+    </section>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (History is null)
+    {
+        <p class="subtle">Reading…</p>
+    }
+    else
+    {
+        <dl class="facts">
+            <dt>What is out</dt>
+            <dd>
+                @if (History.Live is { } live)
+                {
+                    <strong>@live.Version</strong>
+
+                    @if (live.Name is { } named)
+                    {
+                        <span class="subtle">@named</span>
+                    }
+
+                    @if (live.DeclaredAt is { } when)
+                    {
+                        <span class="subtle">declared @when.ToLocalTime().ToString("d MMM yyyy")</span>
+                    }
+                }
+                else
+                {
+                    @*
+                        Said as a sentence rather than left blank, because "nothing" and "we have
+                        not started using this page" look identical in an empty cell and they are
+                        very different facts about a firm.
+                    *@
+                    <span class="subtle">
+                        Nothing is declared as out. @(History.IsEmpty
+                            ? "No version has been named here yet."
+                            : "Every version named here was rolled back or never declared.")
+                    </span>
+                }
+            </dd>
+        </dl>
+
+        <AuthorizeView Policy="@Declaring" Context="mayDeclare">
+            <section class="standing">
+                <h2>Prepare a release</h2>
+
+                <p class="subtle">
+                    Name the version and the commit it is of. Nothing is claimed until it is
+                    declared, so the notes can be written first.
+                </p>
+
+                <div class="fields">
+                    <label>
+                        <span>Version</span>
+                        <input @bind="Version" placeholder="1.4.0" />
+                        <span class="subtle">
+                            Numbers, so releases can be put in order — 1.4.0, or 1.4.0-rc.1 for
+                            a candidate. A date works: 2026.9.24.
+                        </span>
+                    </label>
+
+                    <label>
+                        <span>What to call it</span>
+                        <input @bind="Name" placeholder="optional" />
+                    </label>
+                </div>
+
+                @if (Commits.Count == 0)
+                {
+                    <p class="empty">
+                        No commits have been recorded for this repository, so there is nothing to
+                        release. A release has to name a commit — see the note below on why.
+                    </p>
+                }
+                else
+                {
+                    <label>
+                        <span>The commit</span>
+                        <select @bind="Sha">
+                            @foreach (var commit in Commits)
+                            {
+                                <option value="@commit.Sha">
+                                    @Short(commit.Sha) — @Subject(commit.Message)
+                                    (@commit.At.ToLocalTime().ToString("d MMM"))
+                                </option>
+                            }
+                        </select>
+                        <span class="subtle">
+                            The last @Commits.Count pushed here, newest first. A release without
+                            a commit would be a label with nothing under it — this is what makes
+                            the changelog and "roll back to 1.3.2" mean something.
+                        </span>
+                    </label>
+
+                    <div class="row-actions">
+                        <button type="button" @onclick="Prepare">Prepare it</button>
+                    </div>
+                }
+            </section>
+        </AuthorizeView>
+
+        <section class="standing">
+            <h2>Named here</h2>
+
+            @if (History.IsEmpty)
+            {
+                <p class="empty">Nothing yet.</p>
+            }
+            else
+            {
+                <table class="grid">
+                    <caption class="visually-hidden">Releases of this repository</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Version</th>
+                            <th scope="col">State</th>
+                            <th scope="col">Commit</th>
+                            <th scope="col">When</th>
+                            <th scope="col">What happened</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var release in History.Releases)
+                        {
+                            <tr>
+                                <td>
+                                    <a href="/releases/@release.Id">@release.Version</a>
+
+                                    @if (release.Name is { } named)
+                                    {
+                                        <span class="subtle">@named</span>
+                                    }
+                                </td>
+                                <td>
+                                    <span class="pill @PillFor(release.Status)">
+                                        @Say(release.Status)
+                                    </span>
+                                </td>
+                                <td><code>@Short(release.Sha)</code></td>
+                                <td>@When(release)</td>
+                                <td>
+                                    @*
+                                        The reason a version was withdrawn, in the list rather
+                                        than one click away. A release history is read for
+                                        exactly this column: what the firm shipped is the
+                                        uninteresting half.
+                                    *@
+                                    @if (release.Outcome is { } why)
+                                    {
+                                        @why
+                                    }
+                                    else
+                                    {
+                                        <span class="subtle">—</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    }
+}
+
+<p class="instructions">
+    <strong>Nothing on this page deploys or reverts anything.</strong> This system records what
+    the code hosts report and what people decide; it runs no pipelines. Rolling back here writes
+    down that a version was withdrawn and why — putting the previous one back is done wherever
+    the firm's deployments are done. A button that looked like it reverted a release and did not
+    would be worse than no button.
+</p>
+
+@code {
+    private const string Declaring =
+        PermissionClaim.PolicyPrefix + Permissions.ReleasesDeclare;
+
+    private List<RepositoryRow> Repositories { get; set; } = [];
+
+    private Guid Chosen { get; set; }
+
+    private ReleaseHistory? History { get; set; }
+
+    private List<ChangelogEntry> Commits { get; set; } = [];
+
+    private string Version { get; set; } = string.Empty;
+
+    private string Sha { get; set; } = string.Empty;
+
+    private string Name { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    /// <summary>
+    /// What the page says under its own title.
+    /// </summary>
+    /// <remarks>
+    /// The live version of the repository being looked at, because that is the question anybody
+    /// opening this page in a hurry has, and a count of releases answers a question nobody has.
+    /// </remarks>
+    private string Headline =>
+        History?.Live is { } live
+            ? $"{Repositories.FirstOrDefault(one => one.Id == Chosen)?.FullName} is on {live.Version}."
+            : "What has been named, and what is running.";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Repositories = await Queries.RepositoriesAsync();
+
+        if (Repositories.Count == 0)
+        {
+            return;
+        }
+
+        Chosen = Repositories[0].Id;
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Refusal = null;
+        History = await Service.HistoryAsync(Chosen);
+        Commits = await Service.RecentCommitsAsync(Chosen);
+
+        /*
+         * Defaulted to the newest commit rather than left empty. The overwhelmingly common
+         * release is "what is on the mainline now", and an empty select means the first attempt
+         * refuses with a message about choosing a commit that was right there.
+         */
+        Sha = Commits.Count > 0 ? Commits[0].Sha : string.Empty;
+
+        Version = Suggested();
+    }
+
+    /// <summary>
+    /// The next version, offered rather than imposed.
+    /// </summary>
+    /// <remarks>
+    /// The patch above whatever is out, because most releases are patches and because a
+    /// pre-filled box is the difference between this form taking four seconds and taking a trip
+    /// to another window to check what the last one was called. It is an ordinary text box:
+    /// somebody shipping a minor or a major types over it.
+    /// </remarks>
+    private string Suggested()
+    {
+        var last = History?.Releases.FirstOrDefault(one => one.WasOut);
+
+        if (last is null)
+        {
+            return "1.0.0";
+        }
+
+        var version = last.Version;
+
+        return new ReleaseVersion(version.Major, version.Minor, version.Patch + 1).ToString();
+    }
+
+    private async Task Prepare()
+    {
+        Refusal = null;
+
+        if (await Me() is not { } me)
+        {
+            Refusal =
+                "Your sign-in is not linked to a staff record, so a release cannot be prepared "
+                + "in your name. An administrator can link them on the People page.";
+
+            return;
+        }
+
+        try
+        {
+            var release = await Service.PrepareAsync(
+                Chosen,
+                Version,
+                Sha,
+                me,
+                string.IsNullOrWhiteSpace(Name) ? null : Name);
+
+            Navigation.NavigateTo($"/releases/{release.Id}");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    /// <summary>The staff record behind the sign-in, or nothing.</summary>
+    private async Task<Guid?> Me()
+    {
+        var user = (await AuthenticationState).User;
+
+        return Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+    }
+
+    /// <summary>
+    /// When a release happened, which is a different date depending on whether it did.
+    /// </summary>
+    /// <remarks>
+    /// Declared, falling back to prepared. A single column reading "when" is right here because
+    /// the state pill beside it already says which of the two this is, and two date columns with
+    /// one of them nearly always empty is how a table stops being readable.
+    /// </remarks>
+    private static string When(Release release) =>
+        (release.DeclaredAt ?? release.PreparedAt).ToLocalTime().ToString("d MMM yyyy");
+
+    private static string Short(string sha) => sha.Length > 7 ? sha[..7] : sha;
+
+    private static string Subject(string message)
+    {
+        var end = message.IndexOfAny(['\r', '\n']);
+        var first = (end < 0 ? message : message[..end]).Trim();
+
+        return first.Length > 70 ? first[..70] + "…" : first;
+    }
+
+    private static string Say(ReleaseStatus status) => status switch
+    {
+        ReleaseStatus.Prepared => "Preparing",
+        ReleaseStatus.Released => "Out",
+        ReleaseStatus.RolledBack => "Rolled back",
+        _ => "Abandoned",
+    };
+
+    private static string PillFor(ReleaseStatus status) => status switch
+    {
+        ReleaseStatus.Released => "pill--done",
+        ReleaseStatus.RolledBack => "pill--danger",
+        ReleaseStatus.Abandoned => "pill--quiet",
+        _ => "pill--wait",
+    };
+}

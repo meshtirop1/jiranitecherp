@@ -119,6 +119,24 @@ Each of these cost real time. They are written down so they cost it once.
   build and the whole suite stay green, and `compose up --build` goes on serving
   the previous image rather than stopping — so the browser shows yesterday's
   application and every conclusion drawn from it is wrong.
+- **Nulls are distinct in a unique index.** The obvious constraint for "one
+  release per version per repository" is an index over the repository and the
+  version's four parts, and it enforces nothing for an ordinary release: the
+  prerelease column is null for everything that is not a candidate, and SQL
+  treats two nulls as different. Two rows could both claim 1.4.0. The fix is a
+  column that is never null — the version written out — and the general rule is
+  that a nullable column in a unique index makes the constraint optional
+  precisely for the rows that do not fill it in.
+- **An interactive page needs a moment before it can be pressed.** A click sent
+  immediately after navigating hits the prerendered HTML, where `@onclick` is
+  not attached yet, and nothing happens — which looks exactly like a broken
+  handler. Two pages were nearly diagnosed as "interactivity does not work in
+  this application" on that evidence. Wait for the circuit (the element gains a
+  `_blazorEvents_*` property) before concluding anything.
+- **`innerText` does not show a margin.** Reading a page through text extraction
+  shows "05:51by Mesh Tirop" whether or not the chip beside a value is properly
+  spaced, because the space is CSS rather than a text node. Confirm spacing with
+  a screenshot; the text dump cannot tell the two apart in either direction.
 - **A `ValidationMessage` outside its `EditForm` throws.** It reads a cascading
   `EditContext`, and without one it does not render blank — it raises, and the
   whole page becomes the error screen. One placed just after `</EditForm>` took

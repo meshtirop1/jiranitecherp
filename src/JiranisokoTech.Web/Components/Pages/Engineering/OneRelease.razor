@@ -1,0 +1,513 @@
+@page "/releases/{Id:guid}"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Engineering
+@using JiranisokoTech.Domain.Engineering
+@using JiranisokoTech.Infrastructure.Engineering
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ReposView)]
+@inject ReleaseService Releases
+@inject IReleaseRepository Repository
+@inject EngineeringQueries Queries
+@inject PeopleQueries People
+
+@*
+    One release: what is in it, and what happened to it.
+
+    Interactive, and this is the page that needed it. Writing a changelog is drafting, reading,
+    cutting and rewriting — a form that posted the whole page between each of those would make a
+    twenty-minute job an hour's, and the draft button in particular is useless if pressing it
+    costs a page load and the risk of losing what has been typed.
+*@
+
+<PageTitle>@Title — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs">
+    <a href="/repositories">Repositories</a>
+    <a href="/repositories/releases">Releases</a>
+</nav>
+
+@if (Release is null)
+{
+    <p class="empty">That release no longer exists.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>
+            @Release.Version
+            @if (Release.Name is { } named)
+            {
+                <span class="subtle">@named</span>
+            }
+        </h1>
+
+        <p class="subtle">
+            <span class="pill @PillFor(Release.Status)">@Say(Release.Status)</span>
+            @Repositories
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <dl class="facts">
+        <dt>The commit</dt>
+        <dd>
+            <code>@Release.Sha</code>
+            @if (CommitAt is { } pushed)
+            {
+                <span class="subtle">pushed @pushed.ToLocalTime().ToString("d MMM yyyy HH:mm")</span>
+            }
+            else
+            {
+                @*
+                    Said plainly, because everything else on this page quietly depends on it: a
+                    release naming a commit this system has never seen cannot have its changelog
+                    drafted, and an empty changelog with no explanation reads as a broken page.
+                *@
+                <span class="subtle">
+                    not recorded here, so a changelog cannot be drafted from it
+                </span>
+            }
+        </dd>
+
+        <dt>Prepared</dt>
+        <dd>
+            @Release.PreparedAt.ToLocalTime().ToString("d MMM yyyy HH:mm")
+            <span class="subtle">by @Who(Release.PreparedById)</span>
+        </dd>
+
+        @if (Release.DeclaredAt is { } declared)
+        {
+            <dt>Declared</dt>
+            <dd>
+                @declared.ToLocalTime().ToString("d MMM yyyy HH:mm")
+                @if (Release.DeclaredById is { } by)
+                {
+                    <span class="subtle">by @Who(by)</span>
+                }
+            </dd>
+        }
+
+        @if (Release.EndedAt is { } ended)
+        {
+            <dt>@(Release.Status == ReleaseStatus.RolledBack ? "Rolled back" : "Ended")</dt>
+            <dd>
+                @ended.ToLocalTime().ToString("d MMM yyyy HH:mm")
+                @if (Release.EndedById is { } by)
+                {
+                    <span class="subtle">by @Who(by)</span>
+                }
+            </dd>
+        }
+
+        @if (Release.Outcome is { } outcome)
+        {
+            <dt>Why</dt>
+            <dd>@outcome</dd>
+        }
+    </dl>
+
+    <section class="standing">
+        <h2>What is in it</h2>
+
+        @if (Release.Status == ReleaseStatus.Prepared)
+        {
+            <AuthorizeView Policy="@Declaring" Context="mayWrite">
+                <Authorized>
+                    <p class="subtle">
+                        Draft it from the commits, then cut it down. A commit message is written
+                        for whoever reviews the diff; a changelog is read by everybody else.
+                    </p>
+
+                    @if (Caveat is { } caveat)
+                    {
+                        @*
+                            Above the box rather than beside the button, because it describes
+                            what is now in the box and somebody who has started editing will
+                            never look back at the button.
+                        *@
+                        <p class="subtle"><strong>About this draft.</strong> @caveat</p>
+                    }
+
+                    <label class="stack">
+                        <span>Notes</span>
+                        <textarea @bind="Notes" rows="16"></textarea>
+                    </label>
+
+                    <div class="row-actions">
+                        <button type="button" @onclick="Draft" class="button--quiet">
+                            Draft from the commits
+                        </button>
+                        <button type="button" @onclick="Save">Save the notes</button>
+                    </div>
+                </Authorized>
+                <NotAuthorized>
+                    @if (Release.Notes.Length == 0)
+                    {
+                        <p class="empty">Nothing has been written yet.</p>
+                    }
+                    else
+                    {
+                        <p class="as-typed">@Release.Notes</p>
+                    }
+                </NotAuthorized>
+            </AuthorizeView>
+        }
+        else if (Release.Notes.Length == 0)
+        {
+            @*
+                Two sentences, because they are two different situations and the first draft of
+                this page told an abandoned release that it "went out with no notes" — which is
+                precisely what an abandoned release did not do. Wrong on the one screen whose
+                job is to say what happened to a version.
+            *@
+            <p class="empty">
+                @(Release.Status == ReleaseStatus.Abandoned
+                    ? "Nothing was written. This version never went out."
+                    : "This version went out with no notes. Nothing can be done about that now "
+                        + "— the notes of a release that is out are what the firm told people "
+                        + "went out, so they are added to rather than rewritten.")
+            </p>
+        }
+        else
+        {
+            <p class="as-typed">@Release.Notes</p>
+        }
+
+        @if (Release.Status is ReleaseStatus.Released or ReleaseStatus.RolledBack)
+        {
+            <AuthorizeView Policy="@Declaring" Context="mayAmend">
+                @*
+                    Appended and dated, never rewritten. A release history that can be edited
+                    after the fact cannot answer "what changed between March and April" a year
+                    later, which is the only question it exists to answer.
+                *@
+                <div class="fields">
+                    <label>
+                        <span>Add a line</span>
+                        <input @bind="Addition" placeholder="something left out" />
+                        <span class="subtle">
+                            Added underneath with today's date, where it is visibly an
+                            afterthought — which is what it is.
+                        </span>
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="Amend" class="button--quiet">Add it</button>
+                </div>
+            </AuthorizeView>
+        }
+    </section>
+
+    <AuthorizeView Policy="@Declaring" Context="mayDecide">
+        <section class="standing">
+            <h2>@Heading</h2>
+
+            @if (Release.Status == ReleaseStatus.Prepared)
+            {
+                <p class="subtle">
+                    Declaring says this version is what the firm is running. It deploys nothing —
+                    see the note at the foot of the releases page.
+                </p>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="Declare">Declare @Release.Version</button>
+                </div>
+
+                <div class="fields">
+                    <label>
+                        <span>Or drop it, and why</span>
+                        <input @bind="Reason" placeholder="cut before it went out" />
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="Abandon" class="danger">
+                        Abandon this version
+                    </button>
+                </div>
+
+                <p class="subtle">
+                    An abandoned version is kept, so somebody asking next year why
+                    @Release.Version does not exist finds the reason. The number can then be
+                    used again.
+                </p>
+            }
+            else if (Release.Status == ReleaseStatus.Released)
+            {
+                <p class="subtle">
+                    Rolling back records that this version was withdrawn. It puts nothing back —
+                    that is done wherever the firm's deployments are done — and the reason is
+                    required, because a withdrawn version with no reason is the one thing a
+                    release history cannot be read without.
+                </p>
+
+                <div class="fields">
+                    <label>
+                        <span>Why it came back</span>
+                        <input @bind="Reason"
+                               placeholder="the invoice PDF came out blank for clients in USD" />
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="RollBack" class="danger">
+                        Roll @Release.Version back
+                    </button>
+                </div>
+            }
+            else
+            {
+                <p class="subtle">
+                    Nothing further can be done to this release. @(Release.Status
+                        == ReleaseStatus.RolledBack
+                        ? "It went out and was withdrawn; the record of both stays."
+                        : "It was never declared.")
+                </p>
+            }
+        </section>
+    </AuthorizeView>
+
+    @if (Release.Status == ReleaseStatus.Prepared)
+    {
+        <AuthorizeView Policy="@Declaring" Context="mayRename">
+            <section class="standing">
+                <h2>Rename it</h2>
+
+                <p class="subtle">
+                    Only while it is being prepared. Once a version is out it is what people have
+                    been told they are running, and renaming it would make every reference to it
+                    wrong at once.
+                </p>
+
+                <div class="fields">
+                    <label>
+                        <span>Version</span>
+                        <input @bind="Version" />
+                    </label>
+
+                    <label>
+                        <span>What to call it</span>
+                        <input @bind="Name" placeholder="optional" />
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="Rename" class="button--quiet">
+                        Change it
+                    </button>
+                </div>
+            </section>
+        </AuthorizeView>
+    }
+}
+
+@code {
+    private const string Declaring =
+        PermissionClaim.PolicyPrefix + Permissions.ReleasesDeclare;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private Release? Release { get; set; }
+
+    private DateTimeOffset? CommitAt { get; set; }
+
+    private string Repositories { get; set; } = string.Empty;
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string Notes { get; set; } = string.Empty;
+
+    private string Addition { get; set; } = string.Empty;
+
+    private string Reason { get; set; } = string.Empty;
+
+    private string Version { get; set; } = string.Empty;
+
+    private string Name { get; set; } = string.Empty;
+
+    private string? Caveat { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private string Title => Release is null ? "Release" : Release.Version.ToString();
+
+    /// <summary>
+    /// What the decisions section is called, which depends on what is still decidable.
+    /// </summary>
+    /// <remarks>
+    /// Four states and three headings. "Did it hold?" over an abandoned release asks about
+    /// something that never happened, which is the sort of small wrongness that makes a reader
+    /// stop trusting the rest of the page.
+    /// </remarks>
+    private string Heading => Release?.Status switch
+    {
+        ReleaseStatus.Prepared => "Is it out?",
+        ReleaseStatus.Released => "Did it hold?",
+        ReleaseStatus.RolledBack => "It did not hold",
+        _ => "It never went out",
+    };
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Release = await Repository.FindAsync(Id);
+
+        if (Release is null)
+        {
+            return;
+        }
+
+        Notes = Release.Notes;
+        Version = Release.Version.ToString();
+        Name = Release.Name ?? string.Empty;
+
+        Names = await People.NamesAsync();
+
+        CommitAt = await Repository.CommitAtAsync(Release.RepositoryId, Release.Sha);
+
+        var repositories = await Queries.RepositoriesAsync();
+
+        Repositories = repositories
+            .FirstOrDefault(one => one.Id == Release.RepositoryId)?.FullName
+            ?? "a repository that has since been disconnected";
+    }
+
+    /// <summary>
+    /// Fill the box from the commits, without saving anything.
+    /// </summary>
+    /// <remarks>
+    /// It replaces what is in the box, which is the one thing about this button worth thinking
+    /// about. Appending would be worse: pressing it twice would double the changelog, and
+    /// somebody who has edited a draft and presses it again wants the draft back rather than a
+    /// second copy of it stapled underneath.
+    /// </remarks>
+    private async Task Draft()
+    {
+        Refusal = null;
+        Done = null;
+
+        var draft = await Releases.DraftNotesAsync(Id);
+
+        Notes = draft.Text;
+        Caveat = draft.Caveat;
+        Done = draft.Commits == 0
+            ? null
+            : $"Drafted from {draft.Commits} {(draft.Commits == 1 ? "commit" : "commits")}. "
+                + "Nothing is saved until the notes are.";
+    }
+
+    private Task Save() => Act(
+        () => Releases.WriteAsync(Id, Notes), "Saved.");
+
+    private Task Amend() => Act(
+        async () =>
+        {
+            await Releases.AmendAsync(Id, Addition);
+            Addition = string.Empty;
+        },
+        "Added.");
+
+    private Task Rename() => Act(
+        () => Releases.RenameAsync(Id, Version, string.IsNullOrWhiteSpace(Name) ? null : Name),
+        "Changed.");
+
+    private Task Abandon() => Act(
+        () => Releases.AbandonAsync(Id, Reason), "Abandoned. The version number is free again.");
+
+    private async Task Declare()
+    {
+        if (await Me() is not { } me)
+        {
+            Refusal = Unlinked;
+
+            return;
+        }
+
+        await Act(() => Releases.DeclareAsync(Id, me), "Declared. This is what the firm is on.");
+    }
+
+    private async Task RollBack()
+    {
+        if (await Me() is not { } me)
+        {
+            Refusal = Unlinked;
+
+            return;
+        }
+
+        await Act(
+            () => Releases.RollBackAsync(Id, me, Reason),
+            "Rolled back. Putting the previous version out is done wherever deployments are.");
+    }
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private const string Unlinked =
+        "Your sign-in is not linked to a staff record, so a release cannot be declared or "
+        + "withdrawn in your name. An administrator can link them on the People page.";
+
+    private async Task<Guid?> Me()
+    {
+        var user = (await AuthenticationState).User;
+
+        return Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+    }
+
+    private string Who(Guid id) =>
+        Names.GetValueOrDefault(id) ?? "somebody no longer on the staff list";
+
+    private static string Say(ReleaseStatus status) => status switch
+    {
+        ReleaseStatus.Prepared => "Preparing",
+        ReleaseStatus.Released => "Out",
+        ReleaseStatus.RolledBack => "Rolled back",
+        _ => "Abandoned",
+    };
+
+    private static string PillFor(ReleaseStatus status) => status switch
+    {
+        ReleaseStatus.Released => "pill--done",
+        ReleaseStatus.RolledBack => "pill--danger",
+        ReleaseStatus.Abandoned => "pill--quiet",
+        _ => "pill--wait",
+    };
+}

@@ -270,6 +270,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<EngineeringQueries>();
 
         /*
+         * Releases. Section 67, and the one part of the engineering chain that no host reports:
+         * a version number and a sentence about what is in it are both claims a person makes.
+         */
+        services.AddScoped<IReleaseRepository, ReleaseRepository>();
+        services.AddScoped<ReleaseService>();
+
+        /*
          * Whether each code host can reach us at all, which no other screen can tell: a
          * missing or misspelt webhook secret refuses every delivery before a row is
          * written, so the queues read zero and the jobs read green.

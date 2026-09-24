@@ -174,6 +174,16 @@ public class AppDbContext(
     public DbSet<Contributor> Contributors => Set<Contributor>();
 
     /// <summary>
+    /// The versions the firm has named, and what happened to each.
+    /// </summary>
+    /// <remarks>
+    /// The one table in the engineering half of this system that nothing writes to on its own.
+    /// Repositories, commits, pull requests, builds and deployments all arrive from a host; a
+    /// release is a claim a person makes, which is section 67's whole point.
+    /// </remarks>
+    public DbSet<Release> Releases => Set<Release>();
+
+    /// <summary>
     /// What one currency was worth in another, on a day.
     /// </summary>
     /// <remarks>

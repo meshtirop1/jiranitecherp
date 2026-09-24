@@ -324,3 +324,72 @@ public sealed class ContributorConfiguration : IEntityTypeConfiguration<Contribu
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
+
+public sealed class ReleaseConfiguration : IEntityTypeConfiguration<Release>
+{
+    public void Configure(EntityTypeBuilder<Release> builder)
+    {
+        builder.ToTable("releases");
+
+        builder.HasKey(one => one.Id);
+
+        builder.Property(one => one.Major).IsRequired();
+        builder.Property(one => one.Minor).IsRequired();
+        builder.Property(one => one.Patch).IsRequired();
+        builder.Property(one => one.Prerelease).HasMaxLength(40);
+        builder.Property(one => one.Number)
+            .HasMaxLength(ReleaseVersion.MostCharacters)
+            .IsRequired();
+
+        builder.Property(one => one.Sha).HasMaxLength(64).IsRequired();
+        builder.Property(one => one.Name).HasMaxLength(200);
+
+        /*
+         * Long, because a changelog for a fortnight of work by five people is long, and a
+         * column that truncates one silently is worse than a column that refuses it. Twenty
+         * thousand characters is roughly eight pages; past that somebody is pasting a document
+         * in, which belongs in section 24's documents beside a link.
+         */
+        builder.Property(one => one.Notes).HasMaxLength(20_000).IsRequired();
+
+        builder.Property(one => one.Status).HasConversion<int>().IsRequired();
+        builder.Property(one => one.Outcome).HasMaxLength(1_000);
+
+        builder.Ignore(one => one.Version);
+        builder.Ignore(one => one.IsOut);
+        builder.Ignore(one => one.WasOut);
+
+        /*
+         * One release per version per repository, and abandoned ones deliberately outside it.
+         *
+         * The index and not just the check in ReleaseService: two people preparing 1.4.0 in the
+         * same minute both pass a check that reads before it writes, and the result is two rows
+         * claiming to be the same version, on the one screen whose job is to say which version
+         * the firm is running. The filter is there so that a version prepared and cut can be
+         * used again — which is the normal thing to want, since the number was never announced.
+         *
+         * Over the written-out version and not over its four parts, which is the whole reason
+         * that column exists. The parts include a nullable prerelease tail, nulls are distinct in
+         * a unique index, and an index written that way therefore permitted two rows both
+         * claiming 1.4.0 — it constrained release candidates and nothing else. See the remarks on
+         * Release.Number.
+         */
+        builder.HasIndex(one => new { one.RepositoryId, one.Number })
+            .IsUnique()
+            .HasDatabaseName("IX_releases_one_per_version")
+            .HasFilter("\"Status\" <> 4");
+
+        /*
+         * The release list reads "this repository's releases", and the changelog reads "the
+         * commit this release names". Both are answered here.
+         */
+        builder.HasIndex(one => one.RepositoryId);
+
+        builder.HasIndex(one => one.Sha);
+
+        builder.HasOne<Repository>()
+            .WithMany()
+            .HasForeignKey(one => one.RepositoryId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}

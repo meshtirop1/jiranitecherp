@@ -279,6 +279,23 @@ public static class Permissions
     /// </remarks>
     public const string ReposDeliveries = "repos.deliveries";
 
+    /// <summary>
+    /// Name a version, say what is in it, and withdraw one that failed.
+    /// </summary>
+    /// <remarks>
+    /// One permission for declaring and for rolling back, deliberately, and it is the kind of
+    /// decision worth writing down rather than splitting to look thorough. Withdrawing a
+    /// version is the same authority as declaring one exercised in the other direction: whoever
+    /// may say what the firm is running may say it is no longer running it. Splitting them
+    /// would produce a person who can put 1.4.0 out and cannot take it back, which is the one
+    /// combination nobody wants at two in the morning.
+    ///
+    /// Separate from repos.manage because connecting a repository is an administrative act and
+    /// this is an engineering one — a lead who should never hold a webhook secret is exactly
+    /// the person who should be naming releases.
+    /// </remarks>
+    public const string ReleasesDeclare = "releases.declare";
+
     // --- approvals and reporting -------------------------------------------
     public const string ApprovalsDecide = "approvals.decide";
     public const string ReportsView = "reports.view";
@@ -313,7 +330,7 @@ public static class Permissions
         TasksViewAll, TasksViewOwn, TasksCreate, TasksAssign, TasksUpdateOwn, TasksSubmit,
         TasksReview, TasksDeploy,
 
-        ReposView, ReposManage, ReposDeliveries,
+        ReposView, ReposManage, ReposDeliveries, ReleasesDeclare,
 
         ApprovalsDecide, ReportsView,
     ];
@@ -429,6 +446,13 @@ public static class Roles
                 // without seeing that is being asked to sign for work on
                 // somebody's word.
                 Permissions.ReposView,
+
+                // And here, rather than with the project managers or the
+                // engineers, because naming a version is the moment somebody
+                // takes responsibility for it in front of clients. A delivery
+                // manager bills the work and an engineer builds it; the head is
+                // the one who will be asked why 1.4.0 went out.
+                Permissions.ReleasesDeclare,
 
                 Permissions.ApprovalsDecide,
                 Permissions.RequisitionsCreate, Permissions.RequisitionsView,

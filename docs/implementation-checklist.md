@@ -15,7 +15,7 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 24 September 2026 · 1112 tests · verified against PostgreSQL in
+Last updated: 24 September 2026 · 1135 tests · verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
 container, a lost opportunity surviving its client record being deleted, the
 builds and deployments tables applying to a real Postgres, an abandoned event
@@ -130,7 +130,7 @@ pass rather than adjusted by the size of the change.
 | ✅ | 12 | Task ↔ branch ↔ commit ↔ PR ↔ build ↔ deployment. A work item shows what was built, whether it passed, and the furthest environment it actually reached. The link comes from the commit's own work item rather than from re-reading the branch, because a deployment runs from `main` or `release/*` — refs `WorkReference` deliberately finds nothing in |
 | ✅ | 13 | CI/CD — builds and pipelines from all four hosts: GitHub `workflow_run`, GitLab `pipeline`, Bitbucket commit statuses, Azure `build.complete`. A pipeline stopped at a manual gate is neither running nor failed but `Blocked`, because those want different reactions. **Tests and artifacts are declined, not pending:** a `workflow_run` payload says a run finished and what its conclusion was and nothing about how many assertions ran, so a count would have to be invented. GitLab's single-job `build` event is read and discarded — a six-job matrix would otherwise record six builds of one commit |
 | ✅ | 13 | Environments — development, staging, production and other, classified from the host's free text with the original kept beside it. A page at `/repositories/environments` says what is running where, bounded per environment and honest about what it is not showing. **Promotion is declined on the record:** nothing here runs a pipeline, so a promote button would fire nothing — a form that looks like an approval and is not. Azure releases are declined too, because their payload carries no commit at a stable path and a deployment without one attaches to nothing |
-| ☐ | 67 | Releases, version numbers, changelog, rollback |
+| ✅ | 67 | Releases, version numbers, changelog, rollback | The last link in section 91, and the only step in that chain a person takes rather than a host reports. **A release is declared, not inferred from a deployment**, which is the decision the rest of it hangs on and the same one section 13 made in the other direction: deployments arrive constantly and most of them are nothing, so inferring a release from the newest successful production deployment would let an accidental deploy of a stale branch rename what the firm is running — and would leave no way to say "that went out but we are not calling it 1.4.0 yet", which is the normal state of affairs for a day or two. **The version is a type, not a column of text**, because every question this feature answers is an ordering question. Sorted as text, 1.10.0 precedes 1.9.0, so the release list reverses itself on the eleventh release and the live version shown is the wrong one, with nothing failing and no reason to look. A prerelease tail orders identifier by identifier, so rc.9 precedes rc.10 and 1.4.0 beats both. Calendar versions parse unchanged; what is refused is a name, because a release nobody can order is a release nobody can roll back to. **The changelog is drafted from the commits already here and then edited.** Grouped by work item, with the item's own title as the heading and merges dropped — "Merge pull request #41 from feature/x" is the one message guaranteed to say nothing about what changed. The draft exists so nobody reconstructs a fortnight from memory; the edit exists because a commit message is written for whoever reviews the diff and a changelog is read by everybody else. **The window is measured in time and the screen says so.** This system records pushes, not the commit graph, so it cannot answer "what is reachable from this sha and not from that one". For a firm releasing from one mainline the two are the same set; they come apart when a long-lived branch is merged. Claiming an ancestry we do not have would mean a changelog quietly missing somebody's work. **Notes freeze when a version goes out**, and are appended to rather than rewritten, because they are what the firm told people went out. **A rollback must say why**, and that sentence is the most useful field here: a list of versions says what the firm shipped, and a list with "1.4.0 — withdrawn, the filter was remembered per user" says what it learned. What is live is the highest version still out rather than the most recently declared, which differ exactly when a patch to an older line ships after a newer release. **Found on the way:** the obvious unique index — repository plus the version's four parts — enforced nothing at all for an ordinary release, because nulls are distinct in a unique index and every version without a prerelease tail stores null. Two rows could both claim 1.4.0 on the one screen whose job is to say which version the firm is running. A test that inserted exactly that pair is what caught it. **Not built, on the record:** nothing here deploys or reverts anything, and the page says so in as many words — the same refusal as section 13's promote button |
 | ☐ | 68 | Feature flags |
 | ✅ | 40 | Webhooks both ways — signed, idempotent, retried, dead-lettered, replayable |
 | ✅ | 75 | Webhook security — signature verification, replay protection, dead-letter, replay |
@@ -230,16 +230,20 @@ The brief names four and asks that each work end to end.
 **§91 Engineering** — Client → contract → project → task → branch → commit → PR
 → review → CI → staging → production → release → invoice → payment →
 profitability.
-**One link short.** This note said "everything from branch to release is absent,
-and profitability is not calculated", and both halves stopped being true without
-the line being rewritten — §12 and §13 closed the middle and §19 was already
-computing the end. Every step now exists except **release**: a branch names the
-work it belongs to, commits and pull requests and reviews arrive on their own,
-builds and deployments are recorded from four hosts, the environments screen says
-what is running where, and revenue, cost and margin come out at
-`/projects/money`. What is missing is the one thing that turns a deployment into
-a release anybody can name — §67 — and that is the only gap in the brief's own
-headline chain.
+**Every link is there.** A branch names the work it belongs to, commits and pull
+requests and reviews arrive on their own, builds and deployments are recorded
+from four hosts, the environments screen says what is running where, §67 turns a
+deployment into a version the firm can name and explain, and revenue, cost and
+margin come out at `/projects/money`. The chain was walked end to end in the
+running application: a repository's commits became a drafted changelog grouped by
+work item, 1.3.0 was declared, 1.4.0 was declared and then withdrawn with its
+reason, and the release list correctly said the firm was back on 1.3.0 — which is
+the highest version still out rather than the one declared most recently.
+
+What this chain still cannot do is act. Nothing here runs a pipeline, so
+promoting and releasing and rolling back are records of decisions rather than the
+deeds themselves, and both screens say so rather than offering a button that
+fires nothing.
 
 **§92 Hiring** — Requisition → approval → opening → published → applies →
 screening → interview → assessment → offer → accepted → employee → onboarding.

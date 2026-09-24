@@ -23,6 +23,12 @@
 
     <p class="subtle"><a href="/repositories/environments">What is running where</a></p>
 
+    @* And what it is called. A deployment is a fact a host reported; a release is the name this
+
+       firm gave it, which is the one step in section 91's chain nobody is told by a webhook. *@
+
+    <p class="subtle"><a href="/repositories/releases">What has been released</a></p>
+
 
     <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ReposDeliveries)">
         <Authorized>
