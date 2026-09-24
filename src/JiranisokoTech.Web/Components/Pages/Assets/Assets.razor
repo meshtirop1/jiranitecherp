@@ -1,0 +1,324 @@
+@page "/assets"
+@rendermode InteractiveServer
+@using JiranisokoTech.Application.Assets
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Settings
+@using JiranisokoTech.Domain.Assets
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.AssetsView)]
+@inject AssetService Service
+@inject PeopleQueries People
+@inject SettingsService Settings
+@inject NavigationManager Navigation
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    Everything the firm owns, and where each thing is.
+
+    Section 15. It replaced two lists that could not agree — what a joiner was handed and what a
+    leaver owed back — neither of which could answer the only question a register exists for:
+    where is this laptop, and who has had it.
+
+    Interactive, because the list is long enough to want narrowing and because adding something
+    is a form somebody fills in with a delivery note in front of them.
+*@
+
+<PageTitle>Assets — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Assets</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+<p class="instructions">
+    A record of what the firm bought and where it went. Nothing here discovers anything: every
+    row is something somebody typed, and every movement is something somebody did. A register
+    that claimed to scan the network would be one nobody checks.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Done is not null)
+{
+    <p class="done" role="status">@Done</p>
+}
+
+<AuthorizeView Policy="@Managing" Context="mayManage">
+    <section class="standing">
+        <h2>Record something bought</h2>
+
+        <div class="fields">
+            <label>
+                <span>Tag</span>
+                <input @bind="Tag" placeholder="JD-014" />
+                <span class="subtle">
+                    The label the firm sticks on, not the manufacturer's serial. It is the
+                    identifier every asset has and the only one that can be said down a
+                    telephone.
+                </span>
+            </label>
+
+            <label>
+                <span>What</span>
+                <select @bind="Kind">
+                    @foreach (var kind in Kinds)
+                    {
+                        <option value="@kind">@Said(kind)</option>
+                    }
+                </select>
+            </label>
+
+            <label>
+                <span>Which one</span>
+                <input @bind="Description" placeholder="MacBook Air 13in, 2025" />
+            </label>
+        </div>
+
+        <div class="fields">
+            <label>
+                <span>Serial number</span>
+                <input @bind="Serial" placeholder="optional" />
+            </label>
+
+            <label>
+                <span>Bought</span>
+                <input type="date" @bind="BoughtOn" />
+            </label>
+
+            <label>
+                <span>What it cost</span>
+                <input type="number" step="0.01" @bind="Cost" />
+                <span class="subtle">
+                    In @Currency, optional. Recorded so somebody can ask what the firm spent on
+                    laptops this year — there is no depreciation and no book value here.
+                </span>
+            </label>
+        </div>
+
+        <div class="row-actions">
+            <button type="button" @onclick="Buy">Add it to the register</button>
+        </div>
+    </section>
+</AuthorizeView>
+
+<section class="standing">
+    <h2>The register</h2>
+
+    <div class="fields">
+        <label>
+            <span>Show</span>
+            <select @bind="Showing">
+                <option value="">Everything</option>
+                @foreach (var status in Statuses)
+                {
+                    <option value="@status">@Say(status)</option>
+                }
+            </select>
+        </label>
+    </div>
+
+    @if (Shown.Count == 0)
+    {
+        <p class="empty">
+            @(All.Count == 0
+                ? "Nothing is on the register yet."
+                : "Nothing matches that.")
+        </p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">The asset register</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Tag</th>
+                    <th scope="col">What</th>
+                    <th scope="col">Where it is</th>
+                    <th scope="col">Bought</th>
+                    <th scope="col" class="number">Cost</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var asset in Shown)
+                {
+                    <tr>
+                        <td><a href="/assets/@asset.Id"><code>@asset.Tag</code></a></td>
+                        <td>
+                            @Said(asset.Kind) @asset.Description
+                            @if (asset.SerialNumber is { } serial)
+                            {
+                                <span class="subtle">@serial</span>
+                            }
+                        </td>
+                        <td>
+                            <span class="pill @PillFor(asset.Status)">@Say(asset.Status)</span>
+                            @if (asset.HeldById is { } who)
+                            {
+                                <span class="subtle">@Who(who)</span>
+                            }
+                        </td>
+                        <td>
+                            @asset.BoughtOn.ToString("d MMM yyyy")
+                            @if (asset.WarrantyEndsOn is not null && asset.WarrantyHasRun(Today))
+                            {
+                                @*
+                                    The one date on an asset that costs money to miss: a machine
+                                    sent for repair the week after its warranty lapsed is a bill
+                                    the firm did not have to pay.
+                                *@
+                                <span class="pill pill--quiet">out of warranty</span>
+                            }
+                        </td>
+                        <td class="number">@(asset.Cost?.ToString() ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    private const string Managing = PermissionClaim.PolicyPrefix + Permissions.AssetsManage;
+
+    private static readonly AssetKind[] Kinds =
+    [
+        AssetKind.Laptop,
+        AssetKind.Phone,
+        AssetKind.Monitor,
+        AssetKind.AccessDevice,
+        AssetKind.Vehicle,
+        AssetKind.Other,
+    ];
+
+    private static readonly AssetStatus[] Statuses =
+    [
+        AssetStatus.InStock,
+        AssetStatus.Issued,
+        AssetStatus.BeingRepaired,
+        AssetStatus.Retired,
+        AssetStatus.Lost,
+    ];
+
+    private List<Asset> All { get; set; } = [];
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string Currency { get; set; } = "KES";
+
+    private AssetStatus? Showing { get; set; }
+
+    private string Tag { get; set; } = string.Empty;
+
+    private AssetKind Kind { get; set; } = AssetKind.Laptop;
+
+    private string Description { get; set; } = string.Empty;
+
+    private string Serial { get; set; } = string.Empty;
+
+    private DateTime BoughtOn { get; set; } = DateTime.UtcNow.Date;
+
+    private decimal? Cost { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private DateOnly Today => Clock.Today;
+
+    private List<Asset> Shown =>
+        Showing is { } only ? [.. All.Where(one => one.Status == only)] : All;
+
+    /// <summary>
+    /// What the register adds up to.
+    /// </summary>
+    /// <remarks>
+    /// How many are out and how many are unaccounted for, because those are the two numbers
+    /// somebody opening this page is asking about. A total count answers a question nobody has.
+    /// </remarks>
+    private string Headline
+    {
+        get
+        {
+            if (All.Count == 0)
+            {
+                return "Nothing is recorded yet.";
+            }
+
+            var issued = All.Count(one => one.Status == AssetStatus.Issued);
+            var lost = All.Count(one => one.Status == AssetStatus.Lost);
+
+            var said = $"{All.Count} recorded, {issued} out with people";
+
+            return lost == 0 ? said + "." : $"{said}, {lost} unaccounted for.";
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        All = await Service.AllAsync();
+        Names = await People.NamesAsync();
+        Currency = (await Settings.CurrentAsync()).Currency;
+    }
+
+    private async Task Buy()
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            var asset = await Service.BuyAsync(
+                Tag,
+                Kind,
+                Description,
+                DateOnly.FromDateTime(BoughtOn),
+                string.IsNullOrWhiteSpace(Serial) ? null : Serial,
+                Cost is { } amount ? Money(amount) : null);
+
+            Navigation.NavigateTo($"/assets/{asset.Id}");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private JiranisokoTech.Domain.Common.Money Money(decimal whole) =>
+        JiranisokoTech.Domain.Common.Money.Of(
+            (long)decimal.Round(whole * 100m, 0, MidpointRounding.AwayFromZero), Currency);
+
+    private string Who(Guid id) =>
+        Names.GetValueOrDefault(id) ?? "somebody no longer on the staff list";
+
+    private static string Said(AssetKind kind) => kind switch
+    {
+        AssetKind.AccessDevice => "Access device",
+        _ => kind.ToString(),
+    };
+
+    private static string Say(AssetStatus status) => status switch
+    {
+        AssetStatus.InStock => "In stock",
+        AssetStatus.Issued => "Out",
+        AssetStatus.BeingRepaired => "Being repaired",
+        AssetStatus.Retired => "Retired",
+        _ => "Lost",
+    };
+
+    private static string PillFor(AssetStatus status) => status switch
+    {
+        AssetStatus.InStock => "pill--done",
+        AssetStatus.Issued => "pill--active",
+        AssetStatus.BeingRepaired => "pill--wait",
+        AssetStatus.Retired => "pill--quiet",
+        _ => "pill--danger",
+    };
+}

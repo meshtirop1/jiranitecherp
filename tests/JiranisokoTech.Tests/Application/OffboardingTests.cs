@@ -42,62 +42,6 @@ public class OffboardingTests
         Assert.False(leaving.IsComplete);
     }
 
-    /// <summary>A departure cannot be closed while the firm's property is still out.</summary>
-    [Fact]
-    public void A_departure_cannot_be_closed_with_a_laptop_still_out()
-    {
-        var leaving = Begun();
-
-        leaving.AccessRemoved(Guid.CreateVersion7(), Now);
-        leaving.Lent(AssetKind.Laptop, "MacBook Pro 14, 2025", "C02X1234");
-
-        var refused = Assert.Throws<InvalidOperationException>(() => leaving.Complete(Now));
-
-        Assert.Contains("MacBook", refused.Message);
-    }
-
-    [Fact]
-    public void A_departure_with_everything_dealt_with_can_be_closed()
-    {
-        var leaving = Begun();
-
-        leaving.AccessRemoved(Guid.CreateVersion7(), Now);
-        leaving.Lent(AssetKind.Laptop, "MacBook Pro 14, 2025", "C02X1234");
-
-        var laptop = Assert.Single(leaving.Assets);
-        leaving.Returned(laptop.Id, Leaving, "Screen scratched");
-
-        leaving.Complete(Now);
-
-        Assert.True(leaving.IsComplete);
-        Assert.False(leaving.HasOutstandingItems);
-    }
-
-    /// <summary>
-    /// Something that was never lent can be taken off the list.
-    /// </summary>
-    /// <remarks>
-    /// Because the realistic mistake is adding an item that was never lent, and a
-    /// checklist with a phantom item on it can never be finished — so somebody would
-    /// mark it returned instead, which puts a falsehood in the record to unblock a
-    /// button.
-    /// </remarks>
-    [Fact]
-    public void Something_never_lent_can_be_removed_from_the_list()
-    {
-        var leaving = Begun();
-
-        leaving.AccessRemoved(Guid.CreateVersion7(), Now);
-        leaving.Lent(AssetKind.Phone, "iPhone 17", null);
-
-        leaving.Forget(Assert.Single(leaving.Assets).Id);
-
-        Assert.Empty(leaving.Assets);
-        leaving.Complete(Now);
-
-        Assert.True(leaving.IsComplete);
-    }
-
     /// <summary>
     /// An exit interview is not required to close a departure.
     /// </summary>
@@ -150,10 +94,6 @@ public class OffboardingTests
     [Fact]
     public void The_interview_notes_never_reach_the_audit_trail() =>
         Assert.Contains(nameof(Offboarding.ExitInterviewNotes), Offboarding.AuditExcludes);
-
-    [Fact]
-    public void An_asset_with_no_description_is_refused() =>
-        Assert.Throws<ArgumentException>(() => Begun().Lent(AssetKind.Laptop, "  ", null));
 
     /// <summary>Closing the access is announced, so anything watching can act.</summary>
     /// <remarks>

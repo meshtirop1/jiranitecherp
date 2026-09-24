@@ -188,7 +188,6 @@ public sealed class OffboardingConfiguration : IEntityTypeConfiguration<Offboard
         builder.Property(one => one.ExitInterviewNotes).HasMaxLength(8000);
 
         builder.Ignore(one => one.IsComplete);
-        builder.Ignore(one => one.Outstanding);
         builder.Ignore(one => one.HasOutstandingItems);
 
         /*
@@ -206,19 +205,5 @@ public sealed class OffboardingConfiguration : IEntityTypeConfiguration<Offboard
             .HasForeignKey(one => one.EmployeeId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.OwnsMany(one => one.Assets, asset =>
-        {
-            asset.ToTable("lent_assets");
-            asset.WithOwner().HasForeignKey("OffboardingId");
-            asset.HasKey(one => one.Id);
-
-            asset.Property(one => one.Kind).HasConversion<int>().IsRequired();
-            asset.Property(one => one.Description).HasMaxLength(300).IsRequired();
-            asset.Property(one => one.Identifier).HasMaxLength(100);
-            asset.Property(one => one.Condition).HasMaxLength(500);
-
-            // What is still out, which is the question this table answers.
-            asset.HasIndex(one => one.ReturnedOn);
-        });
     }
 }

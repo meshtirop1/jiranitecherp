@@ -3,20 +3,6 @@ using JiranisokoTech.Domain.Common;
 
 namespace JiranisokoTech.Domain.People;
 
-/// <summary>Something the firm lent somebody, that has to come back.</summary>
-public enum AssetKind
-{
-    Laptop = 1,
-    Phone = 2,
-    Monitor = 3,
-
-    /// <summary>A door key, a fob, a building pass.</summary>
-    AccessDevice = 4,
-
-    Vehicle = 5,
-    Other = 6,
-}
-
 /// <summary>
 /// The list of things that have to happen when somebody leaves.
 /// </summary>
@@ -38,8 +24,6 @@ public enum AssetKind
 /// </remarks>
 public sealed class Offboarding : Entity, IAuditable
 {
-    private readonly List<LentAsset> _assets = [];
-
     private Offboarding()
     {
     }
@@ -81,53 +65,23 @@ public sealed class Offboarding : Entity, IAuditable
     /// </remarks>
     public string? ExitInterviewNotes { get; private set; }
 
-    /// <remarks>Returns a copy — see the note on Invoice.Lines for why.</remarks>
-    public IReadOnlyList<LentAsset> Assets => _assets.ToList();
-
     public DateTimeOffset? CompletedAt { get; private set; }
 
     public bool IsComplete => CompletedAt is not null;
 
-    /// <summary>Everything the firm is still waiting for.</summary>
-    public IReadOnlyList<LentAsset> Outstanding =>
-        _assets.Where(asset => asset.ReturnedOn is null).ToList();
-
     /// <summary>
-    /// Is there anything left to do?
+    /// Is there anything left that this record knows about?
     /// </summary>
     /// <remarks>
-    /// The question the screen is really asking. Access still live, an interview not held,
-    /// or a laptop not back — any one of them means this is not finished, and all three
-    /// have to be visible separately because they are three different people's jobs.
+    /// Only the access, now. This used to include equipment, because a leaver's kit was a list
+    /// kept here — and section 15 replaced that with one register the whole firm shares, so
+    /// what somebody still holds is a question about the asset register rather than about this
+    /// row. The screen asks both and shows them separately, because they are two different
+    /// people's jobs.
     /// </remarks>
-    public bool HasOutstandingItems =>
-        AccessRemovedAt is null || Outstanding.Count > 0;
+    public bool HasOutstandingItems => AccessRemovedAt is null;
 
     public void LeavesOn(DateOnly on) => LeavingOn = on;
-
-    /// <summary>Note that somebody lent them something.</summary>
-    public void Lent(AssetKind kind, string description, string? identifier)
-    {
-        if (string.IsNullOrWhiteSpace(description))
-        {
-            throw new ArgumentException(
-                "Say which one. A bare 'laptop' does not identify one of nine.",
-                nameof(description));
-        }
-
-        _assets.Add(LentAsset.Of(kind, description, identifier));
-    }
-
-    /// <summary>Note that it came back.</summary>
-    public void Returned(Guid assetId, DateOnly on, string? condition)
-    {
-        if (_assets.FirstOrDefault(asset => asset.Id == assetId) is { } asset)
-        {
-            asset.CameBack(on, condition);
-        }
-    }
-
-    public void Forget(Guid assetId) => _assets.RemoveAll(asset => asset.Id == assetId);
 
     /// <summary>
     /// Record that the sign-in has been closed.
@@ -183,15 +137,12 @@ public sealed class Offboarding : Entity, IAuditable
                 + "whose omission is a security problem rather than an inconvenience.");
         }
 
-        if (Outstanding.Count > 0)
-        {
-            var what = string.Join(", ", Outstanding.Select(asset => asset.Description));
-
-            throw new InvalidOperationException(
-                $"Still with them: {what}. Mark each one returned, or remove it from the list "
-                + "if it was never lent.");
-        }
-
+        /*
+         * Equipment is no longer checked here, and that is not a relaxation. It used to be a
+         * list on this row; it is now the asset register, which this aggregate has no business
+         * reaching into — so PeopleService checks it before calling this and names the tags
+         * that are still out. A rule in one place rather than half a rule in two.
+         */
         CompletedAt = at;
 
         Raise(new OffboardingCompleted(Id, EmployeeId, at));
@@ -207,46 +158,6 @@ public sealed class Offboarding : Entity, IAuditable
     /// </remarks>
     public static IReadOnlySet<string> AuditExcludes { get; } =
         new HashSet<string> { nameof(ExitInterviewNotes) };
-}
-
-/// <summary>Something the firm lent, and whether it is back.</summary>
-public sealed class LentAsset
-{
-    private LentAsset() => Description = string.Empty;
-
-    internal static LentAsset Of(AssetKind kind, string description, string? identifier) =>
-        new()
-        {
-            Id = Guid.CreateVersion7(),
-            Kind = kind,
-            Description = description.Trim(),
-            Identifier = string.IsNullOrWhiteSpace(identifier) ? null : identifier.Trim(),
-        };
-
-    public Guid Id { get; private init; }
-
-    public AssetKind Kind { get; private init; }
-
-    /// <summary>Which one. "MacBook Pro 14, 2025" rather than "laptop".</summary>
-    public string Description { get; private init; }
-
-    /// <summary>A serial number or an asset tag, if there is one.</summary>
-    public string? Identifier { get; private set; }
-
-    public DateOnly? ReturnedOn { get; private set; }
-
-    /// <summary>What state it came back in.</summary>
-    /// <remarks>
-    /// Recorded because the alternative is an argument six months later about whether a
-    /// screen was already cracked, and the person who would settle it has left.
-    /// </remarks>
-    public string? Condition { get; private set; }
-
-    internal void CameBack(DateOnly on, string? condition)
-    {
-        ReturnedOn = on;
-        Condition = string.IsNullOrWhiteSpace(condition) ? null : condition.Trim();
-    }
 }
 
 public sealed record OffboardingStarted(
@@ -271,3 +182,4 @@ public sealed record LeaverAccessRemoved(
 
 public sealed record OffboardingCompleted(
     Guid OffboardingId, Guid EmployeeId, DateTimeOffset At) : DomainEvent;
+

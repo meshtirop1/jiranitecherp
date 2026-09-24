@@ -9,6 +9,7 @@ using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Recruitment;
 using JiranisokoTech.Domain.Time;
 using JiranisokoTech.Infrastructure.Business;
+using JiranisokoTech.Infrastructure.Assets;
 using JiranisokoTech.Infrastructure.People;
 using JiranisokoTech.Infrastructure.Settings;
 using JiranisokoTech.Infrastructure.Recruitment;
@@ -33,7 +34,7 @@ public class BusinessRuleTests
 
         private BusinessRepository Repository => new(_context);
 
-        public PeopleService People => new(new PeopleRepository(_context), db.Clock);
+        public PeopleService People => new(new PeopleRepository(_context), new AssetRepository(_context), db.Clock);
 
         public WorkService Work =>
             new(new WorkRepository(_context), new PeopleRepository(_context), db.Clock);

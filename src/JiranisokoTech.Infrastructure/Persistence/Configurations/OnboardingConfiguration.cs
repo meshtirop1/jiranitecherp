@@ -41,18 +41,6 @@ public sealed class OnboardingConfiguration : IEntityTypeConfiguration<Onboardin
 
             step.Ignore(one => one.IsDone);
         });
-
-        builder.OwnsMany(one => one.Issued, asset =>
-        {
-            asset.ToTable("issued_assets");
-            asset.WithOwner().HasForeignKey("OnboardingId");
-
-            asset.HasKey(one => one.Id);
-
-            asset.Property(one => one.Kind).HasConversion<int>().IsRequired();
-            asset.Property(one => one.Description).HasMaxLength(300).IsRequired();
-            asset.Property(one => one.Identifier).HasMaxLength(100);
-        });
     }
 }
 

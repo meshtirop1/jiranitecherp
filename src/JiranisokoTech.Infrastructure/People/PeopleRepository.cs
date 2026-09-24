@@ -65,15 +65,15 @@ public sealed class PeopleRepository(AppDbContext database) : IPeopleRepository
             .ToListAsync(cancellationToken);
 
     /// <remarks>
-    /// The steps and the equipment come with it, always — every write to a checklist is a write
-    /// to one of those two collections, and an owned collection EF never loaded is one it
-    /// happily replaces with nothing.
+    /// The steps come with it, always — every write to a checklist is a write to that
+    /// collection, and an owned collection EF never loaded is one it happily replaces with
+    /// nothing. Equipment is not here: it lives on the asset register, which the screen reads
+    /// separately.
     /// </remarks>
     public Task<Onboarding?> OnboardingForAsync(
         Guid employeeId, CancellationToken cancellationToken = default) =>
         database.Onboardings
             .Include(one => one.Steps)
-            .Include(one => one.Issued)
             .FirstOrDefaultAsync(one => one.EmployeeId == employeeId, cancellationToken);
 
     public Task<List<Onboarding>> OnboardingsAsync(

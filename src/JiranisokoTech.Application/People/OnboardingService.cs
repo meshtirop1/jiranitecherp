@@ -18,9 +18,10 @@ namespace JiranisokoTech.Application.People;
 /// otherwise create a sign-in for somebody who does not work here, and what access a new person
 /// gets is a decision rather than a consequence.
 ///
-/// <b>The equipment list is the one offboarding asks back.</b> That loop is why this records
-/// equipment at all — a laptop handed over on day one and written down nowhere is a laptop
-/// nobody misses until the audit.
+/// <b>Equipment is not recorded here.</b> The "Equipment issued" step is ticked by handing
+/// something over on the asset register, which is the one place that knows where a particular
+/// laptop is — see section 15. This aggregate briefly kept its own list, and a list that only
+/// the joiner's screen can read is how a laptop goes missing without anybody noticing.
 /// </remarks>
 public sealed class OnboardingService(IPeopleRepository people, IClock clock)
 {
@@ -103,30 +104,6 @@ public sealed class OnboardingService(IPeopleRepository people, IClock clock)
         var onboarding = await Required(employeeId, cancellationToken);
 
         onboarding.NotNeeded(stepId);
-
-        await people.SaveAsync(cancellationToken);
-    }
-
-    public async Task IssueAsync(
-        Guid employeeId,
-        AssetKind kind,
-        string description,
-        string? identifier,
-        CancellationToken cancellationToken = default)
-    {
-        var onboarding = await Required(employeeId, cancellationToken);
-
-        onboarding.Issue(kind, description, identifier, clock.Today);
-
-        await people.SaveAsync(cancellationToken);
-    }
-
-    public async Task NotIssuedAsync(
-        Guid employeeId, Guid assetId, CancellationToken cancellationToken = default)
-    {
-        var onboarding = await Required(employeeId, cancellationToken);
-
-        onboarding.NotIssued(assetId);
 
         await people.SaveAsync(cancellationToken);
     }

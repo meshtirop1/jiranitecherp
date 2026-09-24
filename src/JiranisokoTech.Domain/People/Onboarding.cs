@@ -64,31 +64,6 @@ public sealed class OnboardingStep : Entity
     }
 }
 
-/// <summary>Something the firm handed over on the first day.</summary>
-public sealed class IssuedAsset : Entity
-{
-    private IssuedAsset() => Description = string.Empty;
-
-    internal IssuedAsset(AssetKind kind, string description, string? identifier, DateOnly on)
-    {
-        Kind = kind;
-        Description = string.IsNullOrWhiteSpace(description)
-            ? throw new ArgumentException("Say what it is.", nameof(description))
-            : description.Trim();
-        Identifier = string.IsNullOrWhiteSpace(identifier) ? null : identifier.Trim();
-        IssuedOn = on;
-    }
-
-    public AssetKind Kind { get; private init; }
-
-    public string Description { get; private init; }
-
-    /// <summary>A serial number, an asset tag, a registration.</summary>
-    public string? Identifier { get; private init; }
-
-    public DateOnly IssuedOn { get; private init; }
-}
-
 /// <summary>
 /// The list of things that have to happen before somebody starts.
 /// </summary>
@@ -102,13 +77,11 @@ public sealed class IssuedAsset : Entity
 /// wrongly would then create a sign-in for somebody who does not work here, and because the
 /// person who should decide what access somebody gets is a person.
 ///
-/// <b>What was issued here is what offboarding asks back.</b> The loop the firm actually needs
-/// closed: a laptop handed over on day one and never written down anywhere is a laptop nobody
-/// misses until the audit. <c>PeopleService</c> starts an offboarding by copying anything issued
-/// here and not yet returned, so the leaver's list is filled in rather than remembered.
-///
-/// <b>There is no asset register behind this</b>, and that is section 15 rather than an
-/// omission. Two people issued the same serial number would not be noticed here.
+/// <b>Equipment is not kept here.</b> It was, for about an hour: this aggregate had its own list
+/// of what somebody had been handed and offboarding had another, and neither could answer where
+/// a particular laptop was. Section 15 replaced both with one register the whole firm shares, so
+/// the "Equipment issued" step is ticked by issuing from that register — which is also what the
+/// leaver's list reads from.
 /// </remarks>
 public sealed class Onboarding : Entity, IAuditable
 {
@@ -135,8 +108,6 @@ public sealed class Onboarding : Entity, IAuditable
     ];
 
     private readonly List<OnboardingStep> _steps = [];
-
-    private readonly List<IssuedAsset> _assets = [];
 
     private Onboarding()
     {
@@ -170,9 +141,6 @@ public sealed class Onboarding : Entity, IAuditable
     /// <remarks>Returns a copy — see the note on Invoice.Lines for why.</remarks>
     public IReadOnlyList<OnboardingStep> Steps =>
         [.. _steps.OrderBy(one => one.Order).ThenBy(one => one.Name, StringComparer.Ordinal)];
-
-    /// <remarks>Returns a copy — see the note on Invoice.Lines for why.</remarks>
-    public IReadOnlyList<IssuedAsset> Issued => _assets.ToList();
 
     public bool IsComplete => CompletedAt is not null;
 
@@ -222,16 +190,6 @@ public sealed class Onboarding : Entity, IAuditable
     /// </remarks>
     public void NotNeeded(Guid stepId) => _steps.RemoveAll(one => one.Id == stepId);
 
-    public IssuedAsset Issue(AssetKind kind, string description, string? identifier, DateOnly on)
-    {
-        var asset = new IssuedAsset(kind, description, identifier, on);
-
-        _assets.Add(asset);
-
-        return asset;
-    }
-
-    public void NotIssued(Guid assetId) => _assets.RemoveAll(one => one.Id == assetId);
 
     /// <summary>
     /// Everything is done.

@@ -2,12 +2,15 @@
 @rendermode InteractiveServer
 @using System.Security.Claims
 @using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Assets
 @using JiranisokoTech.Application.People
+@using JiranisokoTech.Domain.Assets
 @using JiranisokoTech.Domain.People
 @using JiranisokoTech.Infrastructure.People
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.EmployeesManage)]
 @inject OnboardingService Service
+@inject AssetService Assets
 @inject PeopleQueries People
 @inject JiranisokoTech.Application.Abstractions.IClock Clock
 
@@ -145,44 +148,49 @@ else
         </div>
     </section>
 
+    @*
+        Behind assets.manage rather than this page's own permission, because issuing a laptop is
+        not the same authority as editing a staff record — see Permissions.AssetsManage.
+    *@
+    <AuthorizeView Policy="@Kit" Context="mayIssue">
     <section class="standing">
         <h2>What they were given</h2>
 
         @*
-            This list is what the leaver's checklist asks back. Section 9 recorded lent equipment
-            only at the moment somebody left, which meant it was whatever the person filling it
-            in remembered — and a laptop handed over on day one and written down nowhere is a
-            laptop nobody misses until the audit.
+            Handed over from the asset register rather than typed into a list of this page's own.
+            For about an hour this screen kept its own record and the leaver's screen kept
+            another, and neither could answer where a particular laptop was — section 15 replaced
+            both with one row per thing. Ticking "Equipment issued" above is what this is for.
         *@
-        @if (Onboarding.Issued.Count == 0)
+        @if (Holding.Count == 0)
         {
-            <p class="empty">Nothing recorded.</p>
+            <p class="empty">Nothing has been handed over.</p>
         }
         else
         {
             <table class="grid">
-                <caption class="visually-hidden">Equipment issued</caption>
+                <caption class="visually-hidden">What this person is holding</caption>
                 <thead>
                     <tr>
+                        <th scope="col">Tag</th>
                         <th scope="col">What</th>
-                        <th scope="col">Which one</th>
-                        <th scope="col">Issued</th>
+                        <th scope="col">Since</th>
                         <th scope="col"></th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var asset in Onboarding.Issued)
+                    @foreach (var asset in Holding)
                     {
                         var it = asset;
 
                         <tr>
+                            <td><a href="/assets/@it.Id"><code>@it.Tag</code></a></td>
                             <td>@Said(it.Kind) @it.Description</td>
-                            <td>@(it.Identifier ?? "—")</td>
-                            <td>@it.IssuedOn.ToString("d MMM yyyy")</td>
+                            <td>@(it.HeldSince?.ToString("d MMM yyyy") ?? "—")</td>
                             <td>
                                 <button type="button" class="button--quiet"
-                                        @onclick="() => NotIssued(it.Id)">
-                                    Take it off
+                                        @onclick="() => TakeBack(it.Id)">
+                                    Take it back
                                 </button>
                             </td>
                         </tr>
@@ -191,36 +199,41 @@ else
             </table>
         }
 
-        <div class="fields">
-            <label>
-                <span>What</span>
-                <select @bind="Kind">
-                    @foreach (var kind in Kinds)
-                    {
-                        <option value="@kind">@Said(kind)</option>
-                    }
-                </select>
-            </label>
+        @if (Stock.Count == 0)
+        {
+            <p class="subtle">
+                Nothing is in stock to hand over. Things are added to the
+                <a href="/assets">asset register</a> when the firm buys them.
+            </p>
+        }
+        else
+        {
+            <div class="fields">
+                <label>
+                    <span>Hand something over</span>
+                    <select @bind="Chosen">
+                        <option value="">Choose one</option>
+                        @foreach (var spare in Stock)
+                        {
+                            <option value="@spare.Id">
+                                @spare.Tag — @Said(spare.Kind) @spare.Description
+                            </option>
+                        }
+                    </select>
+                    <span class="subtle">
+                        Only things nobody is holding. Two people with one laptop is the state
+                        the register exists to make impossible.
+                    </span>
+                </label>
+            </div>
 
-            <label>
-                <span>Description</span>
-                <input @bind="Description" placeholder="MacBook Air 13in" />
-            </label>
-
-            <label>
-                <span>Serial or asset tag</span>
-                <input @bind="Identifier" placeholder="optional" />
-                <span class="subtle">
-                    Worth typing. It is the difference between asking for "the laptop" and
-                    asking for one the firm can identify.
-                </span>
-            </label>
-        </div>
-
-        <div class="row-actions">
-            <button type="button" class="button--quiet" @onclick="Issue">Record it</button>
-        </div>
+            <div class="row-actions">
+                <button type="button" class="button--quiet" @onclick="Issue">Issue it</button>
+            </div>
+        }
     </section>
+
+    </AuthorizeView>
 
     <section class="standing">
         <h2>Dates and closing it</h2>
@@ -264,15 +277,8 @@ else
 }
 
 @code {
-    private static readonly AssetKind[] Kinds =
-    [
-        AssetKind.Laptop,
-        AssetKind.Phone,
-        AssetKind.Monitor,
-        AssetKind.AccessDevice,
-        AssetKind.Vehicle,
-        AssetKind.Other,
-    ];
+    private const string Kit =
+        PermissionClaim.PolicyPrefix + Permissions.AssetsManage;
 
     [Parameter]
     public Guid Id { get; set; }
@@ -288,11 +294,11 @@ else
 
     private string Step { get; set; } = string.Empty;
 
-    private AssetKind Kind { get; set; } = AssetKind.Laptop;
+    private List<Asset> Holding { get; set; } = [];
 
-    private string Description { get; set; } = string.Empty;
+    private List<Asset> Stock { get; set; } = [];
 
-    private string Identifier { get; set; } = string.Empty;
+    private Guid? Chosen { get; set; }
 
     private DateTime StartsOn { get; set; }
 
@@ -314,6 +320,9 @@ else
         {
             StartsOn = Onboarding.StartsOn.ToDateTime(TimeOnly.MinValue);
         }
+
+        Holding = await Assets.HeldByAsync(Id);
+        Stock = await Assets.InStockAsync();
     }
 
     private async Task Did(Guid stepId)
@@ -342,19 +351,27 @@ else
         },
         "Added.");
 
-    private Task Issue() => Act(
-        async () =>
+    private async Task Issue()
+    {
+        if (Chosen is not { } asset)
         {
-            await Service.IssueAsync(
-                Id, Kind, Description, string.IsNullOrWhiteSpace(Identifier) ? null : Identifier);
+            Refusal = "Choose something to hand over first.";
 
-            Description = string.Empty;
-            Identifier = string.Empty;
-        },
-        "Recorded. It will be on their leaver's list if they go.");
+            return;
+        }
 
-    private Task NotIssued(Guid assetId) => Act(
-        () => Service.NotIssuedAsync(Id, assetId), "Taken off.");
+        await Act(
+            async () =>
+            {
+                await Assets.IssueAsync(asset, Id, Clock.Today, "Issued on joining");
+                Chosen = null;
+            },
+            "Handed over. It is on their leaver's list from now until it comes back.");
+    }
+
+    private Task TakeBack(Guid assetId) => Act(
+        () => Assets.TakeBackAsync(assetId, Clock.Today),
+        "Back in stock.");
 
     private Task MoveStart() => Act(
         () => Service.StartsOnAsync(Id, DateOnly.FromDateTime(StartsOn)), "Moved.");

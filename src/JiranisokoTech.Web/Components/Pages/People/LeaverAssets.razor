@@ -1,0 +1,164 @@
+@using JiranisokoTech.Application.Assets
+@using JiranisokoTech.Domain.Assets
+@rendermode InteractiveServer
+@inject AssetService Assets
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    What one leaver is still holding, read from the asset register.
+
+    An interactive child of a static page, and it is here for two reasons.
+
+    The first is section 15: this used to be a list kept on the offboarding row, filled in from
+    memory or copied from the joiner's list, and it could not answer where a particular laptop
+    was. It now reads the register, which is the one place that knows.
+
+    The second is the trap CLAUDE.md names. The old version was a form rendered once per row with
+    a unique name — return-{id} — and a model bound by [SupplyParameterFromForm(FormName =
+    "return")], which matches one exact name. So the condition somebody typed into "what state it
+    is in" never reached the handler: every asset was marked back with no condition, silently.
+    The sibling form for adding one was worse — its description never arrived either, so it
+    refused with "say which one" while the answer sat in the box above. That is the fifth and
+    sixth time this pattern has bitten this codebase, and the documented remedy is exactly this:
+    move the row's actions into an interactive component, where @bind needs no names at all.
+*@
+
+@if (Holding.Count == 0)
+{
+    <p class="empty">
+        Nothing on the register is out with them.
+        @if (Ever.Count > 0)
+        {
+            <span>They have had @Ever.Count thing(s), all back.</span>
+        }
+    </p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">What this leaver still holds</caption>
+        <thead>
+            <tr>
+                <th scope="col">Tag</th>
+                <th scope="col">What</th>
+                <th scope="col">Since</th>
+                <th scope="col">Back?</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var asset in Holding)
+            {
+                var it = asset;
+
+                <tr>
+                    <td><a href="/assets/@it.Id"><code>@it.Tag</code></a></td>
+                    <td>@Said(it.Kind) @it.Description</td>
+                    <td>@(it.HeldSince?.ToString("d MMM yyyy") ?? "—")</td>
+                    <td>
+                        <span class="pill pill--danger">Still with them</span>
+
+                        <input @bind="Condition" placeholder="What state it is in" />
+
+                        <button type="button" @onclick="() => Back(it.Id)">Got it back</button>
+
+                        <button type="button" class="button--quiet"
+                                @onclick="() => Missing(it.Id)">
+                            They kept it
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <p class="subtle">
+        @*
+            "They kept it" records the machine as lost rather than closing the departure with it
+            outstanding. A leaver's laptop that never comes back is a fact about the laptop, and
+            the register is where somebody will go looking for it.
+        *@
+        "They kept it" marks it lost on the register, with who had it last. That is not the same
+        as retiring it, and it is deliberately not the same as quietly closing the list.
+    </p>
+}
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Done is not null)
+{
+    <p class="done" role="status">@Done</p>
+}
+
+@code {
+    [Parameter]
+    public Guid EmployeeId { get; set; }
+
+    private List<Asset> Holding { get; set; } = [];
+
+    private List<Asset> Ever { get; set; } = [];
+
+    private string Condition { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Holding = await Assets.HeldByAsync(EmployeeId);
+
+        /*
+         * Everything they ever held, so the empty case can say "all back" rather than "nothing",
+         * which are two very different statements about a leaver.
+         */
+        Ever = [.. (await Assets.AllAsync())
+            .Where(one => one.Movements.Any(move => move.PersonId == EmployeeId))];
+    }
+
+    private Task Back(Guid assetId) => Act(
+        async () =>
+        {
+            await Assets.TakeBackAsync(
+                assetId,
+                Clock.Today,
+                string.IsNullOrWhiteSpace(Condition) ? null : Condition);
+
+            Condition = string.Empty;
+        },
+        "Back in stock.");
+
+    private Task Missing(Guid assetId) => Act(
+        () => Assets.MissingAsync(
+            assetId, "Not returned when they left", Clock.Today),
+        "Marked lost, with who had it last.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private static string Said(AssetKind kind) => kind switch
+    {
+        AssetKind.AccessDevice => "Access device",
+        _ => kind.ToString(),
+    };
+}

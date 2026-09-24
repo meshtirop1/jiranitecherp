@@ -172,6 +172,13 @@ public static class ServiceCollectionExtensions
          */
         services.AddScoped<OfferService>();
         services.AddScoped<OnboardingService>();
+
+        /*
+         * The asset register. Section 15, and the one place that knows where a laptop is — the
+         * joiner's checklist and the leaver's list are both views onto it.
+         */
+        services.AddScoped<Application.Assets.IAssetRepository, Assets.AssetRepository>();
+        services.AddScoped<Application.Assets.AssetService>();
         services.AddScoped<RecruitmentQueries>();
         services.AddScoped<ICvStore, FileCvStore>();
 

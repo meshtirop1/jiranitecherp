@@ -7,6 +7,7 @@ using JiranisokoTech.Domain.Contracts;
 using JiranisokoTech.Domain.Money;
 using Money = JiranisokoTech.Domain.Common.Money;
 using JiranisokoTech.Infrastructure.Business;
+using JiranisokoTech.Infrastructure.Assets;
 using JiranisokoTech.Infrastructure.People;
 using JiranisokoTech.Infrastructure.Settings;
 using JiranisokoTech.Infrastructure.Work;
@@ -46,7 +47,7 @@ public class ReadingAtVolumeTests
 
         public InvoiceService Invoices => new(Repository, Settings, db.Clock);
 
-        public PeopleService People => new(new PeopleRepository(_context), db.Clock);
+        public PeopleService People => new(new PeopleRepository(_context), new AssetRepository(_context), db.Clock);
 
         public TimesheetService Timesheets =>
             new(Repository, new PeopleRepository(_context), db.Clock);

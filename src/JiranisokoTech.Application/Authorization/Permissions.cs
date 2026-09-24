@@ -296,6 +296,26 @@ public static class Permissions
     /// </remarks>
     public const string ReleasesDeclare = "releases.declare";
 
+    // --- what the firm owns -------------------------------------------------
+
+    /// <summary>See the asset register: what the firm has and who is holding it.</summary>
+    /// <remarks>
+    /// Not held by everybody, unlike incidents.view, and the reason is what is on the row rather
+    /// than any sensitivity about laptops: the register carries what things cost and where each
+    /// one lives. The question an ordinary member of staff has — what do I have — is answered on
+    /// their own joining checklist by whoever set them up.
+    /// </remarks>
+    public const string AssetsView = "assets.view";
+
+    /// <summary>Add things to the register, hand them over, take them back, retire them.</summary>
+    /// <remarks>
+    /// Separate from employees.manage although the joining and leaving screens both reach for
+    /// it, because issuing a laptop is not the same authority as editing a staff record — and a
+    /// firm that lets everybody who can edit people also write off equipment has no register
+    /// worth reading.
+    /// </remarks>
+    public const string AssetsManage = "assets.manage";
+
     // --- when something is wrong -------------------------------------------
 
     /// <summary>Read the incidents and the reviews of them.</summary>
@@ -365,6 +385,8 @@ public static class Permissions
         ReposView, ReposManage, ReposDeliveries, ReleasesDeclare,
 
         IncidentsView, IncidentsRaise, IncidentsRun,
+
+        AssetsView, AssetsManage,
 
         ApprovalsDecide, ReportsView,
     ];
@@ -492,6 +514,10 @@ public static class Roles
                 // incidents as well as read them.
                 Permissions.IncidentsView, Permissions.IncidentsRaise,
                 Permissions.IncidentsRun,
+
+                // A head signs for their team's equipment, and is the person
+                // asked where a laptop went.
+                Permissions.AssetsView, Permissions.AssetsManage,
 
                 Permissions.ApprovalsDecide,
                 Permissions.RequisitionsCreate, Permissions.RequisitionsView,

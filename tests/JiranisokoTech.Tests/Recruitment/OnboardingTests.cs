@@ -1,5 +1,8 @@
+using JiranisokoTech.Application.Assets;
 using JiranisokoTech.Application.People;
+using JiranisokoTech.Domain.Assets;
 using JiranisokoTech.Domain.People;
+using JiranisokoTech.Infrastructure.Assets;
 using JiranisokoTech.Infrastructure.People;
 using JiranisokoTech.Tests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -170,45 +173,62 @@ public class OnboardingTests
     }
 
     /// <summary>
-    /// What was issued on the first day is what the leaver's checklist asks back.
+    /// What the firm handed over is what it asks back, and it is one record.
     /// </summary>
     /// <remarks>
-    /// The loop this whole section closes, and the only test here that spans both ends. Section
-    /// 9 recorded lent equipment only at the moment somebody left, which meant it was whatever
-    /// the person filling it in remembered — and a laptop handed over on day one and written
-    /// down nowhere is a laptop nobody misses until the audit. The serial number is asserted
-    /// because it is the difference between asking for "the laptop" and asking for one the firm
-    /// can identify.
+    /// The loop section 15 closed, and the reason it replaced two lists with one. This used to
+    /// assert that the joiner's list was copied into the leaver's — two records of the same
+    /// laptop that could disagree, and neither of them able to say where a particular machine
+    /// was. Now there is one row, and both screens read it: issuing on the first day is what
+    /// makes it appear on the last.
+    ///
+    /// The refusal is asserted on the service rather than on the aggregate, because that is
+    /// where the rule moved to when equipment stopped living on the offboarding row — and
+    /// because the message it can now give names the tag, which is what somebody has to go and
+    /// ask about.
     /// </remarks>
     [Fact]
-    public async Task Equipment_issued_at_the_start_appears_on_the_leavers_list()
+    public async Task A_departure_cannot_be_closed_while_the_register_says_they_have_something()
     {
         await using var fixture = await DatabaseFixture.CreateAsync();
         await using var context = fixture.NewContext();
 
         var repository = new PeopleRepository(context);
-        var onboardings = new OnboardingService(repository, fixture.Clock);
-        var people = new PeopleService(repository, fixture.Clock);
+        var register = new AssetRepository(context);
+        var people = new PeopleService(repository, register, fixture.Clock);
+        var assets = new AssetService(register, fixture.Clock);
 
         var employee = await Joined(fixture, context);
 
-        await onboardings.BeginAsync(employee, fixture.Clock.Today);
-        await onboardings.IssueAsync(
-            employee, AssetKind.Laptop, "MacBook Air 13in", "C02XK1JQ");
+        var laptop = await assets.BuyAsync(
+            "JD-014",
+            AssetKind.Laptop,
+            "MacBook Air 13in",
+            fixture.Clock.Today.AddDays(-7),
+            "C02XK1JQ");
+
+        await assets.IssueAsync(laptop.Id, employee, fixture.Clock.Today);
 
         await people.RecordLeavingAsync(
             employee, fixture.Clock.Today.AddDays(200), "Moving abroad");
 
-        var leaving = await context.Offboardings
-            .Include(one => one.Assets)
-            .SingleAsync(one => one.EmployeeId == employee);
+        var leaving = await context.Offboardings.SingleAsync(one => one.EmployeeId == employee);
 
-        var asset = Assert.Single(leaving.Assets);
+        leaving.AccessRemoved(Guid.CreateVersion7(), fixture.Clock.Now);
+        await context.SaveChangesAsync();
 
-        Assert.Equal(AssetKind.Laptop, asset.Kind);
-        Assert.Equal("MacBook Air 13in", asset.Description);
-        Assert.Equal("C02XK1JQ", asset.Identifier);
-        Assert.True(leaving.HasOutstandingItems);
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => people.CompleteOffboardingAsync(employee));
+
+        Assert.Contains("JD-014", refused.Message);
+
+        await assets.TakeBackAsync(laptop.Id, fixture.Clock.Today, "Screen scratched");
+
+        await people.CompleteOffboardingAsync(employee);
+
+        var closed = await context.Offboardings.SingleAsync(one => one.EmployeeId == employee);
+
+        Assert.True(closed.IsComplete);
     }
 
     private static async Task<Guid> Joined(DatabaseFixture fixture, TestDbContext context)

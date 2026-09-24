@@ -2,6 +2,7 @@ using JiranisokoTech.Application.Approvals;
 using JiranisokoTech.Application.People;
 using JiranisokoTech.Domain.Approvals;
 using JiranisokoTech.Infrastructure.Approvals;
+using JiranisokoTech.Infrastructure.Assets;
 using JiranisokoTech.Infrastructure.People;
 using JiranisokoTech.Tests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -20,7 +21,7 @@ public class ApprovalServiceTests
     {
         private readonly TestDbContext _context = db.NewContext();
 
-        public PeopleService People => new(new PeopleRepository(_context), db.Clock);
+        public PeopleService People => new(new PeopleRepository(_context), new AssetRepository(_context), db.Clock);
 
         public ApprovalService Approvals =>
             new(new ApprovalRepository(_context), new PeopleRepository(_context), db.Clock);

@@ -124,92 +124,18 @@ else
                 </EditForm>
             }
 
-            <h3>What they were lent</h3>
+            <h3>What they are still holding</h3>
 
-            @if (leaving.Assets.Count == 0)
-            {
-                <p class="empty">Nothing recorded as lent.</p>
-            }
-            else
-            {
-                <table class="grid">
-                    <caption class="visually-hidden">Assets lent to this leaver</caption>
-                    <thead>
-                        <tr>
-                            <th scope="col">What</th>
-                            <th scope="col">Identifier</th>
-                            <th scope="col">Back?</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var asset in leaving.Assets)
-                        {
-                            <tr>
-                                <td>
-                                    <strong>@asset.Description</strong>
-                                    <span class="subtle">@asset.Kind</span>
-                                </td>
-                                <td><code>@(asset.Identifier ?? "—")</code></td>
-                                <td>
-                                    @if (asset.ReturnedOn is { } back)
-                                    {
-                                        <span class="pill pill--done">
-                                            @back.ToString("d MMM yyyy")
-                                        </span>
+            @*
+                Read from the asset register rather than from a list on this row. Section 15
+                replaced two lists that could not agree — what a joiner was handed and what a
+                leaver owes back — with one row per thing, and this is one of its two views.
 
-                                        @if (asset.Condition is { } condition)
-                                        {
-                                            <span class="subtle">@condition</span>
-                                        }
-                                    }
-                                    else
-                                    {
-                                        <span class="pill pill--danger">Still with them</span>
-
-                                        <EditForm Model="Returning" method="post"
-                                                  FormName="@($"return-{asset.Id}")"
-                                                  OnValidSubmit="() => MarkReturned(leaving.EmployeeId, asset.Id)"
-                                                  class="inline">
-                                            <InputText @bind-Value="Returning.Condition"
-                                                       placeholder="What state it is in" />
-                                            <button type="submit">Got it back</button>
-                                        </EditForm>
-
-                                        <EditForm Model="Nothing" method="post"
-                                                  FormName="@($"never-{asset.Id}")"
-                                                  OnValidSubmit="() => NotLent(leaving.EmployeeId, asset.Id)"
-                                                  class="inline">
-                                            @*
-                                                Because the realistic mistake is adding
-                                                something to the list that was never lent,
-                                                and a checklist with a phantom item on it
-                                                can never be finished.
-                                            *@
-                                            <button type="submit" class="button button--quiet">
-                                                Never lent
-                                            </button>
-                                        </EditForm>
-                                    }
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            }
-
-            <EditForm Model="Lending" method="post" FormName="@($"lent-{leaving.Id}")"
-                      OnValidSubmit="() => AddAsset(leaving.EmployeeId)" class="inline">
-                <InputSelect @bind-Value="Lending.Kind">
-                    @foreach (var kind in Enum.GetValues<AssetKind>())
-                    {
-                        <option value="@kind">@kind</option>
-                    }
-                </InputSelect>
-                <InputText @bind-Value="Lending.Description"
-                           placeholder="MacBook Pro 14, 2025" />
-                <InputText @bind-Value="Lending.Identifier" placeholder="Serial or tag" />
-                <button type="submit">Add to the list</button>
-            </EditForm>
+                An interactive child, because the controls need fields: a per-row form with a
+                bound input cannot work under static rendering, and it silently did not. See
+                LeaverAssets.
+            *@
+            <LeaverAssets EmployeeId="leaving.EmployeeId" />
 
             @if (!leaving.HasOutstandingItems)
             {
@@ -227,24 +153,6 @@ else
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
 
     private object Nothing { get; } = new();
-
-    private LendingInput _lending = new();
-
-    [SupplyParameterFromForm(FormName = "lent")]
-    private LendingInput Lending
-    {
-        get => _lending;
-        set => _lending = value ?? new LendingInput();
-    }
-
-    private ReturnInput _returning = new();
-
-    [SupplyParameterFromForm(FormName = "return")]
-    private ReturnInput Returning
-    {
-        get => _returning;
-        set => _returning = value ?? new ReturnInput();
-    }
 
     private InterviewInput _interview = new();
 
@@ -273,18 +181,6 @@ else
         Names = (await People.RosterAsync())
             .ToDictionary(person => person.Id, person => person.FullName);
     }
-
-    private Task AddAsset(Guid employeeId) => TryAsync(() => Service.LentAsync(
-        employeeId,
-        Enum.TryParse<AssetKind>(Lending.Kind, out var kind) ? kind : AssetKind.Other,
-        Lending.Description ?? string.Empty,
-        Lending.Identifier));
-
-    private Task MarkReturned(Guid employeeId, Guid assetId) => TryAsync(
-        () => Service.ReturnedAsync(employeeId, assetId, Clock.Today, Returning.Condition));
-
-    private Task NotLent(Guid employeeId, Guid assetId) => TryAsync(
-        () => Service.NotLentAsync(employeeId, assetId));
 
     private Task RecordInterview(Guid employeeId) => TryAsync(
         () => Service.ExitInterviewHeldAsync(employeeId, Interview.Notes));
@@ -333,23 +229,6 @@ else
             Refusal = exception.Message;
             await LoadAsync();
         }
-    }
-
-    private sealed class LendingInput
-    {
-        public string? Kind { get; set; } = nameof(AssetKind.Laptop);
-
-        [StringLength(300)]
-        public string? Description { get; set; }
-
-        [StringLength(100)]
-        public string? Identifier { get; set; }
-    }
-
-    private sealed class ReturnInput
-    {
-        [StringLength(500)]
-        public string? Condition { get; set; }
     }
 
     private sealed class InterviewInput

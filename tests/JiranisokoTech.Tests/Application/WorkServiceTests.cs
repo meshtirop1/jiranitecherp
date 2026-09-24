@@ -1,6 +1,7 @@
 using JiranisokoTech.Application.People;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Domain.Work;
+using JiranisokoTech.Infrastructure.Assets;
 using JiranisokoTech.Infrastructure.People;
 using JiranisokoTech.Infrastructure.Work;
 using JiranisokoTech.Tests.Infrastructure;
@@ -20,7 +21,7 @@ public class WorkServiceTests
     {
         private readonly TestDbContext _context = db.NewContext();
 
-        public PeopleService People => new(new PeopleRepository(_context), db.Clock);
+        public PeopleService People => new(new PeopleRepository(_context), new AssetRepository(_context), db.Clock);
 
         public WorkService Work =>
             new(new WorkRepository(_context), new PeopleRepository(_context), db.Clock);

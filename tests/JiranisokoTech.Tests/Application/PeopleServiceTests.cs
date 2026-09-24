@@ -1,5 +1,6 @@
 using JiranisokoTech.Application.People;
 using JiranisokoTech.Domain.People;
+using JiranisokoTech.Infrastructure.Assets;
 using JiranisokoTech.Infrastructure.People;
 using JiranisokoTech.Tests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -24,7 +25,7 @@ public class PeopleServiceTests
     {
         private readonly TestDbContext _context = db.NewContext();
 
-        public PeopleService Service => new(new PeopleRepository(_context), db.Clock);
+        public PeopleService Service => new(new PeopleRepository(_context), new AssetRepository(_context), db.Clock);
 
         public TestDbContext Context => _context;
 

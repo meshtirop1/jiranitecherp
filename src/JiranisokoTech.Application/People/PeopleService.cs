@@ -16,7 +16,10 @@ namespace JiranisokoTech.Application.People;
 /// than one row: a reporting line that would close a loop, a handle already
 /// taken, a head who does not work here.
 /// </remarks>
-public sealed class PeopleService(IPeopleRepository people, Abstractions.IClock clock)
+public sealed class PeopleService(
+    IPeopleRepository people,
+    Assets.IAssetRepository assets,
+    Abstractions.IClock clock)
 {
     public async Task<Department> OpenDepartmentAsync(
         string name,
@@ -270,69 +273,19 @@ public sealed class PeopleService(IPeopleRepository people, Abstractions.IClock 
         }
         else
         {
-            var leaving = Offboarding.Begin(employeeId, on, clock.Now);
-
             /*
-             * What was issued on the first day is what gets asked back on the last, and until
-             * section 8 there was nothing to copy from — so every leaver's asset list was
-             * somebody remembering, which means it was whatever they remembered. Anything
-             * handed over at onboarding is carried across here with its serial number, and
-             * anything else the person picked up along the way is still added by hand.
-             *
-             * Copied rather than shared. Section 15 would give the firm one asset register with
-             * one row per laptop; until then these are two lists, and the one that matters at
-             * this end is this one — it is the one that says what has not come back.
+             * Nothing is copied here any more, and that is the improvement. This used to fill
+             * the leaver's asset list from the joiner's, which was one list being copied into
+             * another — two records of the same laptop that could disagree, and neither of them
+             * able to say where a particular machine was. Section 15 made the asset register the
+             * one place that knows, and the leaver's screen asks it.
              */
-            if (await people.OnboardingForAsync(employeeId, cancellationToken) is { } arrival)
-            {
-                foreach (var issued in arrival.Issued)
-                {
-                    leaving.Lent(issued.Kind, issued.Description, issued.Identifier);
-                }
-            }
-
-            people.Add(leaving);
+            people.Add(Offboarding.Begin(employeeId, on, clock.Now));
         }
 
         await people.SaveAsync(cancellationToken);
 
         return reports.Count;
-    }
-
-    /// <summary>Note that the firm lent somebody something they have to give back.</summary>
-    public async Task LentAsync(
-        Guid employeeId,
-        AssetKind kind,
-        string description,
-        string? identifier,
-        CancellationToken cancellationToken = default)
-    {
-        var offboarding = await RequiredOffboarding(employeeId, cancellationToken);
-
-        offboarding.Lent(kind, description, identifier);
-        await people.SaveAsync(cancellationToken);
-    }
-
-    public async Task ReturnedAsync(
-        Guid employeeId,
-        Guid assetId,
-        DateOnly on,
-        string? condition,
-        CancellationToken cancellationToken = default)
-    {
-        var offboarding = await RequiredOffboarding(employeeId, cancellationToken);
-
-        offboarding.Returned(assetId, on, condition);
-        await people.SaveAsync(cancellationToken);
-    }
-
-    public async Task NotLentAsync(
-        Guid employeeId, Guid assetId, CancellationToken cancellationToken = default)
-    {
-        var offboarding = await RequiredOffboarding(employeeId, cancellationToken);
-
-        offboarding.Forget(assetId);
-        await people.SaveAsync(cancellationToken);
     }
 
     /// <summary>
@@ -362,11 +315,29 @@ public sealed class PeopleService(IPeopleRepository people, Abstractions.IClock 
         await people.SaveAsync(cancellationToken);
     }
 
-    /// <summary>Say the departure is dealt with.</summary>
+    /// <summary>
+    /// Say the departure is dealt with.
+    /// </summary>
+    /// <remarks>
+    /// The equipment check lives here rather than on the aggregate, because equipment lives on
+    /// the asset register now and an offboarding has no business reaching into it. The rule is
+    /// the same one it always was — a departure is not finished while the firm's laptop is in
+    /// somebody's house — and the message is better for having the register to hand: it names
+    /// the tags, which is what somebody has to go and ask about.
+    /// </remarks>
     public async Task CompleteOffboardingAsync(
         Guid employeeId, CancellationToken cancellationToken = default)
     {
         var offboarding = await RequiredOffboarding(employeeId, cancellationToken);
+
+        if (await assets.HeldByAsync(employeeId, cancellationToken) is { Count: > 0 } held)
+        {
+            var what = string.Join(", ", held.Select(one => $"{one.Tag} {one.Description}"));
+
+            throw new InvalidOperationException(
+                $"Still with them: {what}. Take each one back on the register, or mark it lost "
+                + "if it is not coming back.");
+        }
 
         offboarding.Complete(clock.Now);
         await people.SaveAsync(cancellationToken);

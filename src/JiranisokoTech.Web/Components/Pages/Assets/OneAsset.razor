@@ -1,0 +1,429 @@
+@page "/assets/{Id:guid}"
+@rendermode InteractiveServer
+@using JiranisokoTech.Application.Assets
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Settings
+@using JiranisokoTech.Domain.Assets
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.AssetsView)]
+@inject AssetService Service
+@inject PeopleQueries People
+@inject SettingsService Settings
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    One thing, and everything that has happened to it.
+
+    The movement log is the part worth having. A status column says where a laptop is today; the
+    log says it went to Amina in September, came back in March with a cracked screen, was
+    repaired, and went out again — which is what settles the argument about whether the screen
+    was already cracked, and what tells somebody it is time to stop repairing this one.
+*@
+
+<PageTitle>@(Asset?.Tag ?? "Asset") — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/assets">Assets</a></nav>
+
+@if (Asset is null)
+{
+    <p class="empty">That is not on the register.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Asset.Tag</h1>
+
+        <p class="subtle">
+            <span class="pill @PillFor(Asset.Status)">@Say(Asset.Status)</span>
+            <span class="subtle">@Said(Asset.Kind) @Asset.Description</span>
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <dl class="facts">
+        @if (Asset.HeldById is { } holder)
+        {
+            <dt>Who has it</dt>
+            <dd>
+                @Who(holder)
+                @if (Asset.HeldSince is { } since)
+                {
+                    <span class="subtle">since @since.ToString("d MMM yyyy")</span>
+                }
+            </dd>
+        }
+
+        <dt>Serial</dt>
+        <dd>@(Asset.SerialNumber ?? "not recorded")</dd>
+
+        <dt>Bought</dt>
+        <dd>
+            @Asset.BoughtOn.ToString("d MMMM yyyy")
+            @if (Asset.Cost is { } cost)
+            {
+                <span class="subtle">for @cost</span>
+            }
+        </dd>
+
+        <dt>Warranty</dt>
+        <dd>
+            @if (Asset.WarrantyEndsOn is { } ends)
+            {
+                @ends.ToString("d MMMM yyyy")
+                @if (Asset.WarrantyHasRun(Today))
+                {
+                    <span class="pill pill--quiet">run out</span>
+                }
+            }
+            else
+            {
+                <span class="subtle">not recorded</span>
+            }
+        </dd>
+
+        @if (Asset.Notes is { } notes)
+        {
+            <dt>Notes</dt>
+            <dd>@notes</dd>
+        }
+    </dl>
+
+    <AuthorizeView Policy="@Managing" Context="mayManage">
+        <section class="standing">
+            <h2>Move it</h2>
+
+            <div class="fields">
+                <label>
+                    <span>On</span>
+                    <input type="date" @bind="On" />
+                    <span class="subtle">
+                        The day it happened, which is often not today — kit comes back on a
+                        Friday and gets typed in on a Monday.
+                    </span>
+                </label>
+            </div>
+
+            @if (Asset.Status == AssetStatus.InStock)
+            {
+                <div class="fields">
+                    <label>
+                        <span>Hand it to</span>
+                        <select @bind="PersonId">
+                            <option value="">Choose somebody</option>
+                            @foreach (var person in Names.OrderBy(one => one.Value))
+                            {
+                                <option value="@person.Key">@person.Value</option>
+                            }
+                        </select>
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="Issue">Issue it</button>
+                </div>
+            }
+            else if (Asset.Status == AssetStatus.Issued)
+            {
+                <div class="fields">
+                    <label>
+                        <span>What state it is in</span>
+                        <input @bind="Condition" placeholder="optional" />
+                        <span class="subtle">
+                            Recorded against this moment rather than against the machine,
+                            because the argument six months later is about which moment.
+                        </span>
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="TakeBack">Take it back</button>
+                </div>
+            }
+
+            @if (Asset.IsLive)
+            {
+                <div class="fields">
+                    <label>
+                        <span>Why</span>
+                        <input @bind="Why" placeholder="the keyboard has stopped working" />
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    @if (Asset.Status == AssetStatus.BeingRepaired)
+                    {
+                        <button type="button" class="button--quiet" @onclick="Repaired">
+                            Back from repair
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" class="button--quiet" @onclick="Repair">
+                            Send for repair
+                        </button>
+                    }
+
+                    <button type="button" class="button--quiet" @onclick="Retire">
+                        Retire it
+                    </button>
+
+                    @*
+                        Lost is its own thing rather than a retirement with a sad reason. A
+                        machine with the firm's data on it going missing is a different
+                        conversation, and it has to be findable as one.
+                    *@
+                    <button type="button" class="danger" @onclick="Missing">
+                        Record it as lost
+                    </button>
+                </div>
+            }
+            else if (Asset.Status == AssetStatus.Lost)
+            {
+                <div class="row-actions">
+                    <button type="button" @onclick="Found">It has turned up</button>
+                </div>
+            }
+            else
+            {
+                <p class="subtle">
+                    Retired. The row stays, because somebody asking next year what happened to
+                    @Asset.Tag should find the answer rather than find nothing.
+                </p>
+            }
+        </section>
+
+        <section class="standing">
+            <h2>The paperwork</h2>
+
+            <div class="fields">
+                <label>
+                    <span>What it cost</span>
+                    <input type="number" step="0.01" @bind="Cost" />
+                </label>
+
+                <label>
+                    <span>Bought</span>
+                    <input type="date" @bind="BoughtOn" />
+                </label>
+
+                <label>
+                    <span>Warranty ends</span>
+                    <input type="date" @bind="Warranty" />
+                </label>
+            </div>
+
+            <label class="stack">
+                <span>Notes</span>
+                <textarea rows="3" @bind="Notes"></textarea>
+            </label>
+
+            <div class="row-actions">
+                <button type="button" class="button--quiet" @onclick="Paperwork">
+                    Save the paperwork
+                </button>
+            </div>
+        </section>
+    </AuthorizeView>
+
+    <section class="standing">
+        <h2>Everything that has happened to it</h2>
+
+        <table class="grid">
+            <caption class="visually-hidden">Movements</caption>
+            <thead>
+                <tr>
+                    <th scope="col">When</th>
+                    <th scope="col">What</th>
+                    <th scope="col">Who</th>
+                    <th scope="col">Became</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var move in Asset.Movements)
+                {
+                    <tr>
+                        <td>@move.On.ToString("d MMM yyyy")</td>
+                        <td>@move.What</td>
+                        <td>@(move.PersonId is { } who ? Who(who) : "—")</td>
+                        <td><span class="pill @PillFor(move.To)">@Say(move.To)</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <p class="subtle">
+            Appended, never edited. A lifecycle that can be tidied up afterwards is worth
+            nothing at the moment somebody most wants to tidy it.
+        </p>
+    </section>
+}
+
+@code {
+    private const string Managing = PermissionClaim.PolicyPrefix + Permissions.AssetsManage;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private Asset? Asset { get; set; }
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string Currency { get; set; } = "KES";
+
+    private Guid? PersonId { get; set; }
+
+    private string Condition { get; set; } = string.Empty;
+
+    private string Why { get; set; } = string.Empty;
+
+    private DateTime On { get; set; } = DateTime.UtcNow.Date;
+
+    private decimal? Cost { get; set; }
+
+    private DateTime BoughtOn { get; set; } = DateTime.UtcNow.Date;
+
+    private DateTime? Warranty { get; set; }
+
+    private string Notes { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private DateOnly Today => Clock.Today;
+
+    private DateOnly When => DateOnly.FromDateTime(On);
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Asset = await Service.OneAsync(Id);
+        Names = await People.NamesAsync();
+        Currency = (await Settings.CurrentAsync()).Currency;
+
+        if (Asset is null)
+        {
+            return;
+        }
+
+        Cost = Asset.CostMinorUnits is { } minor ? minor / 100m : null;
+        BoughtOn = Asset.BoughtOn.ToDateTime(TimeOnly.MinValue);
+        Warranty = Asset.WarrantyEndsOn?.ToDateTime(TimeOnly.MinValue);
+        Notes = Asset.Notes ?? string.Empty;
+    }
+
+    private async Task Issue()
+    {
+        if (PersonId is not { } person)
+        {
+            Refusal = "Choose somebody to hand it to first.";
+
+            return;
+        }
+
+        await Act(
+            async () =>
+            {
+                await Service.IssueAsync(Id, person, When);
+                PersonId = null;
+            },
+            "Handed over. It is on their leaver's list from now until it comes back.");
+    }
+
+    private Task TakeBack() => Act(
+        async () =>
+        {
+            await Service.TakeBackAsync(
+                Id, When, string.IsNullOrWhiteSpace(Condition) ? null : Condition);
+
+            Condition = string.Empty;
+        },
+        "Back in stock.");
+
+    private Task Repair() => Act(
+        () => Service.RepairAsync(Id, Why, When), "Away being fixed.");
+
+    private Task Repaired() => Act(
+        () => Service.RepairedAsync(Id, Why.Length > 0 ? Why : "Repaired", When),
+        "Back in stock.");
+
+    private Task Retire() => Act(
+        () => Service.RetireAsync(Id, Why, When), "Retired. The record stays.");
+
+    private Task Missing() => Act(
+        () => Service.MissingAsync(Id, Why, When),
+        "Recorded as lost, with who had it last.");
+
+    private Task Found() => Act(
+        () => Service.FoundAsync(Id, When), "Back in stock.");
+
+    private Task Paperwork() => Act(
+        () => Service.PaperworkAsync(
+            Id,
+            Cost is { } amount ? Money(amount) : null,
+            DateOnly.FromDateTime(BoughtOn),
+            Warranty is { } ends ? DateOnly.FromDateTime(ends) : null,
+            string.IsNullOrWhiteSpace(Notes) ? null : Notes),
+        "Saved.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private JiranisokoTech.Domain.Common.Money Money(decimal whole) =>
+        JiranisokoTech.Domain.Common.Money.Of(
+            (long)decimal.Round(whole * 100m, 0, MidpointRounding.AwayFromZero), Currency);
+
+    private string Who(Guid id) =>
+        Names.GetValueOrDefault(id) ?? "somebody no longer on the staff list";
+
+    private static string Said(AssetKind kind) => kind switch
+    {
+        AssetKind.AccessDevice => "Access device",
+        _ => kind.ToString(),
+    };
+
+    private static string Say(AssetStatus status) => status switch
+    {
+        AssetStatus.InStock => "In stock",
+        AssetStatus.Issued => "Out",
+        AssetStatus.BeingRepaired => "Being repaired",
+        AssetStatus.Retired => "Retired",
+        _ => "Lost",
+    };
+
+    private static string PillFor(AssetStatus status) => status switch
+    {
+        AssetStatus.InStock => "pill--done",
+        AssetStatus.Issued => "pill--active",
+        AssetStatus.BeingRepaired => "pill--wait",
+        AssetStatus.Retired => "pill--quiet",
+        _ => "pill--danger",
+    };
+}

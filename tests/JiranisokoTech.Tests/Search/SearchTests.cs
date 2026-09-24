@@ -4,6 +4,7 @@ using JiranisokoTech.Application.People;
 using JiranisokoTech.Application.Settings;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Infrastructure.Business;
+using JiranisokoTech.Infrastructure.Assets;
 using JiranisokoTech.Infrastructure.People;
 using JiranisokoTech.Infrastructure.Search;
 using JiranisokoTech.Infrastructure.Settings;
@@ -31,7 +32,7 @@ public class SearchTests
     {
         private readonly TestDbContext _context = db.NewContext();
 
-        public PeopleService People => new(new PeopleRepository(_context), db.Clock);
+        public PeopleService People => new(new PeopleRepository(_context), new AssetRepository(_context), db.Clock);
 
         public WorkQueries WorkQueries => new(_context);
 

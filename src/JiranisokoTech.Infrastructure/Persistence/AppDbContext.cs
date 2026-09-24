@@ -69,6 +69,16 @@ public class AppDbContext(
     /// <summary>What the firm offered somebody, and what they said.</summary>
     public DbSet<Offer> Offers => Set<Offer>();
 
+    /// <summary>
+    /// Everything the firm owns, and where each thing is.
+    /// </summary>
+    /// <remarks>
+    /// Section 15, and it replaced two lists that could not agree: what a joiner was handed and
+    /// what a leaver had to give back, neither of which could answer where a particular laptop
+    /// was. Both screens are now views onto this.
+    /// </remarks>
+    public DbSet<Domain.Assets.Asset> Assets => Set<Domain.Assets.Asset>();
+
     public DbSet<ApprovalRequest> Approvals => Set<ApprovalRequest>();
 
     public DbSet<Client> Clients => Set<Client>();
