@@ -288,6 +288,128 @@ public sealed class WarnAboutExpiringContracts(
 /// from the fault this whole ledger was added to fix.
 /// </remarks>
 /// <summary>
+/// Tell somebody when one of the firm's own agreements is about to run out.
+/// </summary>
+/// <remarks>
+/// Section 17's second half, and the twin of the client-contract job above. The difference is
+/// what happens when nobody is told: a client contract lapsing is work the client can decline to
+/// pay for, and an employment contract lapsing is discovered by the person it belongs to.
+///
+/// Drafts are included as well as signed agreements, deliberately. A draft with an end date
+/// three weeks away is a piece of paper somebody has not got signed yet, which is exactly the
+/// thing worth a reminder — and filtering it out would mean the system goes quiet about the one
+/// state that needs chasing.
+/// </remarks>
+public sealed class WarnAboutExpiringAgreements(
+    AppDbContext database,
+    IMailer mailer,
+    IClock clock)
+    : IRecurringJob
+{
+    public string Name => "agreements.expiring";
+
+    public string Description =>
+        "Tells the heads which employment contracts, vendor agreements and NDAs run out soon.";
+
+    public TimeSpan Every => TimeSpan.FromDays(1);
+
+    public async Task<string> RunAsync(CancellationToken cancellationToken = default)
+    {
+        var today = clock.Today;
+        var ladder = ReminderLadder.For(ReminderKind.AgreementExpiring);
+        var furthest = today.AddDays(ladder.FirstDaysBefore);
+
+        var expiring = await database.Agreements
+            .AsNoTracking()
+            .Where(one => (one.State == AgreementState.Draft
+                    || one.State == AgreementState.Signed)
+                && one.EndsOn != null
+                && one.EndsOn >= today
+                && one.EndsOn <= furthest)
+            .OrderBy(one => one.EndsOn)
+            .Select(one => new
+            {
+                one.Id,
+                one.Reference,
+                one.Title,
+                one.Party,
+                one.Kind,
+                Ends = one.EndsOn!.Value,
+            })
+            .ToListAsync(cancellationToken);
+
+        var due = new List<(Guid Id, string Subject, DateOnly On, ReminderStage Stage)>();
+
+        foreach (var one in expiring)
+        {
+            if (ladder.StageDueOn(today, one.Ends) is not { } stage)
+            {
+                continue;
+            }
+
+            var subject = $"{one.Reference} — {one.Title} ({one.Kind}, {one.Party})";
+
+            if (await Reminders.AlreadyToldAsync(
+                database,
+                ReminderKind.AgreementExpiring,
+                one.Id,
+                one.Ends,
+                stage,
+                cancellationToken))
+            {
+                continue;
+            }
+
+            due.Add((one.Id, subject, one.Ends, stage));
+        }
+
+        if (due.Count == 0)
+        {
+            return expiring.Count == 0
+                ? "No agreement runs out in the next three months."
+                : $"{expiring.Count} running out; everybody who needs telling has been told.";
+        }
+
+        var heads = await Reminders.HeadsOfDepartmentsAsync(database, cancellationToken);
+
+        var lines = due.Select(one => $"  {one.Subject}, runs out {one.On:d MMMM yyyy}");
+
+        var told = 0;
+
+        foreach (var (address, name) in heads.Reachable)
+        {
+            await mailer.SendAsync(
+                Letters.AgreementsExpiring(address, name, [.. lines]),
+                cancellationToken);
+
+            told++;
+        }
+
+        if (told == 0)
+        {
+            // Nothing written when nobody was told — see the qualifications job for why.
+            return $"{due.Count} running out and no department head with a mailbox here to tell.";
+        }
+
+        foreach (var one in due)
+        {
+            database.Reminders.Add(Reminder.Issued(
+                ReminderKind.AgreementExpiring,
+                one.Id,
+                one.Subject,
+                one.Stage,
+                one.On,
+                told,
+                clock.Now));
+        }
+
+        await database.SaveChangesAsync(cancellationToken);
+
+        return heads.Said(due.Count, told);
+    }
+}
+
+/// <summary>
 /// Tell somebody when a domain, a certificate or a subscription is about to run out.
 /// </summary>
 /// <remarks>

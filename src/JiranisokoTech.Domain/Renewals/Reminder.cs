@@ -17,6 +17,9 @@ public enum ReminderKind
 
     /// <summary>A domain, a certificate or a subscription running out. Section 14.</summary>
     ResourceExpiring = 4,
+
+    /// <summary>An employment contract, a vendor agreement or an NDA running out. Section 17.</summary>
+    AgreementExpiring = 5,
 }
 
 /// <summary>
@@ -128,6 +131,13 @@ public readonly record struct ReminderLadder
          * meeting.
          */
         ReminderKind.ResourceExpiring => Of(30, 7, 2),
+
+        /*
+         * The same ninety, forty-five and fourteen a client contract gets, because the thing
+         * being managed is the same: a conversation with a person that has to happen before a
+         * date, and ninety days is what a notice period plus a negotiation actually takes.
+         */
+        ReminderKind.AgreementExpiring => Of(90, 45, 14),
         _ => Of(90, 45, 14),
     };
 

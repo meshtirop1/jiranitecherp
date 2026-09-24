@@ -1,0 +1,398 @@
+@page "/agreements/{Id:guid}"
+@rendermode InteractiveServer
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Application.Documents
+@using JiranisokoTech.Domain.Contracts
+@using JiranisokoTech.Domain.Documents
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ContractsView)]
+@inject AgreementService Service
+@inject PeopleQueries People
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    One piece of paper.
+
+    Nothing here is a signature. "Signed" records that everybody has signed it, and the signed
+    copy is a document attached to it — exactly as a client contract's is. Recording that
+    somebody signed is not the same as their having signed, and this system does not pretend to
+    the second.
+*@
+
+<PageTitle>@(Agreement?.Reference ?? "Agreement") — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/agreements">Agreements</a></nav>
+
+@if (Agreement is null)
+{
+    <p class="empty">That agreement is not on file.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Agreement.Reference</h1>
+
+        <p class="subtle">
+            <span class="pill @PillFor(Agreement.State)">@Say(Agreement.State)</span>
+            <span class="pill pill--quiet">@Said(Agreement.Kind)</span>
+            @if (Agreement.HasExpiredOn(Today))
+            {
+                <span class="pill pill--danger">expired</span>
+            }
+            <span class="subtle">@Agreement.Title</span>
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <dl class="facts">
+        <dt>With</dt>
+        <dd>
+            @if (Agreement.EmployeeId is { } who)
+            {
+                <a href="/people/@who">@Agreement.Party</a>
+            }
+            else
+            {
+                @Agreement.Party
+            }
+        </dd>
+
+        <dt>Runs</dt>
+        <dd>
+            @if (Agreement.StartsOn is { } from)
+            {
+                @from.ToString("d MMMM yyyy")
+            }
+            else
+            {
+                <span class="subtle">no start recorded</span>
+            }
+
+            @if (Agreement.EndsOn is { } to)
+            {
+                <span class="subtle">to @to.ToString("d MMMM yyyy")</span>
+            }
+            else
+            {
+                <span class="subtle">open-ended</span>
+            }
+        </dd>
+
+        <dt>Notice</dt>
+        <dd>
+            @if (Agreement.NoticeDays is { } notice)
+            {
+                @($"{notice} days")
+            }
+            else
+            {
+                <span class="subtle">not recorded</span>
+            }
+        </dd>
+
+        <dt>Written down</dt>
+        <dd>
+            @Agreement.DraftedAt.ToLocalTime().ToString("d MMM yyyy")
+            @if (Agreement.SignedAt is { } signed)
+            {
+                <span class="subtle">signed @signed.ToLocalTime().ToString("d MMM yyyy")</span>
+            }
+        </dd>
+
+        @if (Agreement.Outcome is { } outcome)
+        {
+            <dt>What happened</dt>
+            <dd>@outcome</dd>
+        }
+
+        @if (Agreement.Notes is { } notes)
+        {
+            <dt>Notes</dt>
+            <dd>@notes</dd>
+        }
+    </dl>
+
+    <section class="standing">
+        <h2>The signed copy</h2>
+
+        @*
+            Attached as a document, behind the same permission a client contract's signed copy
+            is. The signature belongs with the terms it signed rather than in a pile of files on
+            a staff record, which cannot say which piece of paper is which.
+        *@
+        @if (Copies.Count == 0)
+        {
+            <p class="empty">
+                Nothing is attached. The signed copy is uploaded on
+                <a href="/documents">the documents page</a> against this agreement.
+            </p>
+        }
+        else
+        {
+            <ul class="plain">
+                @foreach (var copy in Copies)
+                {
+                    <li>
+                        <a href="/documents/@copy.Id">@copy.FileName</a>
+                        <span class="subtle">
+                            @copy.UploadedAt.ToLocalTime().ToString("d MMM yyyy")
+                        </span>
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+
+    <AuthorizeView Policy="@Managing" Context="mayManage">
+        <section class="standing">
+            <h2>Change it</h2>
+
+            <div class="fields">
+                <label>
+                    <span>What sort</span>
+                    <select @bind="Kind">
+                        @foreach (var kind in Kinds)
+                        {
+                            <option value="@kind">@Said(kind)</option>
+                        }
+                    </select>
+                </label>
+
+                <label>
+                    <span>What it is</span>
+                    <input @bind="Title" />
+                </label>
+
+                <label>
+                    <span>With</span>
+                    <input @bind="Party" />
+                </label>
+            </div>
+
+            <div class="fields">
+                <label>
+                    <span>Starts</span>
+                    <input type="date" @bind="StartsOn" />
+                </label>
+
+                <label>
+                    <span>Runs out</span>
+                    <input type="date" @bind="EndsOn" />
+                    <span class="subtle">
+                        Leave it empty for anything open-ended. Where it is set, a job reads it
+                        every morning.
+                    </span>
+                </label>
+
+                <label>
+                    <span>Notice, in days</span>
+                    <input type="number" @bind="Notice" />
+                </label>
+            </div>
+
+            <label class="stack">
+                <span>Notes</span>
+                <textarea rows="3" @bind="Notes"></textarea>
+            </label>
+
+            <div class="row-actions">
+                <button type="button" @onclick="Save">Save it</button>
+
+                @if (Agreement.State == AgreementState.Draft)
+                {
+                    <button type="button" @onclick="Sign">Everybody has signed it</button>
+                }
+            </div>
+        </section>
+
+        @if (Agreement.IsLive)
+        {
+            <section class="standing">
+                <h2>Ending it</h2>
+
+                <div class="fields">
+                    <label>
+                        <span>Replaced by</span>
+                        <input @bind="By" placeholder="JTS-EMP-2027-011" />
+                        <span class="subtle">
+                            The later one has to be on file already, so that whoever reads this
+                            one can find it.
+                        </span>
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" class="button--quiet" @onclick="Supersede">
+                        A later one replaces this
+                    </button>
+                </div>
+
+                <div class="fields">
+                    <label>
+                        <span>Or ended, and why</span>
+                        <input @bind="Why" placeholder="the supplier was changed" />
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" class="danger" @onclick="End">It has ended</button>
+                </div>
+
+                <p class="subtle">
+                    Replaced and ended are different, and the difference is what somebody reading
+                    a personnel file needs: a contract replaced after a pay rise did not expire
+                    and was not terminated. Neither deletes anything.
+                </p>
+            </section>
+        }
+    </AuthorizeView>
+}
+
+@code {
+    private const string Managing = PermissionClaim.PolicyPrefix + Permissions.ContractsManage;
+
+    private static readonly AgreementKind[] Kinds =
+    [
+        AgreementKind.Employment,
+        AgreementKind.Vendor,
+        AgreementKind.Nda,
+        AgreementKind.Other,
+    ];
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [Inject]
+    private DocumentService Documents { get; set; } = default!;
+
+    private Agreement? Agreement { get; set; }
+
+    private List<Attachment> Copies { get; set; } = [];
+
+    private AgreementKind Kind { get; set; } = AgreementKind.Nda;
+
+    private string Title { get; set; } = string.Empty;
+
+    private string Party { get; set; } = string.Empty;
+
+    private DateTime? StartsOn { get; set; }
+
+    private DateTime? EndsOn { get; set; }
+
+    private int? Notice { get; set; }
+
+    private string Notes { get; set; } = string.Empty;
+
+    private string By { get; set; } = string.Empty;
+
+    private string Why { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private DateOnly Today => Clock.Today;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Agreement = await Service.OneAsync(Id);
+
+        if (Agreement is null)
+        {
+            return;
+        }
+
+        Kind = Agreement.Kind;
+        Title = Agreement.Title;
+        Party = Agreement.Party;
+        StartsOn = Agreement.StartsOn?.ToDateTime(TimeOnly.MinValue);
+        EndsOn = Agreement.EndsOn?.ToDateTime(TimeOnly.MinValue);
+        Notice = Agreement.NoticeDays;
+        Notes = Agreement.Notes ?? string.Empty;
+
+        Copies = await Documents.ForAsync(AttachedTo.Agreement, Id);
+    }
+
+    private Task Save() => Act(
+        async () =>
+        {
+            await Service.DescribeAsync(
+                Id,
+                Kind,
+                Title,
+                Party,
+                Agreement!.EmployeeId,
+                string.IsNullOrWhiteSpace(Notes) ? null : Notes);
+
+            await Service.RunsAsync(
+                Id,
+                StartsOn is { } from ? DateOnly.FromDateTime(from) : null,
+                EndsOn is { } to ? DateOnly.FromDateTime(to) : null,
+                Notice);
+        },
+        "Saved.");
+
+    private Task Sign() => Act(
+        () => Service.SignedAsync(Id), "Recorded as signed by everybody.");
+
+    private Task Supersede() => Act(
+        () => Service.SupersedeAsync(Id, By), "Replaced. Both stay on file.");
+
+    private Task End() => Act(() => Service.EndAsync(Id, Why), "Ended.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException
+            or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private static string Said(AgreementKind kind) => kind switch
+    {
+        AgreementKind.Employment => "Employment",
+        AgreementKind.Vendor => "Vendor",
+        AgreementKind.Nda => "NDA",
+        _ => "Other",
+    };
+
+    private static string Say(AgreementState state) => state switch
+    {
+        AgreementState.Draft => "Draft",
+        AgreementState.Signed => "Signed",
+        AgreementState.Superseded => "Replaced",
+        _ => "Ended",
+    };
+
+    private static string PillFor(AgreementState state) => state switch
+    {
+        AgreementState.Signed => "pill--done",
+        AgreementState.Draft => "pill--wait",
+        _ => "pill--quiet",
+    };
+}

@@ -48,7 +48,7 @@ timesheet rather than typed into it. What is built is an ERP that a software
 company could run its business on, and the part that makes it developer-native
 is no longer the part that is missing.
 
-By section: **50 done, 3 partial, 45 not started, 1 excluded by agreement.**
+By section: **51 done, 2 partial, 45 not started, 1 excluded by agreement.**
 
 That count was recomputed from the tables below rather than adjusted, because the
 figure previously here did not add up to anything the tables said and had been
@@ -114,7 +114,7 @@ pass rather than adjusted by the size of the change.
 | ✅ | 16 | Clients | Record, state, terms, documents, invoices, and the people at each one — with a leaver kept rather than overwritten, and one of them the person to call first |
 | ✅ | 16 | Pipeline | An enquiry and an opportunity are one record at different stages, so nothing is lost to a conversion step. Backwards moves allowed, decided ones not reopened, losing one demands a reason, and winning one creates nothing. Listed by silence rather than by value |
 | ✅ | 17 | Client contracts | Draft/active/terminated, expiry by date, signed copy attached |
-| ☐ | 17 | Employee, vendor contracts, NDAs, renewal reminders | |
+| ✅ | 17 | Employee, vendor contracts, NDAs, renewal reminders | Its own table rather than more rows in contracts, because a client contract carries a value and is what invoices are raised against, and this paper carries obligations and no money — one table would have meant a nullable value column and a screen apologising for it on half the rows. What it adds over a folder of scans is a date something runs out on and a job that reads it, on the same three-rung ladder a client contract gets: ninety days, then forty-five, then fourteen, once per rung, safe to run every morning. **A draft with an end date is warned about too**, deliberately — that is a piece of paper somebody has not got signed yet, which is the state most worth chasing, and filtering it out would have the system go quiet about exactly that. **Replaced is not ended**, and neither deletes anything: an employment contract replaced after a pay rise did not expire and was not terminated, and dropping the old one leaves a personnel file that begins in the middle. The replacement has to be on file before it can be named, because a reference to a piece of paper nobody wrote down is a dead end with a date on it. An employment agreement links to the staff record and the party’s name is stored anyway, so the page still says who it was with after somebody leaves; a vendor agreement is with a company this system does not otherwise know about, and inventing a supplier table to hold a name would be section 62’s work done badly in passing. The signed copy is an attachment behind the same permission a client contract’s is — with the terms it signed rather than in a pile of files on a staff record, which cannot say which piece of paper is which. Nothing here is a signature: “signed” records that everybody has signed, and this system does not pretend to the second thing |
 | ✅ | 10 | Projects | Lead, dates, state, documents, hours |
 | ✅ | 10 | Project fields | Budget recorded; revenue, cost and margin derived from invoices, approved hours and paid expenses. Costed at a blended rate so no project report reveals a salary |
 | ✅ | 11 | Tasks | State machine, per-transition permissions, release gate |

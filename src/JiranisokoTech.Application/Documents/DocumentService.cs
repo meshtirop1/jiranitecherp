@@ -120,6 +120,14 @@ public static class Documents
         AttachedTo.Employee => Permissions.EmployeesView,
         AttachedTo.Contract => Permissions.ContractsView,
 
+        /*
+         * The same permission a client contract's signed copy has, and deliberately not the
+         * personnel-file one. An employment contract read by whoever holds contracts.view is a
+         * different question from a disciplinary letter read by employees.manage — and reusing
+         * Employee for it would have made them one question. See section 17.
+         */
+        AttachedTo.Agreement => Permissions.ContractsView,
+
         // A face, not a personnel file. See the remarks on AttachedTo.Photo for why
         // this is the wide permission where Employee is the narrow one.
         AttachedTo.Photo => Permissions.EmployeesView,
@@ -139,6 +147,7 @@ public static class Documents
         // same permission. Anybody who may put a signature into the record may
         // also have agreed what it signs.
         AttachedTo.Contract => Permissions.ContractsManage,
+        AttachedTo.Agreement => Permissions.ContractsManage,
         AttachedTo.Photo => Permissions.EmployeesManage,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown attachment kind."),
     };

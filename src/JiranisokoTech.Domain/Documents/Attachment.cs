@@ -45,6 +45,17 @@ public enum AttachedTo
     /// replaceable only by whoever keeps the record or the person in it.
     /// </remarks>
     Photo = 7,
+
+    /// <summary>
+    /// The signed copy of one of the firm's own agreements.
+    /// </summary>
+    /// <remarks>
+    /// Its own kind rather than Contract, which is a client contract, and its own kind rather
+    /// than Employee, which is a personnel file. An employment contract read by whoever holds
+    /// contracts.view is not the same permission as a personnel file read by employees.manage,
+    /// and reusing either would have made it so — see section 17.
+    /// </remarks>
+    Agreement = 8,
 }
 
 /// <summary>

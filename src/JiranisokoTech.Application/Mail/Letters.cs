@@ -178,6 +178,38 @@ public static class Letters
     }
 
     /// <summary>
+    /// The firm's own agreements running out.
+    /// </summary>
+    /// <remarks>
+    /// Its own letter rather than the client-contract one, because the consequence is different
+    /// and the reader is deciding a different thing. A client contract lapsing is revenue the
+    /// firm may not be able to bill for; an employment contract lapsing is a conversation with
+    /// somebody who works here, and an NDA lapsing is an obligation quietly ending.
+    /// </remarks>
+    public static EmailMessage AgreementsExpiring(
+        string toAddress, string toName, IReadOnlyList<string> lines)
+    {
+        var listed = string.Join(Environment.NewLine, lines);
+
+        var text = $"""
+            Hello {toName},
+
+            These agreements run out within the next three months:
+
+            {listed}
+
+            Each of them is a conversation with somebody rather than a date to
+            note. A contract of employment that lapses is discovered by the person
+            it belongs to, and an obligation that ends quietly is one nobody
+            decided to end.
+
+            {Signature}
+            """;
+
+        return Compose(toAddress, toName, "Agreements running out soon", text, link: null);
+    }
+
+    /// <summary>
     /// Domains, certificates and subscriptions running out.
     /// </summary>
     /// <remarks>

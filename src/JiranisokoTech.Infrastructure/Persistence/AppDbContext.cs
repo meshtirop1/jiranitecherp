@@ -186,6 +186,16 @@ public class AppDbContext(
 
     public DbSet<Contract> Contracts => Set<Contract>();
 
+    /// <summary>
+    /// The paper the firm has signed with people who are not clients.
+    /// </summary>
+    /// <remarks>
+    /// Section 17's second half: employment contracts, vendor agreements and NDAs. Its own table
+    /// rather than more rows in contracts, because a client contract carries a value and is what
+    /// invoices are raised against, and this paper carries obligations and no money.
+    /// </remarks>
+    public DbSet<Agreement> Agreements => Set<Agreement>();
+
     public DbSet<Invoice> Invoices => Set<Invoice>();
 
     public DbSet<ExpenseClaim> Expenses => Set<ExpenseClaim>();

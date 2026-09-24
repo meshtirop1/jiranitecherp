@@ -154,6 +154,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OpportunityService>();
         services.AddScoped<ContactService>();
         services.AddScoped<ContractService>();
+
+        /*
+         * Section 17's second half. Employment contracts, vendor agreements and NDAs had no
+         * home, so the only place one existed was as a file on a staff record with nothing
+         * knowing when it ran out.
+         */
+        services.AddScoped<IAgreementRepository, AgreementRepository>();
+        services.AddScoped<AgreementService>();
         services.AddScoped<TimesheetService>();
         services.AddScoped<LeaveService>();
         services.AddScoped<HolidayService>();
@@ -254,6 +262,9 @@ public static class ServiceCollectionExtensions
          * this is the column that acts, because a certificate expires at three on a Sunday.
          */
         services.AddScoped<IRecurringJob, WarnAboutExpiringResources>();
+
+        // Section 17's second half: the firm's own paper, on the same ladder as a client's.
+        services.AddScoped<IRecurringJob, WarnAboutExpiringAgreements>();
         services.AddScoped<IRecurringJob, PruneJobHistory>();
         services.AddScoped<IRecurringJob, PruneSignInHistory>();
         services.AddScoped<IRecurringJob, RaiseRecurringExpenses>();

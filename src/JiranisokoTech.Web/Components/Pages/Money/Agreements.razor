@@ -1,0 +1,342 @@
+@page "/agreements"
+@rendermode InteractiveServer
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Domain.Contracts
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ContractsView)]
+@inject AgreementService Service
+@inject PeopleQueries People
+@inject NavigationManager Navigation
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    The paper the firm has signed with people who are not clients.
+
+    Section 17's second half. Client contracts have been here since the section was built;
+    employment contracts, vendor agreements and NDAs had not, so the only place an employment
+    contract existed was as a file attached to a staff record, with nothing knowing when it ran
+    out.
+
+    Its own table rather than more rows in contracts, because a client contract carries a value
+    and is what invoices are raised against, and this paper carries obligations and no money —
+    one table would have meant a nullable value column and a screen apologising for it on half
+    the rows.
+*@
+
+<PageTitle>Agreements — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/accounting">Accounts</a></nav>
+
+<div class="page-head">
+    <h1>Agreements</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+<p class="instructions">
+    Employment contracts, vendor agreements and NDAs — everything the firm has signed that is
+    not a client contract. What this adds over a folder of scans is a date something runs out
+    on, and a job that reads it: ninety days before, then forty-five, then fourteen.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Expiring.Count > 0)
+{
+    <section class="standing">
+        <h2>Running out</h2>
+
+        <table class="grid">
+            <caption class="visually-hidden">Agreements that run out soon</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Reference</th>
+                    <th scope="col">With</th>
+                    <th scope="col">Runs out</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var one in Expiring)
+                {
+                    <tr>
+                        <td><a href="/agreements/@one.Id">@one.Reference</a></td>
+                        <td>@one.Party</td>
+                        <td>
+                            @one.EndsOn!.Value.ToString("d MMMM yyyy")
+                            @if (one.HasExpiredOn(Today))
+                            {
+                                <span class="pill pill--danger">gone</span>
+                            }
+                            else
+                            {
+                                <span class="subtle">@Days(one.EndsOn.Value) days</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+<AuthorizeView Policy="@Managing" Context="mayManage">
+    <section class="standing">
+        <h2>Write one down</h2>
+
+        <div class="fields">
+            <label>
+                <span>Reference</span>
+                <input @bind="Reference" placeholder="JTS-NDA-2026-004" />
+                <span class="subtle">
+                    The firm's own file number. It is what somebody quotes in an email, so no
+                    two share one.
+                </span>
+            </label>
+
+            <label>
+                <span>What sort</span>
+                <select @bind="Kind" @bind:after="WhoChanged">
+                    @foreach (var kind in Kinds)
+                    {
+                        <option value="@kind">@Said(kind)</option>
+                    }
+                </select>
+            </label>
+
+            <label>
+                <span>What it is</span>
+                <input @bind="Title" placeholder="Mutual non-disclosure" />
+            </label>
+        </div>
+
+        <div class="fields">
+            @if (Kind == AgreementKind.Employment)
+            {
+                @*
+                    An employment contract is with somebody on the staff list, and that link is
+                    what puts it on their record. A vendor agreement is with a company this
+                    system does not otherwise know about — inventing a supplier table to hold a
+                    name would be section 62's work done badly in passing.
+                *@
+                <label>
+                    <span>With</span>
+                    <select @bind="EmployeeId" @bind:after="WhoChanged">
+                        <option value="">Choose somebody</option>
+                        @foreach (var person in Names.OrderBy(one => one.Value))
+                        {
+                            <option value="@person.Key">@person.Value</option>
+                        }
+                    </select>
+                </label>
+            }
+            else
+            {
+                <label>
+                    <span>With</span>
+                    <input @bind="Party" placeholder="Safaricom PLC" />
+                </label>
+            }
+        </div>
+
+        <div class="row-actions">
+            <button type="button" @onclick="Draft">Write it down</button>
+        </div>
+    </section>
+</AuthorizeView>
+
+<section class="standing">
+    <h2>On file</h2>
+
+    @if (All.Count == 0)
+    {
+        <p class="empty">Nothing is on file yet.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Agreements on file</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Reference</th>
+                    <th scope="col">What</th>
+                    <th scope="col">With</th>
+                    <th scope="col">State</th>
+                    <th scope="col">Runs</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var one in All)
+                {
+                    <tr>
+                        <td><a href="/agreements/@one.Id">@one.Reference</a></td>
+                        <td>
+                            @Said(one.Kind)
+                            <span class="subtle">@one.Title</span>
+                        </td>
+                        <td>@one.Party</td>
+                        <td><span class="pill @PillFor(one.State)">@Say(one.State)</span></td>
+                        <td>
+                            @if (one.EndsOn is { } ends)
+                            {
+                                @($"to {ends:d MMM yyyy}")
+                                @if (one.HasExpiredOn(Today))
+                                {
+                                    <span class="pill pill--danger">expired</span>
+                                }
+                            }
+                            else if (one.NoticeDays is { } notice)
+                            {
+                                @*
+                                    The question actually asked of an open-ended agreement is
+                                    not when it stops but how long stopping it takes.
+                                *@
+                                <span class="subtle">@notice days' notice</span>
+                            }
+                            else
+                            {
+                                <span class="subtle">open-ended</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    private const string Managing = PermissionClaim.PolicyPrefix + Permissions.ContractsManage;
+
+    /// <summary>How far ahead the warning list looks.</summary>
+    /// <remarks>
+    /// Ninety days, matching the reminder job's first rung, so the screen and the email agree
+    /// about what "soon" means. Two answers to that would be one too many.
+    /// </remarks>
+    private const int Soon = 90;
+
+    private static readonly AgreementKind[] Kinds =
+    [
+        AgreementKind.Employment,
+        AgreementKind.Vendor,
+        AgreementKind.Nda,
+        AgreementKind.Other,
+    ];
+
+    private List<Agreement> All { get; set; } = [];
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string Reference { get; set; } = string.Empty;
+
+    private AgreementKind Kind { get; set; } = AgreementKind.Nda;
+
+    private string Title { get; set; } = string.Empty;
+
+    private string Party { get; set; } = string.Empty;
+
+    private Guid? EmployeeId { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private DateOnly Today => Clock.Today;
+
+    private List<Agreement> Expiring =>
+        [.. All
+            .Where(one => one.IsLive
+                && one.EndsOn is not null
+                && one.EndsOn <= Today.AddDays(Soon))
+            .OrderBy(one => one.EndsOn)];
+
+    private string Headline
+    {
+        get
+        {
+            if (All.Count == 0)
+            {
+                return "Nothing is on file yet.";
+            }
+
+            var live = All.Count(one => one.IsLive);
+
+            return Expiring.Count == 0
+                ? $"{live} in force or being drafted."
+                : $"{live} in force or being drafted. {Expiring.Count} run out within {Soon} days.";
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        All = await Service.AllAsync();
+        Names = await People.NamesAsync();
+    }
+
+    /// <summary>
+    /// Keep the party's name in step with whoever was chosen.
+    /// </summary>
+    /// <remarks>
+    /// The name is stored even when there is a staff link, so that a page showing an agreement
+    /// after somebody has left still says who it was with. Filling it in from the roster rather
+    /// than asking twice is what stops the two disagreeing.
+    /// </remarks>
+    private void WhoChanged()
+    {
+        if (Kind == AgreementKind.Employment && EmployeeId is { } who)
+        {
+            Party = Names.GetValueOrDefault(who) ?? Party;
+        }
+        else if (Kind != AgreementKind.Employment)
+        {
+            EmployeeId = null;
+        }
+    }
+
+    private async Task Draft()
+    {
+        Refusal = null;
+
+        try
+        {
+            var agreement = await Service.DraftAsync(
+                Kind, Reference, Title, Party, EmployeeId);
+
+            Navigation.NavigateTo($"/agreements/{agreement.Id}");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private int Days(DateOnly on) => on.DayNumber - Today.DayNumber;
+
+    private static string Said(AgreementKind kind) => kind switch
+    {
+        AgreementKind.Employment => "Employment",
+        AgreementKind.Vendor => "Vendor",
+        AgreementKind.Nda => "NDA",
+        _ => "Other",
+    };
+
+    private static string Say(AgreementState state) => state switch
+    {
+        AgreementState.Draft => "Draft",
+        AgreementState.Signed => "Signed",
+        AgreementState.Superseded => "Replaced",
+        _ => "Ended",
+    };
+
+    private static string PillFor(AgreementState state) => state switch
+    {
+        AgreementState.Signed => "pill--done",
+        AgreementState.Draft => "pill--wait",
+        _ => "pill--quiet",
+    };
+}

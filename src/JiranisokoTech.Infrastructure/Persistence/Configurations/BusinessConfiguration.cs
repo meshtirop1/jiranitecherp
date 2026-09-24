@@ -377,3 +377,49 @@ public sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
 
     }
 }
+
+public sealed class AgreementConfiguration : IEntityTypeConfiguration<Agreement>
+{
+    public void Configure(EntityTypeBuilder<Agreement> builder)
+    {
+        builder.ToTable("agreements");
+
+        builder.HasKey(one => one.Id);
+
+        builder.Property(one => one.Kind).HasConversion<int>().IsRequired();
+        builder.Property(one => one.Reference).HasMaxLength(60).IsRequired();
+        builder.Property(one => one.Title).HasMaxLength(300).IsRequired();
+        builder.Property(one => one.Party).HasMaxLength(300).IsRequired();
+        builder.Property(one => one.State).HasConversion<int>().IsRequired();
+        builder.Property(one => one.Outcome).HasMaxLength(500);
+        builder.Property(one => one.Notes).HasMaxLength(2_000);
+
+        builder.Ignore(one => one.IsInForce);
+        builder.Ignore(one => one.IsLive);
+
+        /*
+         * The firm's own file number, and no two pieces of paper share one. It is what somebody
+         * quotes in an email, and two answering to it make every reference ambiguous — including
+         * the ones already sent.
+         */
+        builder.HasIndex(one => one.Reference).IsUnique();
+
+        /*
+         * The one query anything runs on its own: what runs out soon. The reminder job reads it
+         * every morning.
+         */
+        builder.HasIndex(one => one.EndsOn);
+
+        builder.HasIndex(one => one.EmployeeId);
+
+        /*
+         * SetNull rather than Cascade. A person deleted from the staff list must not take their
+         * employment contract with them — it is the firm's record of what was agreed, and it is
+         * precisely the document somebody asks for after they have gone.
+         */
+        builder.HasOne<Employee>()
+            .WithMany()
+            .HasForeignKey(one => one.EmployeeId)
+            .OnDelete(DeleteBehavior.SetNull);
+    }
+}
