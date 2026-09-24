@@ -3,6 +3,7 @@ using JiranisokoTech.Application.Mail;
 using JiranisokoTech.Domain.Contracts;
 using JiranisokoTech.Application.Accounting;
 using JiranisokoTech.Domain.Renewals;
+using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -423,6 +424,72 @@ public sealed class PruneJobHistory(AppDbContext database, IClock clock) : IRecu
         return removed == 0
             ? "Nothing old enough to delete."
             : $"Deleted {removed} run(s) older than ninety days.";
+    }
+}
+
+/// <summary>
+/// Delete failed sign-in attempts that are no longer evidence of anything.
+/// </summary>
+/// <remarks>
+/// <c>SignInRecord</c> has said since it was written that it is "its own table with its own
+/// retention", and it had none. It is also the one table in this database that a stranger on
+/// the public internet can add rows to as fast as they like, which makes it the only one where
+/// the absence of a rule is somebody else's decision rather than ours.
+///
+/// <b>Only failures are swept, and successes are never touched.</b> That asymmetry is the
+/// whole of this job's design and it is the opposite way round from the job history above, so
+/// it is worth being exact about why.
+///
+/// A success is not a record of something that happened; it is the evidence another feature
+/// reads. <c>SignInPlaces.IsSomewhereNewAsync</c> decides whether to warn somebody that their
+/// account has been used somewhere unfamiliar by comparing this sign-in against every previous
+/// successful one — and it returns false when there is nothing to compare against, because
+/// warning somebody about the sign-in they are performing on a brand-new account teaches them
+/// to ignore warnings. So a sweep that left an account with one surviving success would
+/// silently switch that warning off for that account, permanently, and nothing would report
+/// it. A security feature that stops working quietly is worse than one that was never built.
+///
+/// The arithmetic also says there is nothing to gain. Thirty people signing in twice a working
+/// day produce about fifteen thousand successes a year, which is a rounding error beside the
+/// audit trail. Failures under a spray are bounded only by <c>SignInThrottle</c> — fifteen per
+/// address per quarter hour, multiplied by however many addresses somebody has — so the growth
+/// this job exists for is entirely on the failure side.
+///
+/// Ninety days, matching the job history, because the question a failure answers is "was this
+/// account being attacked in the week something went wrong" and nobody asks it about last year.
+/// </remarks>
+public sealed class PruneSignInHistory(AppDbContext database, IClock clock) : IRecurringJob
+{
+    /// <summary>How long a failed attempt is kept.</summary>
+    public static TimeSpan KeepFailuresFor { get; } = TimeSpan.FromDays(90);
+
+    public string Name => "sign-ins.prune";
+
+    public string Description =>
+        "Deletes failed sign-in attempts older than ninety days. Successes are never deleted.";
+
+    public TimeSpan Every => TimeSpan.FromDays(1);
+
+    public async Task<string> RunAsync(CancellationToken cancellationToken = default)
+    {
+        var before = clock.Now - KeepFailuresFor;
+
+        /*
+         * Named outcomes rather than "not a success", so that a value added to the enum later
+         * is kept by default. The cost of keeping something that could have gone is a row; the
+         * cost of deleting something that should have stayed is a feature that stops working
+         * and says nothing.
+         */
+        var removed = await database.Set<SignInRecord>()
+            .Where(record => record.At < before
+                && (record.Outcome == SignInOutcome.Refused
+                    || record.Outcome == SignInOutcome.LockedOut
+                    || record.Outcome == SignInOutcome.Deactivated))
+            .ExecuteDeleteAsync(cancellationToken);
+
+        return removed == 0
+            ? "Nothing old enough to delete."
+            : $"Deleted {removed} failed attempt(s) older than ninety days.";
     }
 }
 
