@@ -15,7 +15,7 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 24 September 2026 · 1081 tests · verified against PostgreSQL in
+Last updated: 24 September 2026 · 1087 tests · verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
 container, a lost opportunity surviving its client record being deleted, the
 builds and deployments tables applying to a real Postgres, an abandoned event
@@ -77,7 +77,7 @@ pass rather than adjusted by the size of the change.
 | ✅ | 4 | Profile | A page about yourself at /my-profile — photo, phone, location, time zone, next of kin, skills, qualifications. Pay and identity numbers deliberately not editable there |
 | ✅ | 5 | RBAC | 7 roles, one matrix, permission-as-claim, deny by default |
 | ✅ | 5 | Permission granularity | Reach adds the missing middle between firm-wide and own-record. Fixed a real leak: projects.view_member let every engineer find every project through search |
-| ✅ | 29 | Audit log | Append-only, same transaction, readable and filterable |
+| ✅ | 29 | Audit log | Append-only, same transaction, readable and filterable. **A live gap in it was found and closed after this row first said "done", which is the reason the row now says how.** `PersonalDetails`, `EmergencyContact` and `Terms` are mapped as EF complex properties, and the capture walked `entry.Properties`, which does not enumerate a complex type's members — so editing somebody's salary, their phone number or their next of kin produced **no entry at all**, because a modification whose changed set comes back empty is deliberately discarded as "nothing moved". `Employee.AuditExcludes` named two of the three, which made the gap read as intentional: it was intentional about the values and accidental about the act, and those are different decisions. Keeping a salary figure out of a table nothing prunes is right; leaving no record that somebody changed it is the opposite of what a trail is for. An excluded complex property now records that it changed and withholds the values, each of the three on its own evidence, and a new meta-test refuses a future complex property on an audited entity until somebody has said which of the two it gets |
 | ✅ | 30 | Event system | Domain events, transactional outbox, handlers, backoff, dead-lettering |
 | ✅ | 41 | Database | PostgreSQL, migrations applied on start, indexed |
 | ✅ | 44 | Error handling | 403/404/500, no internals leaked |

@@ -342,8 +342,49 @@ public class AppDbContext(
             values[name] = Stringify(value);
         }
 
+        foreach (var complex in entry.ComplexProperties)
+        {
+            var name = complex.Metadata.Name;
+
+            if (excluded.Contains(name))
+            {
+                /*
+                 * A snapshot rather than a change, so it says so. "Changed" would be wrong on
+                 * every employee ever created — nothing changed, a value was set — and a trail
+                 * whose wording is wrong in the commonest case is one people stop reading
+                 * carefully.
+                 */
+                values[name] = Withheld;
+                continue;
+            }
+
+            foreach (var member in complex.Properties)
+            {
+                var value = original ? member.OriginalValue : member.CurrentValue;
+                values[$"{name}.{member.Metadata.Name}"] = Stringify(value);
+            }
+        }
+
         return values;
     }
+
+    /// <summary>
+    /// What the trail says about a value it is not allowed to write down.
+    /// </summary>
+    /// <remarks>
+    /// The distinction this whole complex-property change exists for. Excluding a value from
+    /// the trail and recording nothing at all are different things, and only the first was
+    /// ever intended: the first says this changed and the new value is not kept here, and
+    /// the second says nothing happened.
+    ///
+    /// Before this, an employee's salary terms could be edited and the trail held no entry
+    /// whatsoever — not the figures, which is right, but not the act either. Somebody
+    /// changed the most disputed field in an ERP and there was no record that anybody had.
+    /// </remarks>
+    private const string Recorded = "(changed; value not kept in the trail)";
+
+    /// <summary>The same, for a snapshot of a row rather than a change to one.</summary>
+    private const string Withheld = "(set; value not kept in the trail)";
 
     private static (Dictionary<string, string?>? Before, Dictionary<string, string?>? After) ChangedValues(
         EntityEntry<IAuditable> entry,
@@ -373,6 +414,65 @@ public class AppDbContext(
 
             before[name] = from;
             after[name] = to;
+        }
+
+        /*
+         * Complex properties, which entry.Properties does not enumerate.
+         *
+         * This was the fault. PersonalDetails, EmergencyContact and Terms are mapped with
+         * ComplexProperty, so every loop in this class walked straight past them — and
+         * because a modification with an empty "after" is deliberately skipped as "nothing
+         * moved", editing somebody's salary, their phone number or their next of kin left no
+         * audit entry at all. Not a redacted one. None. The section 29 row claimed an audit
+         * log of every change for weeks while three of the most sensitive columns in the
+         * database were outside it, and Employee.AuditExcludes named two of them as
+         * deliberately excluded, which was true of the values by accident and of the act by
+         * mistake.
+         */
+        foreach (var complex in entry.ComplexProperties)
+        {
+            var name = complex.Metadata.Name;
+
+            if (excluded.Contains(name))
+            {
+                /*
+                 * Whether anything inside it moved is decided by comparing the members, the
+                 * same way the scalar loop above decides it — so both halves of this method
+                 * answer one question one way, and neither depends on what EF's modified flag
+                 * happens to mean for a complex member.
+                 *
+                 * EF 10 does mark them correctly: reassigning an equal value leaves
+                 * IsModified false, which was checked rather than assumed. Comparing anyway
+                 * costs a string per member on a save that touched the row, and buys not
+                 * having to check it again after an upgrade — on a field where a false entry
+                 * is worse than a missing one, because the trail is append-only and cannot be
+                 * corrected.
+                 */
+                if (complex.Properties.Any(member => !string.Equals(
+                    Stringify(member.OriginalValue),
+                    Stringify(member.CurrentValue),
+                    StringComparison.Ordinal)))
+                {
+                    before[name] = Recorded;
+                    after[name] = Recorded;
+                }
+
+                continue;
+            }
+
+            foreach (var member in complex.Properties)
+            {
+                var from = Stringify(member.OriginalValue);
+                var to = Stringify(member.CurrentValue);
+
+                if (string.Equals(from, to, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                before[$"{name}.{member.Metadata.Name}"] = from;
+                after[$"{name}.{member.Metadata.Name}"] = to;
+            }
         }
 
         return (before, after);

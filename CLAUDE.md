@@ -122,6 +122,17 @@ Each of these cost real time. They are written down so they cost it once.
 - **Page tests in one class share one database** through the class fixture, so
   "nothing has been recorded yet" is true only for whichever test runs first.
   Assert against a state no other test in the class produces.
+- **`EntityEntry.Properties` does not enumerate a complex type's members.** Three
+  of the most sensitive columns in this database — personal details, next of kin
+  and salary terms — are mapped with `ComplexProperty`, and the audit capture
+  walked `entry.Properties`, so editing any of them recorded **nothing at all**:
+  not a redacted entry, none, because a modification whose changed set is empty
+  is discarded as "nothing moved". Two of the three were in `AuditExcludes`,
+  which made the gap look deliberate to anybody who checked. Excluding a value
+  and recording nothing are different decisions, and only the first was ever
+  intended. Walk `entry.ComplexProperties` as well, and remember that a complex
+  property is replaced wholesale — `Details with { Phone = … }` — so "did it
+  change" is a comparison of the members and not a question about the row.
 
 ## What is verified before saying something works
 

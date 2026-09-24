@@ -376,7 +376,7 @@ public sealed class Employee : Entity, IAuditable
     /// itself, behind employees.pay.
     /// </remarks>
     public static IReadOnlySet<string> AuditExcludes { get; } =
-        new HashSet<string> { nameof(Details), nameof(Terms) };
+        new HashSet<string> { nameof(Details), nameof(Emergency), nameof(Terms) };
 
     private static string Require(string value, string parameter = "fullName") =>
         string.IsNullOrWhiteSpace(value)
