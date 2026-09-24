@@ -119,6 +119,15 @@ Each of these cost real time. They are written down so they cost it once.
   build and the whole suite stay green, and `compose up --build` goes on serving
   the previous image rather than stopping — so the browser shows yesterday's
   application and every conclusion drawn from it is wrong.
+- **Razor emits nothing between an @expression and the element after it.** A date
+  followed by a pill renders as "25 Aug 01:05Quiet a while". Element to element keeps
+  the whitespace; expression to element does not. Thirty-six places did this, and the
+  fix is a margin on chips inside a table cell, because CSS cannot see the text node
+  and so cannot tell a chip that follows a value from one that is alone.
+- **A wide table takes the page with it.** There is no width-based media query in
+  app.css; the layout is fluid and a five-column table is the thing that breaks it. A
+  table must carry its own `overflow-x`, or the whole document scrolls sideways at
+  phone width — heading, navigation and all.
 - **Page tests in one class share one database** through the class fixture, so
   "nothing has been recorded yet" is true only for whichever test runs first.
   Assert against a state no other test in the class produces.

@@ -90,6 +90,21 @@
 
     /* A pill's word, a shade lighter than body text so the ground reads as the pill. */
     --pill-ink: #374151;
+
+    /*
+     * The type scale, declared here with the colours rather than in a second :root
+     * block of its own. Two blocks for one selector is a cascade collision waiting for
+     * somebody to add a property to the wrong one — which is exactly what happened to
+     * .instructions, whose two rules disagreed about the measure for a week while the
+     * later one silently won.
+     */
+    --text-xs: 0.78rem;
+    --text-sm: 0.85rem;
+    --text-base: 0.92rem;
+    --text-md: 1.05rem;
+    --text-lg: 1.4rem;
+    --text-xl: 1.6rem;
+    --text-xxl: 2rem;
 }
 
 /*
@@ -200,15 +215,7 @@
  * because a scale that moved every label by a hair would be a restyling wearing a
  * refactor's clothes. Nothing moves by more than a tenth of a rem.
  */
-:root {
-    --text-xs: 0.78rem;
-    --text-sm: 0.85rem;
-    --text-base: 0.92rem;
-    --text-md: 1.05rem;
-    --text-lg: 1.4rem;
-    --text-xl: 1.6rem;
-    --text-xxl: 2rem;
-}
+
 
 /*
  * The system's own faces rather than a web font, deliberately.
@@ -253,9 +260,16 @@ h2 {
     font-weight: 600;
 }
 
-/* Running text is not measured in characters here because almost nothing on these screens
-   is running text — it is tables, forms and lists. The one place it matters is a page's
-   own explanation, which carries .instructions and is bounded there. */
+/*
+ * A page's own explanation of itself.
+ *
+ * Bounded in characters rather than in rems, because this is the one thing on these
+ * screens that is read as running text — everything else is tables, forms and lists — and
+ * a measure in characters stays right when the type scale moves.
+ *
+ * It deliberately does not preserve line breaks, and that is the whole reason this rule
+ * and the one further down are now two rules with two names. See .as-typed.
+ */
 .instructions {
     max-width: 62ch;
 }
@@ -545,8 +559,31 @@ h1:focus {
     color: var(--ink-quiet);
 }
 
+/*
+ * Every table in the application, and the one thing that stops a wide one taking the page
+ * with it.
+ *
+ * A five-column table needs about 640 pixels and a phone gives it 375, so the table pushed
+ * the document wider than the viewport and the whole page scrolled sideways — the heading,
+ * the navigation, the explanation, all of it, dragged off to the left while somebody tried
+ * to read a row. Three screens did this and one of them predates the others by weeks, so it
+ * was never one page's mistake; there is no width-based media query anywhere in this file
+ * and the layout is otherwise fluid, which is exactly the arrangement in which a table is
+ * the thing that breaks.
+ *
+ * display: block gives the table its own horizontal scroll, so the page keeps its width and
+ * the table takes the overflow. It reads as a loss of table semantics and is not: the rows
+ * and cells keep their own display types, so the browser builds an anonymous table box
+ * around them and the columns still line up. That was measured rather than assumed —
+ * header and first-row cell widths come back identical either way.
+ *
+ * Checked at 375 pixels and at desktop. width: 100% still fills the container when there is
+ * room, and overflow-x: auto shows nothing at all when the table fits.
+ */
 .grid {
     width: 100%;
+    display: block;
+    overflow-x: auto;
     border-collapse: collapse;
     font-size: var(--text-base);
 }
@@ -1312,11 +1349,49 @@ code.key {
     max-width: 30rem;
 }
 
-/* Payment details are typed in as free text and often as several lines, so the
-   line breaks somebody entered are the ones shown. */
-.instructions {
+/*
+ * Text somebody typed into a box, shown with the line breaks they typed.
+ *
+ * This used to be .instructions, and the two jobs were never separable: that class is on
+ * eleven paragraphs of prose written in Razor and on one block of payment details entered
+ * by a person. Razor keeps its source's line breaks, so pre-wrap rendered all eleven with
+ * the indentation of the .razor file they live in — an orphaned word on its own line, the
+ * next line starting four spaces in. Every explanatory paragraph in the application looked
+ * like that, on every screen, and nothing failed: the class existed, the rule applied, the
+ * page rendered. It was found by opening a page and reading it.
+ *
+ * Named for what it is rather than for where it is used, so the next person deciding
+ * whether to reach for it has to answer the right question: did a person type these line
+ * breaks?
+ */
+.as-typed {
     white-space: pre-wrap;
     max-width: 44rem;
+}
+
+/*
+ * A chip that follows a value in a table cell, and the space that was not there.
+ *
+ * Razor emits nothing at all between an @expression and the markup on the next line, so
+ * "25 Aug 01:05" followed by a pill rendered as "25 Aug 01:05Quiet a while" — and a date
+ * run into a word is the sort of thing a reader takes as a broken page rather than as a
+ * missing space. Thirty-six places in the application do this: a date and a state, a name
+ * and a qualifier, a count and a warning.
+ *
+ * Fixed here rather than in thirty-six files, because it is one fault with one cause and
+ * the next person writing a cell would make it again. It cannot be done with a sibling
+ * selector: the text before the chip is a text node, so the chip is still the cell's
+ * first ELEMENT child and :first-child cannot tell the two cases apart.
+ *
+ * So the margin is unconditional, and a chip alone in a cell is indented by the same
+ * third of a space as one that follows a value. That is the trade, and it is the right way
+ * round — a column of pills all starting in the same place looks deliberate, while a date
+ * glued to a word looks broken.
+ */
+.grid td > .pill,
+.grid td > .subtle,
+.grid td > code {
+    margin-left: 0.35rem;
 }
 
 /* Search results, grouped by what they are. The group heading counts rather
@@ -1474,8 +1549,6 @@ code.key {
      * drifted into using different greys for the same meaning. They read their pair from
      * --good-ground/--good-ink and the rest.
      */
-
-
 
 
 }
