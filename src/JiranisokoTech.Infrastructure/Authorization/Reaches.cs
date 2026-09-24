@@ -113,6 +113,28 @@ public sealed class Reaches(AppDbContext database)
     }
 
     /// <summary>
+    /// Whose absence somebody may see on the calendar.
+    /// </summary>
+    /// <remarks>
+    /// Section 33. Composed rather than copied: the department is already the unit of leave
+    /// authority — the teams row says "a department is where somebody sits, deciding who they
+    /// answer to and who signs off their leave" — so the department reach <i>is</i> the leave
+    /// reach by this codebase's own definition. Writing a second rule here would be a second
+    /// answer to one question, and the two would disagree the first time either changed.
+    ///
+    /// Without leave.view_all somebody reaches nobody, not even themselves. Their own leave is on
+    /// the calendar unconditionally and does not come through here — a reach is about other
+    /// people, and folding "yourself" into it would make every caller wonder whether it had.
+    /// </remarks>
+    public async Task<Reach> AbsenceAsync(
+        IReadOnlySet<string> permissions,
+        Guid? employeeId,
+        CancellationToken cancellationToken = default) =>
+        permissions.Contains(Permissions.LeaveViewAll)
+            ? await DepartmentsAsync(permissions, employeeId, cancellationToken)
+            : Reach.Nothing;
+
+    /// <summary>
     /// Whose goals and reviews somebody may open.
     /// </summary>
     /// <remarks>

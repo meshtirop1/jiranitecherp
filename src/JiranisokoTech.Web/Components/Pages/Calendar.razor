@@ -1,0 +1,188 @@
+@page "/calendar"
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Infrastructure.Time
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject CalendarQueries Queries
+@inject PeopleQueries People
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    What is coming up, assembled from the dates the firm already keeps.
+
+    Section 33. Nothing here is a new kind of record except an occasion — leave, holidays,
+    sprints, review cycles, contract and agreement expiries, goal dates, work due dates and
+    interviews are all read where they live. A calendar_entries projection would have to be kept
+    current on two axes, and the audience axis is the one that kills it: who may see a project's
+    due date changes when its lead changes, which has nothing to do with dates.
+
+    No permission on the page, deliberately, and for the reason the notice centre has none: what
+    it shows is decided by the twenty-odd permissions that already guard each source. A
+    permission here would be a second answer to a question twenty-odd permissions have already
+    answered.
+
+    An agenda rather than a month grid. There is no width-based media query in app.css, seven
+    columns at 375 pixels gives each cell about fifty, and a wide table taking the whole page
+    sideways is a trap this codebase has already fallen into three times.
+*@
+
+<PageTitle>Calendar — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Calendar</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+<form method="get" class="filters">
+    <label class="inline">
+        <span>From</span>
+        <input type="date" name="from" value="@From.ToString("yyyy-MM-dd")" />
+    </label>
+
+    <label class="inline">
+        <span>To</span>
+        <input type="date" name="to" value="@To.ToString("yyyy-MM-dd")" />
+    </label>
+
+    <button type="submit">Show</button>
+    <a class="filters__clear" href="/calendar">This month</a>
+</form>
+
+@*
+    A GET form, so every view of the calendar has an address somebody can send — the same
+    decision the board made, and the thing people actually want from a calendar and never get
+    from one whose state lives in a socket.
+*@
+
+@if (Entries.Count == 0)
+{
+    <p class="empty">
+        Nothing between those dates that you can see. The calendar shows what you already have
+        permission to read, so a quiet month may also mean a narrow one.
+    </p>
+}
+else
+{
+    @foreach (var day in Entries.GroupBy(one => one.On).OrderBy(one => one.Key))
+    {
+        <section class="standing">
+            <h2>
+                @day.Key.ToString("dddd, d MMMM")
+                @if (day.Key == Today)
+                {
+                    <span class="pill pill--done">today</span>
+                }
+            </h2>
+
+            <ul class="plain">
+                @foreach (var entry in day)
+                {
+                    <li>
+                        <span class="pill @PillFor(entry.Kind)">@Said(entry.Kind)</span>
+
+                        @if (entry.Href is { } href)
+                        {
+                            <a href="@href">@entry.Title</a>
+                        }
+                        else
+                        {
+                            @entry.Title
+                        }
+
+                        @if (entry.Detail is { } detail)
+                        {
+                            <span class="subtle">@detail</span>
+                        }
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+}
+
+<p class="subtle">
+    Somebody else's absence shows their name and nothing else — not the kind of leave, which is a
+    fact about a person's life, and not the reason. Whoever may see more opens the page behind
+    the link, which guards itself.
+</p>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "from")]
+    private DateOnly? FromQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "to")]
+    private DateOnly? ToQuery { get; set; }
+
+    private List<Dated> Entries { get; set; } = [];
+
+    private DateOnly Today => Clock.Today;
+
+    /// <summary>
+    /// The window, defaulting to the month ahead.
+    /// </summary>
+    /// <remarks>
+    /// From today rather than from the first of the month: a calendar opened on the twenty-eighth
+    /// to show three days that have already passed is a calendar answering a question nobody
+    /// asked.
+    /// </remarks>
+    private DateOnly From => FromQuery ?? Today;
+
+    private DateOnly To => ToQuery ?? From.AddDays(30);
+
+    private string Headline =>
+        Entries.Count switch
+        {
+            0 => $"Nothing between {From:d MMM} and {To:d MMM}.",
+            1 => $"One thing between {From:d MMM} and {To:d MMM}.",
+            var many => $"{many} things between {From:d MMM} and {To:d MMM}.",
+        };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        var held = user.FindAll(PermissionClaim.Type).Select(claim => claim.Value).ToHashSet();
+
+        Guid? me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        /*
+         * A window somebody typed backwards shows nothing rather than throwing. The dates come
+         * from a query string, so they are whatever was pasted into the address bar.
+         */
+        Entries = To < From
+            ? []
+            : await Queries.BetweenAsync(From, To, held, me);
+    }
+
+    private static string Said(DatedKind kind) => kind switch
+    {
+        DatedKind.Holiday => "holiday",
+        DatedKind.Occasion => "firm",
+        DatedKind.MyLeave => "you",
+        DatedKind.Absence => "away",
+        DatedKind.Sprint => "sprint",
+        DatedKind.ReviewCycle => "reviews",
+        DatedKind.ContractEnds => "contract",
+        DatedKind.AgreementEnds => "agreement",
+        DatedKind.WorkDue => "work",
+        DatedKind.GoalDue => "goal",
+        DatedKind.Interview => "interview",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(kind), kind, "Nothing has decided what this kind of entry is called."),
+    };
+
+    private static string PillFor(DatedKind kind) => kind switch
+    {
+        DatedKind.Holiday or DatedKind.Occasion => "pill--done",
+        DatedKind.MyLeave or DatedKind.Absence => "pill--quiet",
+        DatedKind.ContractEnds or DatedKind.AgreementEnds => "pill--danger",
+        _ => "pill--wait",
+    };
+}

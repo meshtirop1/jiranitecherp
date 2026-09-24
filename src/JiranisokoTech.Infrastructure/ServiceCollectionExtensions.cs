@@ -241,6 +241,12 @@ public static class ServiceCollectionExtensions
         services.Configure<Caching.CacheOptions>(_ => { });
 
         services.AddScoped<RecruitmentQueries>();
+
+        services.AddScoped<Time.CalendarQueries>();
+
+        services.AddScoped<Application.Time.IOccasionRepository, Time.OccasionRepository>();
+
+        services.AddScoped<Application.Time.OccasionService>();
         services.AddScoped<ICvStore, FileCvStore>();
 
         /*

@@ -423,3 +423,31 @@ public sealed class AgreementConfiguration : IEntityTypeConfiguration<Agreement>
             .OnDelete(DeleteBehavior.SetNull);
     }
 }
+
+public sealed class OccasionConfiguration : IEntityTypeConfiguration<Occasion>
+{
+    public void Configure(EntityTypeBuilder<Occasion> builder)
+    {
+        builder.ToTable("occasions");
+
+        builder.HasKey(one => one.Id);
+
+        builder.Property(one => one.Name).HasMaxLength(200).IsRequired();
+        builder.Property(one => one.Note).HasMaxLength(1_000);
+
+        builder.Ignore(one => one.Ends);
+
+        /*
+         * The calendar's own query: what falls in a window. Indexed on the start because that is
+         * what every read orders by; a range spanning the window is caught by comparing the end
+         * separately rather than by a second index nothing else would use.
+         */
+        builder.HasIndex(one => one.On);
+
+        /*
+         * No unique index on the date, unlike a holiday's. Two things can genuinely happen on one
+         * day — an all-hands in the morning and a client visit in the afternoon — and forbidding
+         * that would be a rule about a calendar nobody asked for.
+         */
+    }
+}

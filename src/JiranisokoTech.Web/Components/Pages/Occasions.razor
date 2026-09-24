@@ -1,0 +1,249 @@
+@page "/settings/occasions"
+@rendermode InteractiveServer
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Time
+@using JiranisokoTech.Domain.Time
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.SettingsManage)]
+@inject OccasionService Service
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    The firm's own dates: an all-hands, an office closure, a client visit.
+
+    Section 33's only new storage, and it exists because the one question every calendar is asked
+    first has nowhere else to go. A holiday would be the wrong home in a way nothing would warn
+    about — a holiday is a non-working day, so filing the all-hands as one would silently give
+    everybody a day back on every leave request spanning it.
+
+    Behind settings.manage rather than its own permission: this is two or three people declaring
+    dates for the whole firm, which is what that permission already means.
+*@
+
+<PageTitle>Occasions — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/calendar">Calendar</a></nav>
+
+<div class="page-head">
+    <h1>Occasions</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+<p class="instructions">
+    Things the firm plans around that belong to nothing else. Anything owned by something else —
+    leave, a sprint, a contract running out — is recorded where it lives and appears on the
+    calendar from there.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Done is not null)
+{
+    <p class="done" role="status">@Done</p>
+}
+
+<section class="standing">
+    <h2>@(Editing is null ? "Put one on the calendar" : "Change it")</h2>
+
+    <div class="fields">
+        <label>
+            <span>What</span>
+            <input @bind="Name" placeholder="All-hands" />
+        </label>
+
+        <label>
+            <span>On</span>
+            <input type="date" @bind="On" />
+        </label>
+
+        <label>
+            <span>Until</span>
+            <input type="date" @bind="Until" />
+            <span class="subtle">Leave it empty for a single day.</span>
+        </label>
+    </div>
+
+    <label class="stack">
+        <span>Note</span>
+        <textarea rows="2" @bind="Note"></textarea>
+    </label>
+
+    <div class="row-actions">
+        @if (Editing is null)
+        {
+            <button type="button" @onclick="Plan">Add it</button>
+        }
+        else
+        {
+            <button type="button" @onclick="Save">Save it</button>
+            <button type="button" class="button--quiet" @onclick="StopEditing">Leave it</button>
+        }
+    </div>
+</section>
+
+<section class="standing">
+    <h2>Coming up</h2>
+
+    @if (Rows.Count == 0)
+    {
+        <p class="empty">Nothing on the calendar.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">The firm's own dates</caption>
+            <thead>
+                <tr>
+                    <th scope="col">What</th>
+                    <th scope="col">When</th>
+                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var one in Rows)
+                {
+                    <tr>
+                        <td>
+                            @one.Name
+                            @if (one.Note is { } note)
+                            {
+                                <span class="subtle">@note</span>
+                            }
+                        </td>
+                        <td>
+                            @one.On.ToString("d MMM yyyy")
+                            @if (one.Until is { } ends && ends != one.On)
+                            {
+                                <span class="subtle">to @ends.ToString("d MMM yyyy")</span>
+                            }
+                        </td>
+                        <td class="row-actions">
+                            <button type="button" class="button--quiet"
+                                    @onclick="() => StartEditing(one)">
+                                Edit
+                            </button>
+                            <button type="button" class="danger"
+                                    @onclick="() => Withdraw(one.Id)">
+                                Take it off
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <p class="subtle">
+            Taking one off removes it rather than leaving a cancelled row on everybody's
+            calendar. A meeting that never happened is a plan that changed, not history — and the
+            audit trail keeps the record that it was there.
+        </p>
+    }
+</section>
+
+@code {
+    private List<Occasion> Rows { get; set; } = [];
+
+    private Guid? Editing { get; set; }
+
+    private string Name { get; set; } = string.Empty;
+
+    private DateTime On { get; set; }
+
+    private DateTime? Until { get; set; }
+
+    private string Note { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private string Headline =>
+        Rows.Count switch
+        {
+            0 => "Nothing on the calendar.",
+            1 => "One coming up.",
+            var many => $"{many} coming up.",
+        };
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (On == default)
+        {
+            On = Clock.Today.ToDateTime(TimeOnly.MinValue);
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => Rows = await Service.FromAsync(Clock.Today);
+
+    private void StartEditing(Occasion one)
+    {
+        Editing = one.Id;
+        Name = one.Name;
+        On = one.On.ToDateTime(TimeOnly.MinValue);
+        Until = one.Until?.ToDateTime(TimeOnly.MinValue);
+        Note = one.Note ?? string.Empty;
+    }
+
+    private void StopEditing()
+    {
+        Editing = null;
+        Name = string.Empty;
+        On = Clock.Today.ToDateTime(TimeOnly.MinValue);
+        Until = null;
+        Note = string.Empty;
+    }
+
+    private Task Plan() => Act(
+        async () =>
+        {
+            await Service.PlanAsync(
+                DateOnly.FromDateTime(On),
+                Name,
+                Until is { } ends ? DateOnly.FromDateTime(ends) : null,
+                string.IsNullOrWhiteSpace(Note) ? null : Note);
+
+            StopEditing();
+        },
+        "On the calendar.");
+
+    private Task Save() => Act(
+        async () =>
+        {
+            await Service.DescribeAsync(
+                Editing!.Value,
+                Name,
+                DateOnly.FromDateTime(On),
+                Until is { } ends ? DateOnly.FromDateTime(ends) : null,
+                string.IsNullOrWhiteSpace(Note) ? null : Note);
+
+            StopEditing();
+        },
+        "Saved.");
+
+    private Task Withdraw(Guid id) => Act(
+        () => Service.WithdrawAsync(id), "Taken off the calendar.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+}

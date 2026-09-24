@@ -255,6 +255,15 @@ public class AppDbContext(
     /// </summary>
     public DbSet<Holiday> Holidays => Set<Holiday>();
 
+    /// <summary>
+    /// What the firm has planned that belongs to nothing else.
+    /// </summary>
+    /// <remarks>
+    /// The only storage section 33 adds. Everything else the calendar shows is already recorded
+    /// somewhere, and is read where it lives rather than copied into a projection.
+    /// </remarks>
+    public DbSet<Domain.Time.Occasion> Occasions => Set<Domain.Time.Occasion>();
+
     public DbSet<Interview> Interviews => Set<Interview>();
 
     public DbSet<JobRequisition> Requisitions => Set<JobRequisition>();
