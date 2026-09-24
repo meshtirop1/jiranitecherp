@@ -92,6 +92,17 @@ public class AppDbContext(
 
     public DbSet<Domain.Platform.Resource> Resources => Set<Domain.Platform.Resource>();
 
+    /// <summary>
+    /// What the firm can turn on and off without deploying.
+    /// </summary>
+    /// <remarks>
+    /// Section 68, and the one table here an application outside this system reads: the flags
+    /// are served over the public API. The change history beside them is what an incident's
+    /// "what changed just before" was missing — a flag is quick precisely because it leaves no
+    /// trace anywhere else.
+    /// </remarks>
+    public DbSet<Domain.Platform.Flag> Flags => Set<Domain.Platform.Flag>();
+
     public DbSet<ApprovalRequest> Approvals => Set<ApprovalRequest>();
 
     public DbSet<Client> Clients => Set<Client>();

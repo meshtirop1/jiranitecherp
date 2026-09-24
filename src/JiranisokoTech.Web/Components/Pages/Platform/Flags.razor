@@ -1,0 +1,397 @@
+@page "/platform/flags"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Platform
+@using JiranisokoTech.Domain.Engineering
+@using JiranisokoTech.Domain.Platform
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.PlatformView)]
+@inject FlagService Service
+@inject PeopleQueries People
+
+@*
+    What the firm can turn on and off without deploying.
+
+    Section 68. Interactive, and this is the page where it matters most: the reason a flag exists
+    is that it is faster than a deployment, and a page that took a round trip per switch would be
+    a page somebody skips in favour of a database client at two in the morning.
+
+    The grid is flags down, environments across, because that is the shape of the question. "Is
+    this on in production" and "what is on in staging that is not on in production" are both read
+    off it directly, and neither is answerable from a list of flags with a single state.
+*@
+
+<PageTitle>Feature flags — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/platform">Platform</a></nav>
+
+<div class="page-head">
+    <h1>Feature flags</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+<p class="instructions">
+    <strong>Turning something off here does not turn it off in a running application until that
+    application next asks.</strong> The flags are served over the API at
+    <code>/api/v1/flags</code> and whatever reads them decides how often to look — there is no
+    SDK here, no streaming and no push. During an incident that difference is the one worth
+    knowing, which is why it is at the top of the page rather than in a footnote.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Done is not null)
+{
+    <p class="done" role="status">@Done</p>
+}
+
+<AuthorizeView Policy="@Setting" Context="maySet">
+    <section class="standing">
+        <h2>Add one</h2>
+
+        <div class="fields">
+            <label>
+                <span>Key</span>
+                <input @bind="Key" placeholder="invoices.usd" />
+                <span class="subtle">
+                    What the application asks for. Lower-cased and spaces turned to dots, because
+                    this string is typed here once and written into source code somewhere else.
+                </span>
+            </label>
+
+            <label>
+                <span>What it does</span>
+                <input @bind="What" placeholder="Lets invoices be raised in US dollars" />
+            </label>
+        </div>
+
+        <div class="row-actions">
+            <button type="button" @onclick="Add">Add it, off everywhere</button>
+        </div>
+    </section>
+</AuthorizeView>
+
+<section class="standing">
+    <h2>The flags</h2>
+
+    @if (Switches.Count == 0)
+    {
+        <p class="empty">Nothing is recorded yet.</p>
+    }
+    else
+    {
+        <AuthorizeView Policy="@Setting" Context="mayMove">
+            <div class="fields">
+                <label>
+                    <span>Why you are moving it</span>
+                    <input @bind="Why" placeholder="the invoice PDF comes out blank in USD" />
+                    <span class="subtle">
+                        Required, and kept. A flag moved at two in the morning with no note is
+                        the most confusing thing a review can meet: the timeline says the harm
+                        stopped and nothing says why.
+                    </span>
+                </label>
+            </div>
+        </AuthorizeView>
+
+        <table class="grid">
+            <caption class="visually-hidden">Feature flags by environment</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Key</th>
+                    @foreach (var where in Environments)
+                    {
+                        <th scope="col">@where</th>
+                    }
+                    <th scope="col">Last moved</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var flag in Switches)
+                {
+                    var it = flag;
+
+                    <tr>
+                        <td>
+                            <code>@it.Key</code>
+                            @if (!it.IsLive)
+                            {
+                                <span class="pill pill--quiet">retired</span>
+                            }
+
+                            <AuthorizeView Policy="@Setting" Context="mayDescribe">
+                                <Authorized>
+                                    @*
+                                        Bound per row, which is safe here and would not be under
+                                        static rendering — a form rendered once per row cannot
+                                        bind a model, and that has silently broken six controls
+                                        in this application. An interactive page needs no form
+                                        and no name at all.
+                                    *@
+                                    <input value="@Described(it)"
+                                           @onchange="e => Describing[it.Id] = e.Value?.ToString() ?? string.Empty" />
+
+                                    <button type="button" class="button--quiet"
+                                            @onclick="() => Describe(it.Id)">
+                                        Save
+                                    </button>
+                                </Authorized>
+                                <NotAuthorized>
+                                    <span class="subtle">@it.Description</span>
+                                </NotAuthorized>
+                            </AuthorizeView>
+                        </td>
+
+                        @foreach (var where in Environments)
+                        {
+                            var environment = where;
+                            var on = it.IsOn(environment);
+
+                            <td>
+                                <AuthorizeView Policy="@Setting" Context="mayFlip">
+                                    <Authorized>
+                                        @*
+                                            A per-row control with no form of its own, so the
+                                            handler closes over the flag and the environment —
+                                            the trap that silently broke six forms here.
+                                        *@
+                                        <button type="button"
+                                                class="button @(on ? "" : "button--quiet")"
+                                                @onclick="() => Move(it.Id, environment, !on)">
+                                            @(on ? "On" : "Off")
+                                        </button>
+                                    </Authorized>
+                                    <NotAuthorized>
+                                        <span class="pill @(on ? "pill--done" : "pill--quiet")">
+                                            @(on ? "On" : "Off")
+                                        </span>
+                                    </NotAuthorized>
+                                </AuthorizeView>
+                            </td>
+                        }
+
+                        <td>@Moved(it)</td>
+
+                        <td>
+                            <AuthorizeView Policy="@Setting" Context="mayRetire">
+                                @*
+                                    Retired rather than deleted, so an application still asking
+                                    for it gets a definite answer — nothing, which means off —
+                                    rather than a missing key. Deleting a flag something still
+                                    reads is how a feature comes back on in production without
+                                    anybody deploying anything.
+                                *@
+                                @if (it.IsLive)
+                                {
+                                    <button type="button" class="button--quiet"
+                                            @onclick="() => Retire(it.Id)">
+                                        No longer used
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button type="button" class="button--quiet"
+                                            @onclick="() => Revive(it.Id)">
+                                        In use again
+                                    </button>
+                                }
+                            </AuthorizeView>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@if (Recent.Count > 0)
+{
+    <section class="standing">
+        <h2>Lately</h2>
+
+        @*
+            The history is the part an incident wants. A flag is quick precisely because it
+            leaves no trace anywhere else, so it is the change least likely to be mentioned and
+            most likely to be the cause — which is why every incident's "what changed just
+            before" now reads this.
+        *@
+        @foreach (var change in Recent)
+        {
+            <article class="entry">
+                <div class="entry__head">
+                    <strong>@change.At.ToLocalTime().ToString("d MMM HH:mm")</strong>
+                    <code>@change.Key</code>
+                    <span class="pill @(change.On ? "pill--done" : "pill--quiet")">
+                        @(change.On ? "on" : "off") in @change.Environment
+                    </span>
+                    @if (change.ById is { } who)
+                    {
+                        <span class="subtle">@Who(who)</span>
+                    }
+                </div>
+
+                <p class="entry__subject">@change.Why</p>
+            </article>
+        }
+    </section>
+}
+
+<p class="instructions">
+    <strong>On or off, per environment. No percentages and no targeting.</strong> A flag that is
+    on for eleven per cent of people is an experiment, and an experiment needs a measurement to
+    mean anything — building the half that splits traffic without the half that reads the result
+    is how a firm ends up with forty flags nobody can turn off.
+</p>
+
+@code {
+    private const string Setting = PermissionClaim.PolicyPrefix + Permissions.FlagsSet;
+
+    /// <summary>How far back the history at the foot of the page looks.</summary>
+    private const int Days = 30;
+
+    private static readonly DeploymentEnvironment[] Environments =
+    [
+        DeploymentEnvironment.Development,
+        DeploymentEnvironment.Staging,
+        DeploymentEnvironment.Production,
+    ];
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private List<Flag> Switches { get; set; } = [];
+
+    private List<FlagMovement> Recent { get; set; } = [];
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string Key { get; set; } = string.Empty;
+
+    private string What { get; set; } = string.Empty;
+
+    private string Why { get; set; } = string.Empty;
+
+    /// <summary>What has been typed into each row's description box, before it is saved.</summary>
+    private Dictionary<Guid, string> Describing { get; } = [];
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private string Headline
+    {
+        get
+        {
+            if (Switches.Count == 0)
+            {
+                return "Nothing is recorded yet.";
+            }
+
+            var live = Switches.Count(one => one.IsLive);
+            var on = Switches.Count(one => one.IsLive && one.IsOn(DeploymentEnvironment.Production));
+
+            return $"{live} in use, {on} on in production.";
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Switches = await Service.AllAsync();
+        Names = await People.NamesAsync();
+
+        Recent = await Service.MovedBetweenAsync(
+            DateTimeOffset.UtcNow.AddDays(-Days), DateTimeOffset.UtcNow);
+
+        Describing.Clear();
+    }
+
+    private string Described(Flag flag) =>
+        Describing.TryGetValue(flag.Id, out var typed) ? typed : flag.Description;
+
+    private Task Describe(Guid id) => Act(
+        () => Service.DescribeAsync(id, Described(Switches.First(one => one.Id == id))),
+        "Saved.");
+
+    private Task Retire(Guid id) => Act(
+        () => Service.RetireAsync(id),
+        "Retired. Anything still asking for it gets nothing back, which means off.");
+
+    private Task Revive(Guid id) => Act(
+        () => Service.InUseAgainAsync(id), "Back in use, in whatever state it was left.");
+
+    private Task Add() => Act(
+        async () =>
+        {
+            await Service.AddAsync(Key, What);
+            Key = string.Empty;
+            What = string.Empty;
+        },
+        "Added, and off everywhere until somebody says otherwise.");
+
+    private async Task Move(Guid id, DeploymentEnvironment environment, bool on)
+    {
+        if (string.IsNullOrWhiteSpace(Why))
+        {
+            Refusal =
+                "Say why first. A flag that moved with no note is the thing a review cannot "
+                + "make sense of afterwards.";
+
+            return;
+        }
+
+        var user = (await AuthenticationState).User;
+
+        Guid? me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        await Act(
+            () => Service.SetAsync(id, environment, on, Why, me),
+            $"{(on ? "On" : "Off")} in {environment}. Whatever reads it will see that when it "
+            + "next asks.");
+    }
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    /// <summary>
+    /// When this flag last moved, from the window the page already loaded.
+    /// </summary>
+    /// <remarks>
+    /// Read out of the recent changes rather than off the flag, because the list does not load
+    /// each flag's history — forty flags would drag four hundred changes into a page that shows
+    /// one date each. The honest consequence is that anything older than the window says so
+    /// rather than saying "never", which would be a different and wrong claim.
+    /// </remarks>
+    private string Moved(Flag flag) =>
+        Recent.FirstOrDefault(one => one.FlagId == flag.Id) is { } last
+            ? last.At.ToLocalTime().ToString("d MMM yyyy")
+            : $"not in {Days} days";
+
+    private string Who(Guid id) =>
+        Names.GetValueOrDefault(id) ?? "somebody no longer on the staff list";
+}

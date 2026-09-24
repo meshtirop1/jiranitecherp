@@ -167,9 +167,17 @@ else
     /// The read permissions, and only those.
     /// </summary>
     /// <remarks>
-    /// The API is read-only, so offering manage or approve permissions here
-    /// would be offering something no endpoint honours — a key that looks more
-    /// capable than it is, which is the worst kind to hand somebody.
+    /// The API is read-only, so offering manage or approve permissions here would be offering
+    /// something no endpoint honours — a key that looks more capable than it is, which is the
+    /// worst kind to hand somebody.
+    ///
+    /// <b>It has to hold every permission the API asks for.</b> This list is maintained by hand
+    /// beside a set of endpoints that is maintained somewhere else, and the failure when they
+    /// drift is silent in both directions: a permission here that no endpoint wants is a
+    /// checkbox that grants nothing, and an endpoint asking for one that is missing here is a
+    /// door no key can ever open. Section 68's flags endpoint was exactly that for about an
+    /// hour, and nothing failed — <c>EnforcementTests</c> was satisfied because the permission
+    /// is checked on a screen. <c>ApiScopeTests</c> now fails the build for it.
     /// </remarks>
     private static readonly string[] Offered =
     [
@@ -177,6 +185,7 @@ else
         Permissions.ProjectsViewAll,
         Permissions.InvoicesView,
         Permissions.PostingsManage,
+        Permissions.PlatformView,
     ];
 
     protected override async Task OnInitializedAsync() => await LoadAsync();

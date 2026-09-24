@@ -13,6 +13,7 @@
 @inject IIncidentRepository Incidents
 @inject IncidentQueries Queries
 @inject EstateService Estate
+@inject FlagService Flags
 @inject PeopleQueries People
 @inject JiranisokoTech.Application.Abstractions.IClock Clock
 
@@ -199,14 +200,14 @@ else
             not, and a panel headed "caused by" would have somebody stop looking at the moment
             they should start.
         *@
-        @if (Suspects.Count == 0)
+        @if (Suspects.Count == 0 && Moved.Count == 0)
         {
             <p class="empty">
-                Nothing was deployed or released in the @Window hours before it started — or
-                nothing that any host told this system about.
+                Nothing was deployed, released or switched in the @Window hours before it
+                started — or nothing that any host told this system about.
             </p>
         }
-        else
+        else if (Suspects.Count > 0)
         {
             <table class="grid">
                 <caption class="visually-hidden">Changes before the incident began</caption>
@@ -241,6 +242,46 @@ else
             <p class="subtle">
                 Suspects, not causes. Most incidents follow a change and plenty do not.
             </p>
+        }
+
+        @*
+            Flags are here for the reason they are worth recording at all: a flag is quick
+            precisely because it leaves no trace anywhere else, so it is the change least likely
+            to be mentioned in the room and most likely to have caused this.
+        *@
+        @if (Moved.Count > 0)
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Feature flags moved before it began</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Flag</th>
+                        <th scope="col">Became</th>
+                        <th scope="col">Why</th>
+                        <th scope="col">When</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var change in Moved)
+                    {
+                        <tr>
+                            <td><code>@change.Key</code></td>
+                            <td>
+                                <span class="pill @(change.On ? "pill--done" : "pill--quiet")">
+                                    @(change.On ? "on" : "off") in @change.Environment
+                                </span>
+                            </td>
+                            <td>@change.Why</td>
+                            <td>
+                                @change.At.ToLocalTime().ToString("d MMM HH:mm")
+                                <span class="subtle">
+                                    @Length(Incident.StartedAt - change.At) before
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
         }
     </section>
 
@@ -474,6 +515,8 @@ else
 
     private List<Suspect> Suspects { get; set; } = [];
 
+    private List<FlagMovement> Moved { get; set; } = [];
+
     private Dictionary<Guid, string> Names { get; set; } = [];
 
     private string Line { get; set; } = string.Empty;
@@ -544,6 +587,9 @@ else
 
         Suspects = await Queries.SuspectsAsync(
             Incident.StartedAt, TimeSpan.FromHours(Window));
+
+        Moved = await Flags.MovedBetweenAsync(
+            Incident.StartedAt.AddHours(-Window), Incident.StartedAt);
 
         Title = Incident.Title;
         Affects = Incident.Affects ?? string.Empty;

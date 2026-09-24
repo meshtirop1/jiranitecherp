@@ -316,6 +316,17 @@ public static class Permissions
     /// </remarks>
     public const string PlatformManage = "platform.manage";
 
+    /// <summary>
+    /// Turn a feature flag on or off.
+    /// </summary>
+    /// <remarks>
+    /// Its own permission rather than platform.manage, and held wider, because turning a flag
+    /// off is the fastest mitigation there is and the person doing it at two in the morning is
+    /// whoever is awake. A model where the engineer watching the graphs has to find a head of
+    /// department first is a model that adds twenty minutes to an outage.
+    /// </remarks>
+    public const string FlagsSet = "flags.set";
+
     // --- what the firm owns -------------------------------------------------
 
     /// <summary>See the asset register: what the firm has and who is holding it.</summary>
@@ -408,7 +419,7 @@ public static class Permissions
 
         AssetsView, AssetsManage,
 
-        PlatformView, PlatformManage,
+        PlatformView, PlatformManage, FlagsSet,
 
         ApprovalsDecide, ReportsView,
     ];
@@ -538,6 +549,7 @@ public static class Roles
                 Permissions.IncidentsRun,
 
                 Permissions.PlatformView, Permissions.PlatformManage,
+                Permissions.FlagsSet,
 
                 // A head signs for their team's equipment, and is the person
                 // asked where a laptop went.
@@ -581,7 +593,7 @@ public static class Roles
                 Permissions.IncidentsView, Permissions.IncidentsRaise,
                 Permissions.IncidentsRun,
 
-                Permissions.PlatformView,
+                Permissions.PlatformView, Permissions.FlagsSet,
 
                 // Everybody who works here logs hours, asks for leave and
                 // claims money back. These are not privileges; a role without
@@ -635,7 +647,7 @@ public static class Roles
                 Permissions.IncidentsView, Permissions.IncidentsRaise,
                 Permissions.IncidentsRun,
 
-                Permissions.PlatformView,
+                Permissions.PlatformView, Permissions.FlagsSet,
 
                 // Everybody who works here logs hours, asks for leave and
                 // claims money back. These are not privileges; a role without

@@ -1,4 +1,6 @@
 using JiranisokoTech.Application.Authorization;
+using JiranisokoTech.Application.Platform;
+using JiranisokoTech.Domain.Engineering;
 using JiranisokoTech.Domain.Clients;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Infrastructure.Business;
@@ -166,6 +168,42 @@ public static class PublicApi
         })
         .RequirePermission(Permissions.PostingsManage)
         .WithSummary("Jobs currently advertised.");
+
+        /*
+         * Section 68, and the one endpoint here that an application calls on a schedule rather
+         * than a person calling from a script. It is what makes feature flags a feature rather
+         * than a register: a list of flags nothing can read is a spreadsheet with a schema.
+         *
+         * A flat map of key to boolean, deliberately. Whatever asks for this wants to look a key
+         * up and get a yes or a no; giving it descriptions, histories and identifiers as well
+         * would make the common case parse a structure to reach one field, and would put the
+         * firm's internal notes into an application's memory.
+         *
+         * Unpaged, which is the other departure from everything above it. A page of flags is
+         * useless — an application needs all of them or none, because a partial answer means it
+         * cannot tell "off" from "not in this page". Forty flags is a small object; four
+         * thousand would be a different problem and the firm would know about it long before.
+         */
+        api.MapGet("/flags", async (
+            FlagService flags,
+            [FromQuery] string? environment,
+            CancellationToken cancellationToken) =>
+        {
+            var where = Deployment.Classify(environment ?? "production");
+
+            return Results.Ok(new
+            {
+                environment = where.ToString().ToLowerInvariant(),
+                flags = await flags.ForAsync(where, cancellationToken),
+            });
+        })
+        .RequirePermission(Permissions.PlatformView)
+        .WithSummary("Which feature flags are on, for one environment.")
+        .WithDescription(
+            "Ask for this periodically and cache the answer. Turning a flag off in the ERP "
+            + "does not turn it off in a running application until the application next asks, "
+            + "which is the honest consequence of there being no SDK here. An environment the "
+            + "firm does not use classifies as other, which is off for everything.");
 
         return endpoints;
     }

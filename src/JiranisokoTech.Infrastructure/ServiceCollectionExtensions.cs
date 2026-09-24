@@ -186,6 +186,13 @@ public static class ServiceCollectionExtensions
          */
         services.AddScoped<Application.Platform.IEstateRepository, Platform.EstateRepository>();
         services.AddScoped<Application.Platform.EstateService>();
+
+        /*
+         * Feature flags. Section 68, and the only table in this application that something
+         * outside it reads on a schedule — see the public API.
+         */
+        services.AddScoped<Application.Platform.IFlagRepository, Platform.FlagRepository>();
+        services.AddScoped<Application.Platform.FlagService>();
         services.AddScoped<RecruitmentQueries>();
         services.AddScoped<ICvStore, FileCvStore>();
 
