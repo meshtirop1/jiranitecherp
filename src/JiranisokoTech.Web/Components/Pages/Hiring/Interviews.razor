@@ -161,68 +161,17 @@ else
                 </ul>
             }
 
-            @if (interview.Status == InterviewStatus.Scheduled)
-            {
-                <AuthorizeView Policy="@SchedulePolicy" Context="mayHold">
-                    <div class="actions">
-                        @*
-                            Marking it held is what opens it for scoring: the
-                            domain refuses a scorecard before then, because an
-                            opinion filed before the conversation is one formed
-                            from a CV.
-                        *@
-                        <form method="post" @formname="@($"held-{interview.Id}")"
-                              @onsubmit="() => Held(interview.Id)">
-                            <AntiforgeryToken />
-                            <button type="submit">It happened</button>
-                        </form>
-
-                        <EditForm Model="Cancelling" method="post"
-                                  FormName="@($"cancel-{interview.Id}")"
-                                  OnValidSubmit="() => Cancel(interview.Id)" class="inline">
-                            <DataAnnotationsValidator />
-                            <InputText @bind-Value="Cancelling.Reason" placeholder="Why not" />
-                            <button type="submit" class="danger">Cancel it</button>
-                            <ValidationMessage For="() => Cancelling.Reason" />
-                        </EditForm>
-                    </div>
-                </AuthorizeView>
-            }
-            else if (interview.Status == InterviewStatus.Held && MayScore(interview))
-            {
-                <AuthorizeView Policy="@ScorePolicy" Context="mayScore">
-                    <EditForm Model="Scoring" method="post"
-                              FormName="@($"score-{interview.Id}")"
-                              OnValidSubmit="() => Score(interview.Id)" class="panel stack">
-                        <DataAnnotationsValidator />
-
-                        <h3>What did you think?</h3>
-
-                        <label>
-                            <span>Your recommendation</span>
-                            <InputSelect @bind-Value="Scoring.Recommendation">
-                                @foreach (var option in Enum.GetValues<Recommendation>())
-                                {
-                                    <option value="@option">@Words.For(option)</option>
-                                }
-                            </InputSelect>
-                        </label>
-
-                        <label>
-                            <span>Why</span>
-                            <InputTextArea @bind-Value="Scoring.Notes" rows="3"
-                                           placeholder="What you saw. A recommendation on its own tells nobody anything." />
-                            <ValidationMessage For="() => Scoring.Notes" />
-                        </label>
-
-                        <button type="submit">Submit it</button>
-                    </EditForm>
-                </AuthorizeView>
-            }
-            else if (interview.Status == InterviewStatus.Held && interview.PanelIds.Contains(Me ?? Guid.Empty))
-            {
-                <p class="subtle">You have scored this one.</p>
-            }
+            @*
+                An interactive island in a page that stays static, because the scheduling form
+                above reads its panel checkboxes out of Request.Form — which only a request has.
+                Everything in here could not work statically at all; see the component.
+            *@
+            <InterviewActions Id="@interview.Id"
+                              Status="@interview.Status"
+                              CandidateName="@interview.CandidateName"
+                              Me="@Me"
+                              MayScore="@MayScore(interview)"
+                              OnThePanel="@interview.PanelIds.Contains(Me ?? Guid.Empty)" />
         </section>
     }
 }
@@ -248,23 +197,7 @@ else
         set => _input = value ?? new ScheduleInput();
     }
 
-    private ScoreInput _scoring = new();
 
-    [SupplyParameterFromForm(FormName = "score")]
-    private ScoreInput Scoring
-    {
-        get => _scoring;
-        set => _scoring = value ?? new ScoreInput();
-    }
-
-    private CancelInput _cancelling = new();
-
-    [SupplyParameterFromForm(FormName = "cancel")]
-    private CancelInput Cancelling
-    {
-        get => _cancelling;
-        set => _cancelling = value ?? new CancelInput();
-    }
 
     private Guid? Me { get; set; }
 
@@ -335,12 +268,8 @@ else
             Input.Where);
     });
 
-    private Task Held(Guid id) => TryAsync(() => Service.HeldAsync(id));
 
-    private Task Cancel(Guid id) => TryAsync(() => Service.CancelAsync(id, Cancelling.Reason));
 
-    private Task Score(Guid id) => TryAsync(() => Service.ScoreAsync(
-        id, Me!.Value, Scoring.Recommendation, Scoring.Notes));
 
     private async Task TryAsync(Func<Task> act)
     {
@@ -379,19 +308,5 @@ else
         public string? Where { get; set; }
     }
 
-    private sealed class ScoreInput
-    {
-        public Recommendation Recommendation { get; set; } = Recommendation.Yes;
 
-        [Required(ErrorMessage = "Say what you saw. A recommendation on its own tells nobody anything.")]
-        [StringLength(4000)]
-        public string Notes { get; set; } = string.Empty;
-    }
-
-    private sealed class CancelInput
-    {
-        [Required(ErrorMessage = "Say why.")]
-        [StringLength(500)]
-        public string Reason { get; set; } = string.Empty;
-    }
 }

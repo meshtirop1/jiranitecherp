@@ -1,0 +1,231 @@
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Domain.Recruitment
+@using Microsoft.AspNetCore.Authorization
+@rendermode InteractiveServer
+@inject InterviewService Service
+
+@*
+    What can be done to one interview, and the reason it is a component.
+
+    The scorecard on this page could not be filed at all. Its form was named
+    score-{interview.Id}, because a form rendered once per interview needs a name of its own,
+    while the model behind it was declared [SupplyParameterFromForm(FormName = "score")] — one
+    exact name, with nowhere to put an id. So the notes an interviewer typed never reached the
+    model, Notes is [Required], validation failed, and the page came back telling them they had
+    written nothing underneath the paragraph they had just written. Cancelling an interview was
+    broken the same way.
+
+    Neither was visible to the two tests that exist to catch a dead capability. EnforcementTests
+    passed because scorecards.submit is checked in the AuthorizeView around the form;
+    ReachabilityTests passed because InterviewService.ScoreAsync has a caller in the Web
+    project. Both were true. Neither means anybody could file a scorecard.
+
+    It is a child rather than a mode on the page because the scheduling form above must stay a
+    real POST: it reads its panel checkboxes out of Request.Form, which is a thing only a
+    request has.
+*@
+
+@if (Status == InterviewStatus.Scheduled)
+{
+    <AuthorizeView Policy="@SchedulePolicy" Context="mayRun">
+        <div class="row-actions">
+            @*
+                Marking it held is what opens the scorecard — the domain refuses one before
+                then, because an opinion filed before the conversation is one formed from a CV.
+            *@
+            <button type="button" disabled="@Busy" @onclick="Held">
+                @(Busy ? "Recording…" : "It happened")
+            </button>
+
+            <div class="inline">
+                <input type="text" placeholder="Why not" maxlength="500" value="@Reason"
+                       @oninput="one => Reason = one.Value?.ToString() ?? string.Empty"
+                       aria-label="@($"Why the interview with {CandidateName} did not happen")" />
+
+                <button type="button" class="danger" disabled="@Busy" @onclick="Cancel">
+                    @(Busy ? "Cancelling…" : "Cancel it")
+                </button>
+            </div>
+        </div>
+    </AuthorizeView>
+}
+else if (Status == InterviewStatus.Held && !Scored && MayScore)
+{
+    <AuthorizeView Policy="@ScorePolicy" Context="mayScore">
+        <div class="panel stack">
+            <h3>What did you think?</h3>
+
+            <label>
+                <span>Your recommendation</span>
+                <select @bind="Recommends">
+                    @foreach (var option in Enum.GetValues<Recommendation>())
+                    {
+                        <option value="@option">@Words.For(option)</option>
+                    }
+                </select>
+            </label>
+
+            <label>
+                <span>Why</span>
+                <textarea rows="3" maxlength="4000" @bind="Notes" @bind:event="oninput"
+                          placeholder="What you saw. A recommendation on its own tells nobody anything."></textarea>
+            </label>
+
+            @*
+                Refused here rather than by [Required]. That attribute is precisely what told
+                somebody they had written nothing while their paragraph sat in the box above the
+                message — and it did so because the model it guarded was never filled in.
+            *@
+            <button type="button" disabled="@Busy" @onclick="Score">
+                @(Busy ? "Filing…" : "Submit it")
+            </button>
+        </div>
+    </AuthorizeView>
+}
+else if (Scored || (Status == InterviewStatus.Held && OnThePanel))
+{
+    <p class="subtle">You have scored this one.</p>
+}
+
+@if (Said is not null)
+{
+    <p class="row-said" role="status">@Said</p>
+}
+
+@if (Refusal is not null)
+{
+    <p class="row-refused" role="alert">@Refusal</p>
+}
+
+@code {
+    private const string SchedulePolicy =
+        PermissionClaim.PolicyPrefix + Permissions.InterviewsSchedule;
+
+    private const string ScorePolicy = PermissionClaim.PolicyPrefix + Permissions.ScorecardsSubmit;
+
+    [Parameter, EditorRequired]
+    public Guid Id { get; set; }
+
+    [Parameter, EditorRequired]
+    public InterviewStatus Status { get; set; }
+
+    [Parameter, EditorRequired]
+    public string CandidateName { get; set; } = string.Empty;
+
+    /// <summary>The employee filing the scorecard, or null when they have no staff record.</summary>
+    [Parameter]
+    public Guid? Me { get; set; }
+
+    /// <summary>On the panel and has not scored it yet.</summary>
+    [Parameter]
+    public bool MayScore { get; set; }
+
+    /// <summary>On the panel, whether or not they have scored it.</summary>
+    [Parameter]
+    public bool OnThePanel { get; set; }
+
+    private Recommendation Recommends { get; set; } = Recommendation.Yes;
+
+    private string Notes { get; set; } = string.Empty;
+
+    private string Reason { get; set; } = string.Empty;
+
+    private bool Busy { get; set; }
+
+    /// <summary>Filed in this visit, so the form gives way to the sentence without a reload.</summary>
+    private bool Scored { get; set; }
+
+    private string? Said { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private Task Held() => Run(
+        () => Service.HeldAsync(Id),
+        "Recorded. The panel can file their scorecards now.",
+        after: InterviewStatus.Held);
+
+    private Task Cancel()
+    {
+        if (string.IsNullOrWhiteSpace(Reason))
+        {
+            Refusal = "Say why.";
+
+            return Task.CompletedTask;
+        }
+
+        var reason = Reason;
+
+        return Run(
+            () => Service.CancelAsync(Id, reason),
+            "Cancelled.",
+            after: InterviewStatus.Cancelled);
+    }
+
+    private Task Score()
+    {
+        if (Me is not { } me)
+        {
+            Refusal =
+                "Your sign-in is not linked to a staff record, so a scorecard cannot be filed "
+                + "in your name. An administrator can link them on the People page.";
+
+            return Task.CompletedTask;
+        }
+
+        if (string.IsNullOrWhiteSpace(Notes))
+        {
+            Refusal =
+                "Say what you saw. A recommendation on its own tells nobody anything.";
+
+            return Task.CompletedTask;
+        }
+
+        var recommendation = Recommends;
+        var notes = Notes;
+
+        return Run(
+            async () =>
+            {
+                await Service.ScoreAsync(Id, me, recommendation, notes);
+                Scored = true;
+            },
+            "Filed. Thank you.");
+    }
+
+    /// <summary>
+    /// Do one thing and say what came of it, without throwing the page away.
+    /// </summary>
+    /// <remarks>
+    /// Every one of these used to end in NavigateTo(..., forceLoad: true) — a full browser
+    /// reload of a page that lists every interview with its panel and its scorecards, to change
+    /// one line of it.
+    /// </remarks>
+    private async Task Run(Func<Task> work, string said, InterviewStatus? after = null)
+    {
+        Refusal = null;
+        Said = null;
+        Busy = true;
+
+        try
+        {
+            await work();
+
+            Said = said;
+
+            if (after is { } moved)
+            {
+                Status = moved;
+            }
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+}

@@ -119,6 +119,32 @@ Each of these cost real time. They are written down so they cost it once.
   build and the whole suite stay green, and `compose up --build` goes on serving
   the previous image rather than stopping — so the browser shows yesterday's
   application and every conclusion drawn from it is wrong.
+- **A per-row form with fields in it cannot bind under static rendering.** Blazor
+  refuses a page holding two forms with the same name, so a form rendered once
+  per row gets a unique one — `score-{id}`. But a model is bound by
+  `[SupplyParameterFromForm(FormName = "score")]`, which matches one exact name
+  and has nowhere to put an id, so **nothing typed into that form ever reaches
+  the handler.** It has happened four times here, and the two failure modes look
+  nothing alike: a `[Required]` field tells somebody they wrote nothing while
+  their paragraph sits in the box above the message, and a field with a default
+  silently submits the default — a headcount box that set every requisition to
+  one and reported success. Neither is visible to `EnforcementTests` (the
+  permission IS checked) or `ReachabilityTests` (the service method DOES have a
+  caller). A per-row form with no fields is fine, because the handler closes over
+  the row's id; the moment it needs an input, the row's actions belong in an
+  interactive child component where `@bind` and `@onclick` need no names at all.
+- **An interactive page is a page no test can press.** Page tests POST real
+  forms. Before putting `@rendermode InteractiveServer` on a page, check what
+  posts to it — the usual answer is to leave the page static and make an
+  interactive child of the part that needs it, which is also what a file upload
+  or a `Request.Form` read forces.
+- **`ICurrentUser` inside a circuit.** There is no `HttpContext`, so anything
+  reading `IHttpContextAccessor` gets null and every audit entry from an
+  interactive screen loses its actor, silently. Asking
+  `AuthenticationStateProvider` at save time is not the fix: it throws outside a
+  Razor component's scope, which is where the seeding, the jobs and the
+  dispatcher all live. A circuit handler captures the principal once — see
+  `CircuitUser`.
 - **Razor emits nothing between an @expression and the element after it.** A date
   followed by a pill renders as "25 Aug 01:05Quiet a while". Element to element keeps
   the whitespace; expression to element does not. Thirty-six places did this, and the
