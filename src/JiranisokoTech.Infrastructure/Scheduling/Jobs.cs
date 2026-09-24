@@ -110,22 +110,16 @@ public sealed class WarnAboutLapsingQualifications(
          * person who has to chase a renewal is in HR — telling only the holder means the
          * firm finds out it has lapsed at the same moment a client does.
          */
-        var recipients = await database.Employees
-            .AsNoTracking()
-            .Where(employee => database.Departments.Any(department =>
-                department.HeadEmployeeId == employee.Id))
-            .Select(employee => new { employee.FullName, employee.Details.PersonalEmail })
-            .ToListAsync(cancellationToken);
+        var heads = await Reminders.HeadsOfDepartmentsAsync(database, cancellationToken);
 
         var lines = due.Select(one => $"  {one.Subject}, lapses {one.On:d MMMM yyyy}");
 
         var told = 0;
 
-        foreach (var recipient in recipients.Where(one => one.PersonalEmail is { Length: > 0 }))
+        foreach (var (address, name) in heads.Reachable)
         {
             await mailer.SendAsync(
-                Letters.QualificationsLapsing(
-                    recipient.PersonalEmail!, recipient.FullName, [.. lines]),
+                Letters.QualificationsLapsing(address, name, [.. lines]),
                 cancellationToken);
 
             told++;
@@ -139,7 +133,8 @@ public sealed class WarnAboutLapsingQualifications(
              * notice for good — so a firm with no department head configured would be warned
              * about nothing, for ever, with a job reporting success every morning.
              */
-            return $"{due.Count} at a reminder stage and nobody with an address to tell.";
+            return $"{due.Count} at a reminder stage and no department head with a mailbox "
+                + "here to tell.";
         }
 
         foreach (var one in due)
@@ -156,7 +151,7 @@ public sealed class WarnAboutLapsingQualifications(
 
         await database.SaveChangesAsync(cancellationToken);
 
-        return $"{due.Count} at a reminder stage; told {told}.";
+        return heads.Said(due.Count, told);
     }
 }
 
@@ -242,22 +237,16 @@ public sealed class WarnAboutExpiringContracts(
                 : $"{expiring.Count} running out; everybody who needs telling has been told.";
         }
 
-        var recipients = await database.Employees
-            .AsNoTracking()
-            .Where(employee => database.Departments.Any(department =>
-                department.HeadEmployeeId == employee.Id))
-            .Select(employee => new { employee.FullName, employee.Details.PersonalEmail })
-            .ToListAsync(cancellationToken);
+        var heads = await Reminders.HeadsOfDepartmentsAsync(database, cancellationToken);
 
         var lines = due.Select(one => $"  {one.Subject}, ends {one.On:d MMMM yyyy}");
 
         var told = 0;
 
-        foreach (var recipient in recipients.Where(one => one.PersonalEmail is { Length: > 0 }))
+        foreach (var (address, name) in heads.Reachable)
         {
             await mailer.SendAsync(
-                Letters.ContractsExpiring(
-                    recipient.PersonalEmail!, recipient.FullName, [.. lines]),
+                Letters.ContractsExpiring(address, name, [.. lines]),
                 cancellationToken);
 
             told++;
@@ -266,7 +255,8 @@ public sealed class WarnAboutExpiringContracts(
         if (told == 0)
         {
             // Nothing recorded when nothing was sent — see the note in the job above.
-            return $"{due.Count} at a reminder stage and nobody with an address to tell.";
+            return $"{due.Count} at a reminder stage and no department head with a mailbox "
+                + "here to tell.";
         }
 
         foreach (var one in due)
@@ -283,7 +273,7 @@ public sealed class WarnAboutExpiringContracts(
 
         await database.SaveChangesAsync(cancellationToken);
 
-        return $"{due.Count} at a reminder stage; told {told}.";
+        return heads.Said(due.Count, told);
     }
 }
 
@@ -313,6 +303,92 @@ internal static class Reminders
                     && one.DeadlineOn == deadlineOn
                     && one.Stage == stage,
                 cancellationToken);
+
+    /// <summary>
+    /// The department heads, at the addresses they sign in with.
+    /// </summary>
+    /// <remarks>
+    /// <b>This corrects a fault in the two reminder jobs as first written.</b> Both of them
+    /// read <c>Employee.Details.PersonalEmail</c> — the private address somebody types into
+    /// their own profile beside their date of birth and their next of kin — and mailed
+    /// internal notices about their colleagues to it. A list of who holds which
+    /// certification and when it lapses is the firm's business and belongs in the firm's
+    /// mail; sending it to a personal inbox puts staff records outside anything this firm
+    /// controls, and does it on a schedule, every morning, to an address the recipient gave
+    /// for an entirely different purpose.
+    ///
+    /// The address to use is the one on the account, which is where every other letter in
+    /// this system already goes — see <c>MailRecipients</c>, which had the right answer the
+    /// whole time and was not asked. Not asking it also inherited the wrong failure mode:
+    /// the old filter silently dropped any head without a personal address, so the notice
+    /// went to whoever happened to have filled that field in.
+    ///
+    /// Heads without a mailbox are counted rather than dropped quietly, and the count goes
+    /// into the job's own sentence on the machinery screen. An employee and an account are
+    /// separate things here on purpose, so a head with no login is an ordinary state — but a
+    /// firm where three of four heads have no mailbox is a firm whose reminders reach one
+    /// person, and nothing said so.
+    /// </remarks>
+    public static async Task<HeadsToTell> HeadsOfDepartmentsAsync(
+        AppDbContext database, CancellationToken cancellationToken)
+    {
+        var heads = await database.Employees
+            .AsNoTracking()
+            .Where(employee => database.Departments.Any(department =>
+                department.HeadEmployeeId == employee.Id))
+            .Select(employee => new
+            {
+                employee.FullName,
+
+                /*
+                 * A correlated subquery rather than a join, so that a head with no account
+                 * still comes back — as a row with no address. A join would drop them, and
+                 * dropping them is the half of the original fault that nothing could see.
+                 *
+                 * Filtered on IsActive for the reason MailRecipients gives: somebody whose
+                 * access has been withdrawn cannot act on the notice, and a system that
+                 * goes on mailing a leaver is one somebody has to explain.
+                 */
+                Address = database.Users
+                    .Where(account => account.Id == employee.AccountId && account.IsActive)
+                    .Select(account => account.Email)
+                    .FirstOrDefault(),
+            })
+            .ToListAsync(cancellationToken);
+
+        return new HeadsToTell(
+            [.. heads
+                .Where(head => head.Address is { Length: > 0 })
+                .Select(head => (head.Address!, head.FullName))],
+            heads.Count(head => head.Address is null or { Length: 0 }));
+    }
+}
+
+/// <summary>
+/// Who a reminder can reach, and how many it cannot.
+/// </summary>
+/// <param name="WithoutAMailbox">
+/// Department heads with no active account, so no address this system knows. Carried rather
+/// than discarded because the job's own sentence has to be able to say it: a reminder that
+/// reached one person out of four is not the same event as one that reached everybody, and
+/// the screen showing "told 1" every morning cannot tell them apart on its own.
+/// </param>
+public sealed record HeadsToTell(
+    IReadOnlyList<(string Address, string Name)> Reachable,
+    int WithoutAMailbox)
+{
+    /// <summary>What the job says it did, including who it could not reach.</summary>
+    public string Said(int due, int told)
+    {
+        var sentence = $"{due} at a reminder stage; told {told}.";
+
+        return WithoutAMailbox == 0
+            ? sentence
+            : sentence
+              + $" {WithoutAMailbox} department "
+              + (WithoutAMailbox == 1 ? "head has" : "heads have")
+              + " no mailbox here and heard nothing.";
+    }
 }
 
 /// <summary>
