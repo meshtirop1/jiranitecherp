@@ -61,6 +61,7 @@ public sealed class IncidentService(
         DateTimeOffset startedAt,
         Guid byId,
         string? affects = null,
+        Guid? serviceId = null,
         CancellationToken cancellationToken = default)
     {
         var now = clock.Now;
@@ -75,6 +76,11 @@ public sealed class IncidentService(
 
         var incident = Incident.Report(
             number, title, severity, startedAt, now, byId, affects);
+
+        if (serviceId is not null)
+        {
+            incident.Affecting(serviceId, affects);
+        }
 
         /*
          * The first line of every timeline, written by the system rather than asked for. An
@@ -138,13 +144,14 @@ public sealed class IncidentService(
     public async Task DescribeAsync(
         Guid incidentId,
         string title,
+        Guid? serviceId,
         string? affects,
         CancellationToken cancellationToken = default)
     {
         var incident = await Required(incidentId, cancellationToken);
 
         incident.Retitle(title);
-        incident.Affecting(affects);
+        incident.Affecting(serviceId, affects);
 
         await incidents.SaveAsync(cancellationToken);
     }

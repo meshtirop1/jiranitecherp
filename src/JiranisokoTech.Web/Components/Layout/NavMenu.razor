@@ -67,6 +67,17 @@
                 </AuthorizeView>
 
                 @*
+                    Next to the incidents, because the first thing anybody does in
+                    one is ask what the broken thing is and who owns it.
+                *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.PlatformView)"
+                               Context="platform">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="platform">Platform</NavLink>
+                    </div>
+                </AuthorizeView>
+
+                @*
                     Above the repositories and carrying its own count, because an
                     open incident is the one thing in this application that should
                     be visible from every page. The count is of open ones only —

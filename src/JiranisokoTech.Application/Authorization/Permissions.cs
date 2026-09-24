@@ -296,6 +296,26 @@ public static class Permissions
     /// </remarks>
     public const string ReleasesDeclare = "releases.declare";
 
+    // --- what the firm runs -------------------------------------------------
+
+    /// <summary>Read the service catalogue and the resource register.</summary>
+    /// <remarks>
+    /// Wide, like incidents.view and for the same reason: the first thing anybody does in an
+    /// incident is ask what the broken thing is and who owns it, and a permission that made them
+    /// ask a person instead adds twenty minutes to the top of every one.
+    /// </remarks>
+    public const string PlatformView = "platform.view";
+
+    /// <summary>
+    /// Add to the catalogue and the register, and retire from them.
+    /// </summary>
+    /// <remarks>
+    /// Narrower, because a register everybody can edit is a register with three entries called
+    /// "the despatch board" — and because what is written here is what an incident will be filed
+    /// against for as long as the firm exists.
+    /// </remarks>
+    public const string PlatformManage = "platform.manage";
+
     // --- what the firm owns -------------------------------------------------
 
     /// <summary>See the asset register: what the firm has and who is holding it.</summary>
@@ -387,6 +407,8 @@ public static class Permissions
         IncidentsView, IncidentsRaise, IncidentsRun,
 
         AssetsView, AssetsManage,
+
+        PlatformView, PlatformManage,
 
         ApprovalsDecide, ReportsView,
     ];
@@ -515,6 +537,8 @@ public static class Roles
                 Permissions.IncidentsView, Permissions.IncidentsRaise,
                 Permissions.IncidentsRun,
 
+                Permissions.PlatformView, Permissions.PlatformManage,
+
                 // A head signs for their team's equipment, and is the person
                 // asked where a laptop went.
                 Permissions.AssetsView, Permissions.AssetsManage,
@@ -556,6 +580,8 @@ public static class Roles
 
                 Permissions.IncidentsView, Permissions.IncidentsRaise,
                 Permissions.IncidentsRun,
+
+                Permissions.PlatformView,
 
                 // Everybody who works here logs hours, asks for leave and
                 // claims money back. These are not privileges; a role without
@@ -608,6 +634,8 @@ public static class Roles
                 // typing in the console has to find somebody to press a button.
                 Permissions.IncidentsView, Permissions.IncidentsRaise,
                 Permissions.IncidentsRun,
+
+                Permissions.PlatformView,
 
                 // Everybody who works here logs hours, asks for leave and
                 // claims money back. These are not privileges; a role without

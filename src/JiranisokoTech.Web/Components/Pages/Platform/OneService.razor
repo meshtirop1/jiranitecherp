@@ -1,0 +1,389 @@
+@page "/platform/services/{Id:guid}"
+@rendermode InteractiveServer
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Platform
+@using JiranisokoTech.Domain.Platform
+@using JiranisokoTech.Infrastructure.Engineering
+@using JiranisokoTech.Infrastructure.Incidents
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.PlatformView)]
+@inject EstateService Estate
+@inject IncidentQueries Incidents
+@inject PeopleQueries People
+@inject EngineeringQueries Repositories
+
+@*
+    One service: who owns it, what it runs on, and what has gone wrong with it.
+
+    The incident history is the reason this page is worth opening rather than reading the row on
+    the list. "This has been down four times since June, always the same consumer" is a sentence
+    only a page that joins the catalogue to section 27 can say, and it is the sentence that gets
+    something fixed properly.
+*@
+
+<PageTitle>@(Service?.Name ?? "Service") — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/platform">Platform</a></nav>
+
+@if (Service is null)
+{
+    <p class="empty">That service is not in the catalogue.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Service.Name</h1>
+
+        <p class="subtle">
+            <span class="pill @PillFor(Service.Matters)">@Service.Matters</span>
+            @if (!Service.IsLive)
+            {
+                <span class="pill pill--quiet">retired</span>
+            }
+            <span class="subtle">@Service.Description</span>
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <dl class="facts">
+        <dt>Who to ask</dt>
+        <dd>
+            @if (Service.OwnerId is { } owner)
+            {
+                @Who(owner)
+            }
+            else
+            {
+                @*
+                    Said rather than left blank. A critical service with nobody's name against it
+                    is the most actionable sentence this page can print.
+                *@
+                <span class="subtle">nobody — which is worth fixing before the next incident</span>
+            }
+        </dd>
+
+        <dt>Built from</dt>
+        <dd>
+            @if (Service.RepositoryId is { } repository)
+            {
+                <a href="/repositories">@RepositoryName(repository)</a>
+            }
+            else
+            {
+                <span class="subtle">no repository recorded</span>
+            }
+        </dd>
+
+        @if (Service.Notes is { } notes)
+        {
+            <dt>Notes</dt>
+            <dd>@notes</dd>
+        }
+    </dl>
+
+    <section class="standing">
+        <h2>What it runs on</h2>
+
+        @if (Runs.Count == 0)
+        {
+            <p class="empty">
+                Nothing is recorded against it. Things are attached to a service on the
+                <a href="/platform">platform page</a> when they are added.
+            </p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Resources this service runs on</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">What</th>
+                        <th scope="col">Where</th>
+                        <th scope="col">Runs out</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var one in Runs)
+                    {
+                        <tr>
+                            <td><a href="/platform/resources/@one.Id">@one.Name</a></td>
+                            <td>@one.Kind</td>
+                            <td><span class="pill pill--quiet">@one.Environment</span></td>
+                            <td>@(one.ExpiresOn?.ToString("d MMM yyyy") ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="standing">
+        <h2>What has gone wrong with it</h2>
+
+        @*
+            The join that makes this page worth opening. Four incidents since June, all naming
+            the same consumer, is a sentence nothing else in this system can say — and it is the
+            one that gets something fixed properly rather than restarted again.
+        *@
+        @if (Trouble.Count == 0)
+        {
+            <p class="empty">No incident has named it.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Incidents against this service</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Which</th>
+                        <th scope="col">How bad</th>
+                        <th scope="col">Started</th>
+                        <th scope="col">Lasted</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var one in Trouble)
+                    {
+                        <tr>
+                            <td><a href="/incidents/@one.Number">@one.Number @one.Title</a></td>
+                            <td>@one.Severity</td>
+                            <td>@one.StartedAt.ToLocalTime().ToString("d MMM yyyy")</td>
+                            <td>
+                                @if (one.ResolvedAt is { } ended)
+                                {
+                                    @Length(ended - one.StartedAt)
+                                }
+                                else
+                                {
+                                    <span class="pill pill--danger">still open</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <AuthorizeView Policy="@Managing" Context="mayManage">
+        <section class="standing">
+            <h2>Change it</h2>
+
+            <div class="fields">
+                <label>
+                    <span>Name</span>
+                    <input @bind="Name" />
+                </label>
+
+                <label>
+                    <span>How much it matters</span>
+                    <select @bind="Matters">
+                        @foreach (var level in Levels)
+                        {
+                            <option value="@level">@level</option>
+                        }
+                    </select>
+                </label>
+
+                <label>
+                    <span>Who owns it</span>
+                    <select @bind="OwnerId">
+                        <option value="">Nobody</option>
+                        @foreach (var person in Names.OrderBy(one => one.Value))
+                        {
+                            <option value="@person.Key">@person.Value</option>
+                        }
+                    </select>
+                </label>
+            </div>
+
+            <div class="fields">
+                <label>
+                    <span>What it does</span>
+                    <input @bind="What" />
+                </label>
+
+                <label>
+                    <span>Built from</span>
+                    <select @bind="RepositoryId">
+                        <option value="">No repository</option>
+                        @foreach (var repository in Repos)
+                        {
+                            <option value="@repository.Id">@repository.FullName</option>
+                        }
+                    </select>
+                </label>
+            </div>
+
+            <label class="stack">
+                <span>Notes</span>
+                <textarea rows="3" @bind="Notes"></textarea>
+            </label>
+
+            <div class="row-actions">
+                <button type="button" @onclick="Save">Save it</button>
+
+                @if (Service.IsLive)
+                {
+                    <button type="button" class="button--quiet" @onclick="Retire">
+                        The firm no longer runs this
+                    </button>
+                }
+                else
+                {
+                    <button type="button" class="button--quiet" @onclick="Running">
+                        It is running again
+                    </button>
+                }
+            </div>
+
+            <p class="subtle">
+                Retired rather than deleted, because incidents point at it. Deleting it would
+                take the name off every incident it ever had, which is the history somebody
+                reads to decide whether to rebuild the thing.
+            </p>
+        </section>
+    </AuthorizeView>
+}
+
+@code {
+    private const string Managing = PermissionClaim.PolicyPrefix + Permissions.PlatformManage;
+
+    private static readonly HowCritical[] Levels =
+        [HowCritical.Critical, HowCritical.Important, HowCritical.Minor];
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private Service? Service { get; set; }
+
+    private List<Resource> Runs { get; set; } = [];
+
+    private List<IncidentRow> Trouble { get; set; } = [];
+
+    private List<RepositoryRow> Repos { get; set; } = [];
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string Name { get; set; } = string.Empty;
+
+    private string What { get; set; } = string.Empty;
+
+    private HowCritical Matters { get; set; } = HowCritical.Important;
+
+    private Guid? OwnerId { get; set; }
+
+    private Guid? RepositoryId { get; set; }
+
+    private string Notes { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Service = await Estate.ServiceAsync(Id);
+
+        if (Service is null)
+        {
+            return;
+        }
+
+        Runs = await Estate.ResourcesForAsync(Id);
+        Trouble = [.. (await Incidents.AllAsync()).Where(one => one.ServiceId == Id)];
+        Names = await People.NamesAsync();
+        Repos = await Repositories.RepositoriesAsync();
+
+        Name = Service.Name;
+        What = Service.Description;
+        Matters = Service.Matters;
+        OwnerId = Service.OwnerId;
+        RepositoryId = Service.RepositoryId;
+        Notes = Service.Notes ?? string.Empty;
+    }
+
+    private Task Save() => Act(
+        () => Estate.DescribeServiceAsync(
+            Id,
+            Name,
+            What,
+            Matters,
+            OwnerId,
+            RepositoryId,
+            string.IsNullOrWhiteSpace(Notes) ? null : Notes),
+        "Saved.");
+
+    private Task Retire() => Act(
+        () => Estate.RetireServiceAsync(Id), "Retired. The record and its incidents stay.");
+
+    private Task Running() => Act(
+        () => Estate.StillRunningAsync(Id), "Back in the catalogue.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private string Who(Guid id) =>
+        Names.GetValueOrDefault(id) ?? "somebody no longer on the staff list";
+
+    private string RepositoryName(Guid id) =>
+        Repos.FirstOrDefault(one => one.Id == id)?.FullName ?? "a repository since disconnected";
+
+    private static string Length(TimeSpan span)
+    {
+        if (span < TimeSpan.FromMinutes(1))
+        {
+            return "under a minute";
+        }
+
+        if (span < TimeSpan.FromHours(1))
+        {
+            return $"{(int)span.TotalMinutes} min";
+        }
+
+        if (span < TimeSpan.FromDays(1))
+        {
+            var hours = (int)span.TotalHours;
+
+            return span.Minutes == 0 ? $"{hours} hr" : $"{hours} hr {span.Minutes} min";
+        }
+
+        return $"{(int)span.TotalDays} days";
+    }
+
+    private static string PillFor(HowCritical matters) => matters switch
+    {
+        HowCritical.Critical => "pill--danger",
+        HowCritical.Important => "pill--wait",
+        _ => "pill--quiet",
+    };
+}

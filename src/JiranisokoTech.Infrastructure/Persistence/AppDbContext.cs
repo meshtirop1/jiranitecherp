@@ -79,6 +79,19 @@ public class AppDbContext(
     /// </remarks>
     public DbSet<Domain.Assets.Asset> Assets => Set<Domain.Assets.Asset>();
 
+    /// <summary>
+    /// What the firm runs, and what it runs on.
+    /// </summary>
+    /// <remarks>
+    /// Section 14, and a register rather than a control plane: every row is something a person
+    /// typed. Nothing reads a cloud account, a DNS zone or a certificate — a catalogue that
+    /// claimed to would be believed and would go quietly wrong the first time a credential
+    /// expired.
+    /// </remarks>
+    public DbSet<Domain.Platform.Service> Services => Set<Domain.Platform.Service>();
+
+    public DbSet<Domain.Platform.Resource> Resources => Set<Domain.Platform.Resource>();
+
     public DbSet<ApprovalRequest> Approvals => Set<ApprovalRequest>();
 
     public DbSet<Client> Clients => Set<Client>();

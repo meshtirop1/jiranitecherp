@@ -48,6 +48,18 @@ public sealed class IncidentConfiguration : IEntityTypeConfiguration<Incident>
             .HasForeignKey(one => one.LeadId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        /*
+         * SetNull, and the service is retired rather than deleted precisely so this rarely
+         * fires — an incident that lost the name of what it was about would be a history nobody
+         * can read. Section 14's catalogue exists for this join.
+         */
+        builder.HasOne<JiranisokoTech.Domain.Platform.Service>()
+            .WithMany()
+            .HasForeignKey(one => one.ServiceId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasIndex(one => one.ServiceId);
+
         builder.OwnsMany(one => one.Notes, note =>
         {
             note.ToTable("incident_notes");

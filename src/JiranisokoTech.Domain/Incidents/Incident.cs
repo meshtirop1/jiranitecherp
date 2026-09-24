@@ -234,11 +234,26 @@ public sealed class Incident : Entity, IAuditable
     /// </remarks>
     public Guid? LeadId { get; private set; }
 
+    /// <summary>
+    /// Which service, from section 14's catalogue.
+    /// </summary>
+    /// <remarks>
+    /// This was free text with a note saying a catalogue would change it, and section 14 has
+    /// changed it. What it buys is the step from "the despatch board is down" to who owns it,
+    /// what it runs on and which repository it is built from — which is the one link section
+    /// 91's chain could not make from an incident.
+    ///
+    /// Nullable, because the first two minutes of an incident are not the moment to make
+    /// somebody classify it, and because the thing that is wrong is sometimes not in the
+    /// catalogue at all.
+    /// </remarks>
+    public Guid? ServiceId { get; private set; }
+
     /// <summary>What is affected, in the firm's own words.</summary>
     /// <remarks>
-    /// Free text rather than a list of services, because this system does not hold a service
-    /// catalogue and a dropdown of three guesses would be worse than a sentence. Section 14
-    /// would change that, and has not been built.
+    /// Kept beside the catalogue rather than replaced by it, because the useful sentence is
+    /// usually narrower than the service: "the despatch board" names what broke, and "only the
+    /// Mombasa depot, and only on the mobile app" is what somebody actually needs to read.
     /// </remarks>
     public string? Affects { get; private set; }
 
@@ -335,7 +350,11 @@ public sealed class Incident : Entity, IAuditable
 
     public void Retitle(string title) => Title = Required(title, nameof(title));
 
-    public void Affecting(string? affects) => Affects = Trimmed(affects);
+    public void Affecting(Guid? serviceId, string? affects)
+    {
+        ServiceId = serviceId;
+        Affects = Trimmed(affects);
+    }
 
     /// <summary>
     /// Correct when it started, once somebody has looked properly.

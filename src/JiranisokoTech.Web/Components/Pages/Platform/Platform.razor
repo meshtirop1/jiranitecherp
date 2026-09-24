@@ -1,0 +1,500 @@
+@page "/platform"
+@rendermode InteractiveServer
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Platform
+@using JiranisokoTech.Domain.Engineering
+@using JiranisokoTech.Domain.Platform
+@using JiranisokoTech.Infrastructure.Engineering
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.PlatformView)]
+@inject EstateService Estate
+@inject PeopleQueries People
+@inject EngineeringQueries Repositories
+@inject NavigationManager Navigation
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    What the firm runs, and what it runs on.
+
+    Section 14, and a register rather than a control plane. Nothing here provisions, restarts,
+    scales or checks anything: every row is something a person typed, and saying so on the page
+    is what stops it being trusted as though it were discovered. A catalogue that claimed to read
+    a cloud account would go quietly wrong the first time a credential expired, which is the
+    worst failure available to a record of what exists.
+
+    Two lists rather than one page per kind of thing. The brief names servers, cloud, containers,
+    databases, DNS, domains and SSL, and everything the firm needs from all seven is the same:
+    what is it, who provides it, which environment, what does it belong to, when does it expire.
+*@
+
+<PageTitle>Platform — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Platform</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+<p class="instructions">
+    The catalogue of what the firm runs, and the register of what it runs on. Everything here is
+    typed by somebody — nothing reads a cloud account, a DNS zone or a certificate. The one
+    column that acts on its own is the expiry date, which a job reads every morning.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Expiring.Count > 0)
+{
+    @*
+        Above everything else, because it is the only thing on this page with a deadline. The
+        job emails about these too; this is for whoever is already looking.
+    *@
+    <section class="standing">
+        <h2>Running out</h2>
+
+        <table class="grid">
+            <caption class="visually-hidden">Things that expire soon</caption>
+            <thead>
+                <tr>
+                    <th scope="col">What</th>
+                    <th scope="col">Runs out</th>
+                    <th scope="col">Provider</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var one in Expiring)
+                {
+                    <tr>
+                        <td><a href="/platform/resources/@one.Id">@one.Name</a></td>
+                        <td>
+                            @one.ExpiresOn!.Value.ToString("d MMMM yyyy")
+                            @if (one.HasExpired(Today))
+                            {
+                                <span class="pill pill--danger">gone</span>
+                            }
+                            else
+                            {
+                                <span class="subtle">@Days(one.ExpiresOn.Value) days</span>
+                            }
+                        </td>
+                        <td>@(one.Provider ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+<section class="standing">
+    <h2>What the firm runs</h2>
+
+    <AuthorizeView Policy="@Managing" Context="mayManage">
+        <div class="fields">
+            <label>
+                <span>Name</span>
+                <input @bind="ServiceName" placeholder="Despatch board" />
+                <span class="subtle">
+                    What people call it when they ring up, not what the container is called.
+                </span>
+            </label>
+
+            <label>
+                <span>How much it matters</span>
+                <select @bind="Matters">
+                    @foreach (var level in Levels)
+                    {
+                        <option value="@level">@level</option>
+                    }
+                </select>
+                <span class="subtle">@Means(Matters)</span>
+            </label>
+
+            <label>
+                <span>Who owns it</span>
+                <select @bind="OwnerId">
+                    <option value="">Nobody yet</option>
+                    @foreach (var person in Names.OrderBy(one => one.Value))
+                    {
+                        <option value="@person.Key">@person.Value</option>
+                    }
+                </select>
+                <span class="subtle">A person. A team owns nothing at two in the morning.</span>
+            </label>
+        </div>
+
+        <div class="fields">
+            <label>
+                <span>What it does</span>
+                <input @bind="ServiceWhat"
+                       placeholder="Shows depots where every vehicle is" />
+            </label>
+
+            <label>
+                <span>Built from</span>
+                <select @bind="RepositoryId">
+                    <option value="">No repository</option>
+                    @foreach (var repository in Repos)
+                    {
+                        <option value="@repository.Id">@repository.FullName</option>
+                    }
+                </select>
+                <span class="subtle">
+                    What turns "the despatch board is down" into the commits and deployments that
+                    might have done it.
+                </span>
+            </label>
+        </div>
+
+        <div class="row-actions">
+            <button type="button" @onclick="AddService">Add it to the catalogue</button>
+        </div>
+    </AuthorizeView>
+
+    @if (Services.Count == 0)
+    {
+        <p class="empty">Nothing is in the catalogue yet.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">The service catalogue</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Service</th>
+                    <th scope="col">Matters</th>
+                    <th scope="col">Owner</th>
+                    <th scope="col">Runs on</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var service in Services)
+                {
+                    <tr>
+                        <td>
+                            <a href="/platform/services/@service.Id">@service.Name</a>
+                            @if (!service.IsLive)
+                            {
+                                <span class="pill pill--quiet">retired</span>
+                            }
+                        </td>
+                        <td>
+                            <span class="pill @PillFor(service.Matters)">@service.Matters</span>
+                        </td>
+                        <td>
+                            @(service.OwnerId is { } owner ? Who(owner) : "nobody")
+                        </td>
+                        <td>@Counted(service.Id)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+<section class="standing">
+    <h2>What it runs on</h2>
+
+    <AuthorizeView Policy="@Managing" Context="mayRecord">
+        <div class="fields">
+            <label>
+                <span>Name</span>
+                <input @bind="ResourceName" placeholder="jiranisokotech.co.ke" />
+            </label>
+
+            <label>
+                <span>What</span>
+                <select @bind="Kind">
+                    @foreach (var kind in Kinds)
+                    {
+                        <option value="@kind">@Said(kind)</option>
+                    }
+                </select>
+            </label>
+
+            <label>
+                <span>Where</span>
+                <select @bind="Environment">
+                    @foreach (var where in Environments)
+                    {
+                        <option value="@where">@where</option>
+                    }
+                </select>
+            </label>
+        </div>
+
+        <div class="fields">
+            <label>
+                <span>Provider</span>
+                <input @bind="Provider" placeholder="HostPinnacle" />
+            </label>
+
+            <label>
+                <span>Part of</span>
+                <select @bind="PartOf">
+                    <option value="">Nothing in particular</option>
+                    @foreach (var service in Services.Where(one => one.IsLive))
+                    {
+                        <option value="@service.Id">@service.Name</option>
+                    }
+                </select>
+            </label>
+
+            <label>
+                <span>Runs out</span>
+                <input type="date" @bind="Expires" />
+                <span class="subtle">
+                    A registration, a renewal, a certificate's last day. Leave it empty for
+                    anything that does not expire — a server does not.
+                </span>
+            </label>
+        </div>
+
+        <div class="row-actions">
+            <button type="button" @onclick="AddResource">Add it to the register</button>
+        </div>
+    </AuthorizeView>
+
+    @if (Resources.Count == 0)
+    {
+        <p class="empty">Nothing is on the register yet.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">The resource register</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">What</th>
+                    <th scope="col">Where</th>
+                    <th scope="col">Part of</th>
+                    <th scope="col">Runs out</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var one in Resources)
+                {
+                    <tr>
+                        <td>
+                            <a href="/platform/resources/@one.Id">@one.Name</a>
+                            @if (!one.IsLive)
+                            {
+                                <span class="pill pill--quiet">gone</span>
+                            }
+                        </td>
+                        <td>
+                            @Said(one.Kind)
+                            @if (one.Provider is { } provider)
+                            {
+                                <span class="subtle">@provider</span>
+                            }
+                        </td>
+                        <td><span class="pill pill--quiet">@one.Environment</span></td>
+                        <td>@(one.ServiceId is { } part ? NameOf(part) : "—")</td>
+                        <td>
+                            @if (one.ExpiresOn is { } ends)
+                            {
+                                @ends.ToString("d MMM yyyy")
+                                @if (one.HasExpired(Today))
+                                {
+                                    <span class="pill pill--danger">gone</span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="subtle">—</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    private const string Managing = PermissionClaim.PolicyPrefix + Permissions.PlatformManage;
+
+    /// <summary>How far ahead the warning list looks.</summary>
+    /// <remarks>
+    /// The same thirty days the reminder job's first rung uses, so the screen and the email
+    /// agree about what "soon" means. Two answers to that would be one too many.
+    /// </remarks>
+    private const int Soon = 30;
+
+    private static readonly HowCritical[] Levels =
+        [HowCritical.Critical, HowCritical.Important, HowCritical.Minor];
+
+    private static readonly ResourceKind[] Kinds =
+    [
+        ResourceKind.Server,
+        ResourceKind.Database,
+        ResourceKind.ContainerHost,
+        ResourceKind.Storage,
+        ResourceKind.Domain,
+        ResourceKind.DnsZone,
+        ResourceKind.Certificate,
+        ResourceKind.ThirdParty,
+        ResourceKind.Other,
+    ];
+
+    private static readonly DeploymentEnvironment[] Environments =
+    [
+        DeploymentEnvironment.Production,
+        DeploymentEnvironment.Staging,
+        DeploymentEnvironment.Development,
+        DeploymentEnvironment.Other,
+    ];
+
+    private List<Service> Services { get; set; } = [];
+
+    private List<Resource> Resources { get; set; } = [];
+
+    private List<RepositoryRow> Repos { get; set; } = [];
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string ServiceName { get; set; } = string.Empty;
+
+    private string ServiceWhat { get; set; } = string.Empty;
+
+    private HowCritical Matters { get; set; } = HowCritical.Important;
+
+    private Guid? OwnerId { get; set; }
+
+    private Guid? RepositoryId { get; set; }
+
+    private string ResourceName { get; set; } = string.Empty;
+
+    private ResourceKind Kind { get; set; } = ResourceKind.Server;
+
+    private DeploymentEnvironment Environment { get; set; } = DeploymentEnvironment.Production;
+
+    private string Provider { get; set; } = string.Empty;
+
+    private Guid? PartOf { get; set; }
+
+    private DateTime? Expires { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private DateOnly Today => Clock.Today;
+
+    private List<Resource> Expiring =>
+        [.. Resources
+            .Where(one => one.IsLive
+                && one.ExpiresOn is not null
+                && one.ExpiresOn <= Today.AddDays(Soon))
+            .OrderBy(one => one.ExpiresOn)];
+
+    private string Headline
+    {
+        get
+        {
+            if (Services.Count == 0 && Resources.Count == 0)
+            {
+                return "Nothing is recorded yet.";
+            }
+
+            var live = Services.Count(one => one.IsLive);
+            var said = $"{live} service(s), {Resources.Count(one => one.IsLive)} things they run on";
+
+            return Expiring.Count == 0
+                ? said + "."
+                : $"{said}. {Expiring.Count} running out within {Soon} days.";
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Services = await Estate.ServicesAsync();
+        Resources = await Estate.ResourcesAsync();
+        Names = await People.NamesAsync();
+        Repos = await Repositories.RepositoriesAsync();
+    }
+
+    private async Task AddService()
+    {
+        Refusal = null;
+
+        try
+        {
+            var service = await Estate.AddServiceAsync(
+                ServiceName, ServiceWhat, Matters, OwnerId, RepositoryId);
+
+            Navigation.NavigateTo($"/platform/services/{service.Id}");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private async Task AddResource()
+    {
+        Refusal = null;
+
+        try
+        {
+            var resource = await Estate.RecordAsync(
+                ResourceName,
+                Kind,
+                Environment,
+                string.IsNullOrWhiteSpace(Provider) ? null : Provider,
+                PartOf,
+                Expires is { } ends ? DateOnly.FromDateTime(ends) : null);
+
+            Navigation.NavigateTo($"/platform/resources/{resource.Id}");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private int Days(DateOnly on) => on.DayNumber - Today.DayNumber;
+
+    private string Counted(Guid serviceId)
+    {
+        var count = Resources.Count(one => one.ServiceId == serviceId && one.IsLive);
+
+        return count == 0 ? "nothing recorded" : $"{count} thing(s)";
+    }
+
+    private string NameOf(Guid serviceId) =>
+        Services.FirstOrDefault(one => one.Id == serviceId)?.Name ?? "something since retired";
+
+    private string Who(Guid id) =>
+        Names.GetValueOrDefault(id) ?? "somebody no longer on the staff list";
+
+    private static string Means(HowCritical matters) => matters switch
+    {
+        HowCritical.Critical => "the firm stops, or a client's business does",
+        HowCritical.Important => "somebody's day gets much harder; it can wait until morning",
+        _ => "internal, or there is a way round it",
+    };
+
+    private static string Said(ResourceKind kind) => kind switch
+    {
+        ResourceKind.ContainerHost => "Container host",
+        ResourceKind.DnsZone => "DNS zone",
+        ResourceKind.ThirdParty => "Third party",
+        _ => kind.ToString(),
+    };
+
+    private static string PillFor(HowCritical matters) => matters switch
+    {
+        HowCritical.Critical => "pill--danger",
+        HowCritical.Important => "pill--wait",
+        _ => "pill--quiet",
+    };
+}

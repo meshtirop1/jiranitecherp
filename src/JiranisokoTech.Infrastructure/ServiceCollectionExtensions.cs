@@ -179,6 +179,13 @@ public static class ServiceCollectionExtensions
          */
         services.AddScoped<Application.Assets.IAssetRepository, Assets.AssetRepository>();
         services.AddScoped<Application.Assets.AssetService>();
+
+        /*
+         * What the firm runs and what it runs on. Section 14, and the catalogue an incident
+         * names when it says what is affected.
+         */
+        services.AddScoped<Application.Platform.IEstateRepository, Platform.EstateRepository>();
+        services.AddScoped<Application.Platform.EstateService>();
         services.AddScoped<RecruitmentQueries>();
         services.AddScoped<ICvStore, FileCvStore>();
 
@@ -221,6 +228,12 @@ public static class ServiceCollectionExtensions
          */
         services.AddScoped<IRecurringJob, WarnAboutLapsingQualifications>();
         services.AddScoped<IRecurringJob, WarnAboutExpiringContracts>();
+
+        /*
+         * Section 14's one moving part. The register is otherwise a note to whoever is looking;
+         * this is the column that acts, because a certificate expires at three on a Sunday.
+         */
+        services.AddScoped<IRecurringJob, WarnAboutExpiringResources>();
         services.AddScoped<IRecurringJob, PruneJobHistory>();
         services.AddScoped<IRecurringJob, PruneSignInHistory>();
         services.AddScoped<IRecurringJob, RaiseRecurringExpenses>();

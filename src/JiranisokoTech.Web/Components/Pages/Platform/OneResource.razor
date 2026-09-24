@@ -1,0 +1,329 @@
+@page "/platform/resources/{Id:guid}"
+@rendermode InteractiveServer
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Platform
+@using JiranisokoTech.Domain.Engineering
+@using JiranisokoTech.Domain.Platform
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.PlatformView)]
+@inject EstateService Estate
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    One thing the firm runs on, rents or has registered.
+
+    Nothing on this page was discovered. It does not open a TLS connection to read a
+    certificate's not-after or ask a registrar when a domain lapses — it shows the date somebody
+    typed, and says so, because a register that verifies itself is one nobody keeps up to date
+    and a register that pretends to is worse than none.
+*@
+
+<PageTitle>@(Resource?.Name ?? "Resource") — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/platform">Platform</a></nav>
+
+@if (Resource is null)
+{
+    <p class="empty">That is not on the register.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Resource.Name</h1>
+
+        <p class="subtle">
+            <span class="pill pill--quiet">@Said(Resource.Kind)</span>
+            <span class="pill pill--quiet">@Resource.Environment</span>
+            @if (!Resource.IsLive)
+            {
+                <span class="pill pill--quiet">the firm no longer has it</span>
+            }
+            @if (Resource.HasExpired(Today))
+            {
+                <span class="pill pill--danger">expired</span>
+            }
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <dl class="facts">
+        <dt>Provider</dt>
+        <dd>@(Resource.Provider ?? "not recorded")</dd>
+
+        <dt>Part of</dt>
+        <dd>
+            @if (Resource.ServiceId is { } service)
+            {
+                <a href="/platform/services/@service">@ServiceName</a>
+            }
+            else
+            {
+                <span class="subtle">nothing in particular</span>
+            }
+        </dd>
+
+        <dt>Runs out</dt>
+        <dd>
+            @if (Resource.ExpiresOn is { } ends)
+            {
+                @ends.ToString("d MMMM yyyy")
+
+                @if (Resource.HasExpired(Today))
+                {
+                    <span class="subtle">already gone</span>
+                }
+                else
+                {
+                    <span class="subtle">in @(ends.DayNumber - Today.DayNumber) days</span>
+                }
+            }
+            else
+            {
+                <span class="subtle">it does not</span>
+            }
+        </dd>
+
+        @if (Resource.Address is { } address)
+        {
+            <dt>Where to find it</dt>
+            <dd>@address</dd>
+        }
+
+        <dt>Recorded</dt>
+        <dd>@Resource.AddedAt.ToLocalTime().ToString("d MMM yyyy")</dd>
+    </dl>
+
+    <p class="instructions">
+        <strong>Typed, not discovered.</strong> Nothing here checks the certificate, queries the
+        registrar or talks to a cloud account. The date above is what somebody wrote down, and a
+        job reads it every morning to warn whoever keeps the records — thirty days before, then
+        seven, then two.
+    </p>
+
+    <AuthorizeView Policy="@Managing" Context="mayManage">
+        <section class="standing">
+            <h2>Change it</h2>
+
+            <div class="fields">
+                <label>
+                    <span>Name</span>
+                    <input @bind="Name" />
+                </label>
+
+                <label>
+                    <span>What</span>
+                    <select @bind="Kind">
+                        @foreach (var kind in Kinds)
+                        {
+                            <option value="@kind">@Said(kind)</option>
+                        }
+                    </select>
+                </label>
+
+                <label>
+                    <span>Where</span>
+                    <select @bind="Environment">
+                        @foreach (var where in Environments)
+                        {
+                            <option value="@where">@where</option>
+                        }
+                    </select>
+                </label>
+            </div>
+
+            <div class="fields">
+                <label>
+                    <span>Provider</span>
+                    <input @bind="Provider" />
+                </label>
+
+                <label>
+                    <span>Part of</span>
+                    <select @bind="PartOf">
+                        <option value="">Nothing in particular</option>
+                        @foreach (var service in Services)
+                        {
+                            <option value="@service.Id">@service.Name</option>
+                        }
+                    </select>
+                </label>
+
+                <label>
+                    <span>Runs out</span>
+                    <input type="date" @bind="Expires" />
+                </label>
+            </div>
+
+            <div class="fields">
+                <label>
+                    <span>Where to find it</span>
+                    <input @bind="Address" placeholder="a console link or an address" />
+                </label>
+            </div>
+
+            <label class="stack">
+                <span>Notes</span>
+                <textarea rows="3" @bind="Notes"></textarea>
+            </label>
+
+            <div class="row-actions">
+                <button type="button" @onclick="Save">Save it</button>
+
+                @if (Resource.IsLive)
+                {
+                    <button type="button" class="button--quiet" @onclick="Retire">
+                        The firm no longer has it
+                    </button>
+                }
+                else
+                {
+                    <button type="button" class="button--quiet" @onclick="StillThere">
+                        It is still there
+                    </button>
+                }
+            </div>
+
+            <p class="subtle">
+                Kept rather than deleted, and for a reason peculiar to this table: a server that
+                was decommissioned is the answer to "what used to be at that address", which is
+                asked precisely when something unexpected is still talking to it.
+            </p>
+        </section>
+    </AuthorizeView>
+}
+
+@code {
+    private const string Managing = PermissionClaim.PolicyPrefix + Permissions.PlatformManage;
+
+    private static readonly ResourceKind[] Kinds =
+    [
+        ResourceKind.Server,
+        ResourceKind.Database,
+        ResourceKind.ContainerHost,
+        ResourceKind.Storage,
+        ResourceKind.Domain,
+        ResourceKind.DnsZone,
+        ResourceKind.Certificate,
+        ResourceKind.ThirdParty,
+        ResourceKind.Other,
+    ];
+
+    private static readonly DeploymentEnvironment[] Environments =
+    [
+        DeploymentEnvironment.Production,
+        DeploymentEnvironment.Staging,
+        DeploymentEnvironment.Development,
+        DeploymentEnvironment.Other,
+    ];
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private Resource? Resource { get; set; }
+
+    private List<Service> Services { get; set; } = [];
+
+    private string Name { get; set; } = string.Empty;
+
+    private ResourceKind Kind { get; set; } = ResourceKind.Server;
+
+    private DeploymentEnvironment Environment { get; set; } = DeploymentEnvironment.Production;
+
+    private string Provider { get; set; } = string.Empty;
+
+    private Guid? PartOf { get; set; }
+
+    private DateTime? Expires { get; set; }
+
+    private string Address { get; set; } = string.Empty;
+
+    private string Notes { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private DateOnly Today => Clock.Today;
+
+    private string ServiceName =>
+        Resource?.ServiceId is { } id
+            ? Services.FirstOrDefault(one => one.Id == id)?.Name ?? "something since retired"
+            : string.Empty;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Resource = await Estate.ResourceAsync(Id);
+        Services = [.. (await Estate.ServicesAsync()).Where(one => one.IsLive)];
+
+        if (Resource is null)
+        {
+            return;
+        }
+
+        Name = Resource.Name;
+        Kind = Resource.Kind;
+        Environment = Resource.Environment;
+        Provider = Resource.Provider ?? string.Empty;
+        PartOf = Resource.ServiceId;
+        Expires = Resource.ExpiresOn?.ToDateTime(TimeOnly.MinValue);
+        Address = Resource.Address ?? string.Empty;
+        Notes = Resource.Notes ?? string.Empty;
+    }
+
+    private Task Save() => Act(
+        () => Estate.DescribeResourceAsync(
+            Id,
+            Name,
+            Kind,
+            string.IsNullOrWhiteSpace(Provider) ? null : Provider,
+            Environment,
+            PartOf,
+            Expires is { } ends ? DateOnly.FromDateTime(ends) : null,
+            string.IsNullOrWhiteSpace(Address) ? null : Address,
+            string.IsNullOrWhiteSpace(Notes) ? null : Notes),
+        "Saved.");
+
+    private Task Retire() => Act(
+        () => Estate.RetireResourceAsync(Id), "Off the live register. The row stays.");
+
+    private Task StillThere() => Act(
+        () => Estate.StillThereAsync(Id), "Back on the live register.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private static string Said(ResourceKind kind) => kind switch
+    {
+        ResourceKind.ContainerHost => "Container host",
+        ResourceKind.DnsZone => "DNS zone",
+        ResourceKind.ThirdParty => "Third party",
+        _ => kind.ToString(),
+    };
+}

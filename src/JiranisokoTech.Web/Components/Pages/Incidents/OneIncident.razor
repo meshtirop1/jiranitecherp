@@ -3,6 +3,7 @@
 @using System.Security.Claims
 @using JiranisokoTech.Application.Authorization
 @using JiranisokoTech.Application.Incidents
+@using JiranisokoTech.Application.Platform
 @using JiranisokoTech.Domain.Incidents
 @using JiranisokoTech.Infrastructure.Incidents
 @using JiranisokoTech.Infrastructure.People
@@ -11,6 +12,7 @@
 @inject IncidentService Service
 @inject IIncidentRepository Incidents
 @inject IncidentQueries Queries
+@inject EstateService Estate
 @inject PeopleQueries People
 @inject JiranisokoTech.Application.Abstractions.IClock Clock
 
@@ -42,6 +44,10 @@ else
         <p class="subtle">
             <span class="pill @PillFor(Incident.Status)">@Say(Incident.Status)</span>
             <span class="pill @PillFor(Incident.Severity)">@Incident.Severity</span>
+            @if (Named is { } service)
+            {
+                <a href="/platform/services/@Incident.ServiceId">@service</a>
+            }
             @if (Incident.Affects is { } what)
             {
                 <span class="subtle">@what</span>
@@ -295,8 +301,23 @@ else
                 </label>
 
                 <label>
-                    <span>What it affects</span>
-                    <input @bind="Affects" />
+                    <span>Which service</span>
+                    <select @bind="ServiceId">
+                        <option value="">Not in the catalogue</option>
+                        @foreach (var service in Catalogue)
+                        {
+                            <option value="@service.Id">@service.Name</option>
+                        }
+                    </select>
+                    <span class="subtle">
+                        From section 14's catalogue, which is what turns "the despatch board is
+                        down" into who owns it and what it runs on.
+                    </span>
+                </label>
+
+                <label>
+                    <span>And more precisely</span>
+                    <input @bind="Affects" placeholder="only the Mombasa depot" />
                 </label>
             </div>
 
@@ -469,6 +490,10 @@ else
 
     private string Affects { get; set; } = string.Empty;
 
+    private Guid? ServiceId { get; set; }
+
+    private List<JiranisokoTech.Domain.Platform.Service> Catalogue { get; set; } = [];
+
     private DateTime? Actually { get; set; }
 
     private DateTime? EndedAt { get; set; }
@@ -476,6 +501,12 @@ else
     private string? Refusal { get; set; }
 
     private string? Done { get; set; }
+
+    /// <summary>The service's name, when the incident names one.</summary>
+    private string? Named =>
+        Incident?.ServiceId is { } id
+            ? Catalogue.FirstOrDefault(one => one.Id == id)?.Name
+            : null;
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -516,6 +547,9 @@ else
 
         Title = Incident.Title;
         Affects = Incident.Affects ?? string.Empty;
+        ServiceId = Incident.ServiceId;
+
+        Catalogue = [.. (await Estate.ServicesAsync()).Where(one => one.IsLive)];
     }
 
     private async Task Add(NoteKind kind)
@@ -597,7 +631,10 @@ else
 
     private Task Describe() => Act(
         () => Service.DescribeAsync(
-            Incident!.Id, Title, string.IsNullOrWhiteSpace(Affects) ? null : Affects),
+            Incident!.Id,
+            Title,
+            ServiceId,
+            string.IsNullOrWhiteSpace(Affects) ? null : Affects),
         "Changed.");
 
     private async Task Mitigate()

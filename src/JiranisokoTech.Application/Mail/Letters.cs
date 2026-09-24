@@ -177,6 +177,36 @@ public static class Letters
         return Compose(toAddress, toName, "Contracts running out soon", text, link: null);
     }
 
+    /// <summary>
+    /// Domains, certificates and subscriptions running out.
+    /// </summary>
+    /// <remarks>
+    /// Blunter than the contracts letter, because the consequences are blunter: a contract that
+    /// lapses is a conversation the following week, and a certificate that expires is a site
+    /// nobody can reach at a moment nobody chose.
+    /// </remarks>
+    public static EmailMessage ResourcesExpiring(
+        string toAddress, string toName, IReadOnlyList<string> lines)
+    {
+        var listed = string.Join(Environment.NewLine, lines);
+
+        var text = $"""
+            Hello {toName},
+
+            These run out soon:
+
+            {listed}
+
+            A certificate that expires takes the site down at a moment nobody chose,
+            and a domain that lapses takes the firm's email with it. Both are cheap
+            to renew and expensive to notice late.
+
+            {Signature}
+            """;
+
+        return Compose(toAddress, toName, "Things running out soon", text, link: null);
+    }
+
     /// <summary>Somebody is waiting on this person to decide something.</summary>
     public static EmailMessage AwaitingDecision(
         string toAddress,

@@ -14,6 +14,9 @@ public enum ReminderKind
     ContractRenewal = 1,
     QualificationLapsing = 2,
     InvoiceOverdue = 3,
+
+    /// <summary>A domain, a certificate or a subscription running out. Section 14.</summary>
+    ResourceExpiring = 4,
 }
 
 /// <summary>
@@ -116,6 +119,15 @@ public readonly record struct ReminderLadder
          * anybody is chasing it. Seven, twenty-one and forty-five days late.
          */
         ReminderKind.InvoiceOverdue => Of(-7, -21, -45),
+
+        /*
+         * Tighter than a contract's, because the failure is different in kind. A contract that
+         * lapses is a conversation; a certificate that expires takes the site down at a moment
+         * nobody chose, and a domain that lapses takes the firm's email with it. Thirty days is
+         * enough to renew anything, and seven and two are the ones that get somebody out of a
+         * meeting.
+         */
+        ReminderKind.ResourceExpiring => Of(30, 7, 2),
         _ => Of(90, 45, 14),
     };
 

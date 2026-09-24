@@ -18,6 +18,7 @@ public sealed record IncidentRow(
     DateTimeOffset? MitigatedAt,
     DateTimeOffset? ResolvedAt,
     string? Affects,
+    Guid? ServiceId,
     Guid? LeadId,
     bool HasReview,
     bool ReviewAgreed)
@@ -101,6 +102,7 @@ public sealed class IncidentQueries(AppDbContext database)
                 one.MitigatedAt,
                 one.ResolvedAt,
                 one.Affects,
+                one.ServiceId,
                 one.LeadId,
             })
             .ToListAsync(cancellationToken);
@@ -127,6 +129,7 @@ public sealed class IncidentQueries(AppDbContext database)
                     one.MitigatedAt,
                     one.ResolvedAt,
                     one.Affects,
+                    one.ServiceId,
                     one.LeadId,
                     reviews.ContainsKey(one.Id),
                     reviews.GetValueOrDefault(one.Id) == PostmortemStatus.Agreed))

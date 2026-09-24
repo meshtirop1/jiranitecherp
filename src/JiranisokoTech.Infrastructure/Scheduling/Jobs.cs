@@ -287,6 +287,136 @@ public sealed class WarnAboutExpiringContracts(
 /// would be the one that sent a second notice, and the symptom would be indistinguishable
 /// from the fault this whole ledger was added to fix.
 /// </remarks>
+/// <summary>
+/// Tell somebody when a domain, a certificate or a subscription is about to run out.
+/// </summary>
+/// <remarks>
+/// Section 14's one moving part. Everything else in the resource register is a note to whoever
+/// is looking at it; this is the column that acts, and it acts because the failure it prevents
+/// happens at a moment nobody chose — a certificate expires at three on a Sunday morning and a
+/// lapsed domain takes the firm's email with it.
+///
+/// <b>Nothing here checks anything.</b> It does not open a TLS connection or query a registrar;
+/// it reads the date somebody typed. A job that went and looked would be better and would be a
+/// different feature, and one that pretended to would be worse than this: a register that
+/// verifies itself is one nobody keeps up to date.
+///
+/// The ladder is tighter than a contract's — thirty days, seven, two — because thirty is enough
+/// to renew anything and two is the one that gets somebody out of a meeting.
+/// </remarks>
+public sealed class WarnAboutExpiringResources(
+    AppDbContext database,
+    IMailer mailer,
+    IClock clock)
+    : IRecurringJob
+{
+    public string Name => "resources.expiring";
+
+    public string Description =>
+        "Tells the heads which domains, certificates and subscriptions run out soon.";
+
+    public TimeSpan Every => TimeSpan.FromDays(1);
+
+    public async Task<string> RunAsync(CancellationToken cancellationToken = default)
+    {
+        var today = clock.Today;
+        var ladder = ReminderLadder.For(ReminderKind.ResourceExpiring);
+        var furthest = today.AddDays(ladder.FirstDaysBefore);
+
+        var expiring = await database.Resources
+            .AsNoTracking()
+            .Where(one => one.RetiredAt == null
+                && one.ExpiresOn != null
+                && one.ExpiresOn >= today
+                && one.ExpiresOn <= furthest)
+            .OrderBy(one => one.ExpiresOn)
+            .Select(one => new
+            {
+                one.Id,
+                one.Name,
+                one.Kind,
+                one.Provider,
+                Expires = one.ExpiresOn!.Value,
+            })
+            .ToListAsync(cancellationToken);
+
+        var due = new List<(Guid Id, string Subject, DateOnly On, ReminderStage Stage)>();
+
+        foreach (var one in expiring)
+        {
+            if (ladder.StageDueOn(today, one.Expires) is not { } stage)
+            {
+                continue;
+            }
+
+            var subject = one.Provider is { Length: > 0 } who
+                ? $"{one.Name} ({one.Kind}, {who})"
+                : $"{one.Name} ({one.Kind})";
+
+            if (await Reminders.AlreadyToldAsync(
+                database,
+                ReminderKind.ResourceExpiring,
+                one.Id,
+                one.Expires,
+                stage,
+                cancellationToken))
+            {
+                continue;
+            }
+
+            due.Add((one.Id, subject, one.Expires, stage));
+        }
+
+        if (due.Count == 0)
+        {
+            return expiring.Count == 0
+                ? "Nothing runs out in the next month."
+                : $"{expiring.Count} running out; everybody who needs telling has been told.";
+        }
+
+        var heads = await Reminders.HeadsOfDepartmentsAsync(database, cancellationToken);
+
+        var lines = due.Select(one => $"  {one.Subject}, runs out {one.On:d MMMM yyyy}");
+
+        var told = 0;
+
+        foreach (var (address, name) in heads.Reachable)
+        {
+            await mailer.SendAsync(
+                Letters.ResourcesExpiring(address, name, [.. lines]),
+                cancellationToken);
+
+            told++;
+        }
+
+        if (told == 0)
+        {
+            /*
+             * Nothing written when nobody was told, for the reason the qualifications job gives
+             * at length: a reminder row against an email that never went out silences the notice
+             * for good.
+             */
+            return $"{due.Count} running out and no department head with a mailbox here to tell.";
+        }
+
+        foreach (var one in due)
+        {
+            database.Reminders.Add(Reminder.Issued(
+                ReminderKind.ResourceExpiring,
+                one.Id,
+                one.Subject,
+                one.Stage,
+                one.On,
+                told,
+                clock.Now));
+        }
+
+        await database.SaveChangesAsync(cancellationToken);
+
+        return heads.Said(due.Count, told);
+    }
+}
+
 internal static class Reminders
 {
     public static Task<bool> AlreadyToldAsync(
