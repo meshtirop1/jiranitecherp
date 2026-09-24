@@ -64,6 +64,15 @@ public sealed class WebhookInbox(
 
         if (adapter is null)
         {
+            /*
+             * Counted, like every other refusal. This branch and the one below used to
+             * return without touching anything countable, which meant the whole class of
+             * "our own deployment is wrong" was invisible: no delivery row, no counter, and
+             * three queue depths of zero on the monitoring screen while the host got a 503
+             * on every push and gave up retrying within the day.
+             */
+            Refused(provider, "unreadable");
+
             return new Receipt(Reception.NotConfigured, $"Nothing here reads {provider}.");
         }
 
@@ -80,6 +89,8 @@ public sealed class WebhookInbox(
                 "A {Provider} delivery arrived and no secret is configured for it, so its "
                 + "signature could not be checked and it was refused.",
                 provider);
+
+            Refused(provider, "unconfigured");
 
             return new Receipt(
                 Reception.NotConfigured,
@@ -100,8 +111,7 @@ public sealed class WebhookInbox(
                 + "refused.",
                 provider);
 
-            Telemetry.DeliveriesRefused.Add(
-                1, new KeyValuePair<string, object?>("provider", provider.ToString()));
+            Refused(provider, "unsigned");
 
             return new Receipt(Reception.Unsigned, "The signature did not match.");
         }
@@ -182,6 +192,22 @@ public sealed class WebhookInbox(
 
         return new Receipt(Reception.Accepted, "Received.", delivery.Id);
     }
+
+    /// <summary>
+    /// Count a refusal, saying which door it was refused at.
+    /// </summary>
+    /// <remarks>
+    /// The tag is the whole point of routing all three through here. "Unsigned" is the
+    /// ordinary background noise of an endpoint on the public internet and needs nobody;
+    /// "unconfigured" and "unreadable" mean this firm's own deployment is wrong and every
+    /// push is being thrown away. Counted under one name they are indistinguishable, and
+    /// the harmless one is far commoner, so the alarming one would never be seen.
+    /// </remarks>
+    private static void Refused(GitProvider provider, string why) =>
+        Telemetry.DeliveriesRefused.Add(
+            1,
+            new KeyValuePair<string, object?>("provider", provider.ToString()),
+            new KeyValuePair<string, object?>("why", why));
 }
 
 /// <summary>

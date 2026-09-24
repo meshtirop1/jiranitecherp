@@ -3,6 +3,25 @@ using JiranisokoTech.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Money = JiranisokoTech.Domain.Common.Money;
 
+/*
+ * The report totals are keyed by a nullable account id, and null is a key this file means
+ * rather than tolerates: it is the unclassified bucket, which every invoice and claim
+ * written before the chart of accounts existed falls into. The report names that row
+ * explicitly, because one that quietly dropped it would show a firm that earned nothing.
+ *
+ * CS8714 objects because Dictionary declares its key notnull. A Dictionary whose key is a
+ * Nullable<T> does accept null — the runtime null check is folded away for a value-type
+ * key — so the warning is about the annotation rather than the behaviour. Suppressed here
+ * with the reason rather than worked around with a sentinel, because Guid.Empty standing
+ * for an absent account is a convention somebody has to be told, while a nullable key is a
+ * fact the type states.
+ *
+ * These three sat in the build for two commits without anybody noticing, which is what a
+ * repository that tolerates any warnings at all costs: the wall is only useful while it is
+ * exactly zero high.
+ */
+#pragma warning disable CS8714
+
 namespace JiranisokoTech.Infrastructure.Accounting;
 
 /// <summary>
@@ -330,3 +349,5 @@ public sealed record IncomeAndExpenditure(
             : lines.Aggregate(
                 Money.Zero(Currency), (running, line) => running + line.Total);
 }
+
+#pragma warning restore CS8714

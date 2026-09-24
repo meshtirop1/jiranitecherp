@@ -1,6 +1,4 @@
-using System.Diagnostics;
 using JiranisokoTech.Application.Abstractions;
-using JiranisokoTech.Application.Observability;
 using JiranisokoTech.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -125,12 +123,20 @@ public sealed class Scheduler(
          * The last run of each job, read from the database rather than remembered. A
          * scheduler that counted from process start would run every daily sweep again on
          * every deploy — six times in a busy week, each one sending the same reminders.
+         *
+         * Only runs the scheduler itself started count. A person pressing "run it now" on
+         * the machinery screen must not move the timetable: somebody checking a suspect
+         * job at 14:00 would otherwise silently push its real daily run from nine the next
+         * morning to two in the afternoon, and would have no way of knowing they had. The
+         * cost of ignoring their run is that the job may run twice, which every job here
+         * is required to survive anyway — a process dying between the work and the record
+         * produces exactly the same thing.
          */
         var names = jobs.Select(job => job.Name).ToList();
 
         var lastRuns = await database.Set<JobRun>()
             .AsNoTracking()
-            .Where(run => names.Contains(run.Job))
+            .Where(run => names.Contains(run.Job) && run.AskedBy == null)
             .GroupBy(run => run.Job)
             .Select(group => new { Job = group.Key, At = group.Max(run => run.At) })
             .ToDictionaryAsync(entry => entry.Job, entry => entry.At, stoppingToken);
@@ -142,86 +148,31 @@ public sealed class Scheduler(
                 continue;
             }
 
-            await RunAsync(job, scope.ServiceProvider, clock, stoppingToken);
+            await RunAsync(job.Name, scope.ServiceProvider, stoppingToken);
         }
-    }
-
-    private async Task RunAsync(
-        IRecurringJob job,
-        IServiceProvider services,
-        IClock clock,
-        CancellationToken stoppingToken)
-    {
-        /*
-         * Its own scope per job. They share a sweep but not a DbContext: one job whose
-         * change tracker is full of a thousand certifications must not make the next one
-         * slow, and a job that leaves the context in a bad state must not take the others
-         * with it.
-         */
-        using var scope = services.GetRequiredService<IServiceScopeFactory>().CreateScope();
-
-        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-        using var span = Telemetry.Source.StartActivity($"job {job.Name}");
-        var stopwatch = Stopwatch.StartNew();
-
-        try
-        {
-            var detail = await ScopedAsync(job, scope.ServiceProvider, stoppingToken);
-
-            stopwatch.Stop();
-
-            database.Set<JobRun>().Add(
-                JobRun.Ran(job.Name, detail, clock.Now, stopwatch.Elapsed));
-
-            Telemetry.JobsRun.Add(1, new KeyValuePair<string, object?>("job", job.Name));
-
-            logger.LogInformation(
-                "Job {Job} ran in {Milliseconds}ms: {Detail}",
-                job.Name,
-                stopwatch.ElapsedMilliseconds,
-                detail);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            stopwatch.Stop();
-            span?.SetStatus(ActivityStatusCode.Error, exception.Message);
-
-            database.Set<JobRun>().Add(JobRun.Failed(
-                job.Name, Short(exception), clock.Now, stopwatch.Elapsed));
-
-            Telemetry.JobsFailed.Add(1, new KeyValuePair<string, object?>("job", job.Name));
-
-            logger.LogError(exception, "Job {Job} failed.", job.Name);
-        }
-
-        Telemetry.JobDuration.Record(
-            stopwatch.Elapsed.TotalSeconds, new KeyValuePair<string, object?>("job", job.Name));
-
-        /*
-         * Saved even when the job failed, because a failure nobody recorded is
-         * indistinguishable from a job that never ran — and those want opposite responses.
-         */
-        await database.SaveChangesAsync(stoppingToken);
     }
 
     /// <summary>
-    /// Resolves the job again inside its own scope before running it.
+    /// Runs one job in a scope of its own.
     /// </summary>
     /// <remarks>
-    /// The instance handed to the sweep came from the sweep's scope and holds that scope's
-    /// DbContext. Running it there would share a change tracker across every job in the
-    /// sweep, which is the thing the separate scopes exist to prevent.
+    /// Its own scope per job. They share a sweep but not a DbContext: one job whose change
+    /// tracker is full of a thousand certifications must not make the next one slow, and a
+    /// job that leaves the context in a bad state must not take the others with it. That
+    /// is also why the job is resolved by name from inside the new scope rather than
+    /// handed across — the instance the sweep listed holds the sweep's context.
+    ///
+    /// What actually happens to it, and what gets written down, is
+    /// <see cref="JobRunner"/>'s. It was lifted out of here so that the "run it now"
+    /// button on the machinery screen cannot record a run differently from this loop.
     /// </remarks>
-    private static async Task<string> ScopedAsync(
-        IRecurringJob job, IServiceProvider services, CancellationToken stoppingToken)
+    private static async Task RunAsync(
+        string name, IServiceProvider services, CancellationToken stoppingToken)
     {
-        var fresh = services.GetServices<IRecurringJob>()
-            .FirstOrDefault(one => one.Name == job.Name) ?? job;
+        using var scope = services.GetRequiredService<IServiceScopeFactory>().CreateScope();
 
-        return await fresh.RunAsync(stoppingToken);
+        var runner = scope.ServiceProvider.GetRequiredService<JobRunner>();
+
+        await runner.RunAsync(name, askedBy: null, stoppingToken);
     }
-
-    private static string Short(Exception exception) =>
-        exception.Message.Length > 500 ? exception.Message[..500] : exception.Message;
 }

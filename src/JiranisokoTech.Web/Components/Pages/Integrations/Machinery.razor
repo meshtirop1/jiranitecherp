@@ -1,9 +1,15 @@
 @page "/settings/machinery"
+@using System.Security.Claims
 @using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Domain.Engineering
+@using JiranisokoTech.Infrastructure.Engineering
 @using JiranisokoTech.Infrastructure.Scheduling
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.SettingsManage)]
 @inject JobQueries Jobs
+@inject HostHealthQueries Hosts
+@inject JobRunner Runner
+@inject NavigationManager Navigation
 
 <PageTitle>Machinery — Jiranisoko Delivery</PageTitle>
 
@@ -18,6 +24,27 @@
     scheduled jobs. Brought together on one screen because the question somebody asks
     is "is anything stuck", not "is the outbox stuck".
 </p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Shut.Count > 0)
+{
+    @*
+        Above the queue depths on purpose. Those are all zero when this is wrong, so a
+        reader who scanned down the page would conclude everything was fine — and the
+        reason it is wrong is that nothing is arriving to be counted.
+    *@
+    <p class="refusal" role="alert">
+        <strong>@string.Join(", ", Shut.Select(host => Said(host.Provider)))</strong>
+        @(Shut.Count == 1 ? "has" : "have") repositories connected and
+        @(Shut.Count == 1 ? "cannot" : "cannot") deliver anything here. Every push is being
+        refused before it is written down, so the queues below will read zero however long
+        this lasts.
+    </p>
+}
 
 @if (Depths is { AnythingNeedsSomebody: true })
 {
@@ -64,7 +91,7 @@
                     <td class="number @(Depths.OutboxAbandoned > 0 ? "over" : null)">
                         @Depths.OutboxAbandoned
                     </td>
-                    <td></td>
+                    <td><a href="/settings/events">Look</a></td>
                 </tr>
                 <tr>
                     <td>
@@ -101,6 +128,104 @@
 </section>
 
 <section class="standing">
+    <h2>Code hosts</h2>
+
+    @if (Hosting.Count == 0)
+    {
+        <p class="empty">No code host is set up.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Code hosts</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Host</th>
+                    <th scope="col">Watching</th>
+                    <th scope="col">Can it get in</th>
+                    <th scope="col">Last heard</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var host in Hosting)
+                {
+                    <tr>
+                        <td><strong>@Said(host.Provider)</strong></td>
+                        <td class="number">@host.Connected</td>
+                        <td>
+                            @if (!host.CanBeRead)
+                            {
+                                <span class="pill pill--danger">Nothing reads it</span>
+                            }
+                            else if (!host.SecretConfigured)
+                            {
+                                @*
+                                    Whether, never the value and never part of it. This
+                                    screen is one somebody leaves open on a second monitor.
+                                *@
+                                <span class="pill pill--danger">No secret configured</span>
+                            }
+                            else
+                            {
+                                <span class="pill pill--done">Yes</span>
+                            }
+                        </td>
+                        <td>
+                            @if (host.LastHeardAt is { } at)
+                            {
+                                @at.ToString("d MMM HH:mm")
+
+                                @if (host.QuietTooLong)
+                                {
+                                    @*
+                                        Amber, not red. A fortnight of quiet on a repository
+                                        nobody pushed to is not a fault — but a secret that
+                                        is present and wrong looks exactly like this, and
+                                        nothing else in the system can tell the two apart.
+                                    *@
+                                    <span class="pill pill--wait">Quiet a while</span>
+                                }
+                            }
+                            else if (host.NeverHeardFrom)
+                            {
+                                @*
+                                    A prompt rather than a verdict. Most hosts send a test
+                                    delivery when a webhook is added, so its absence usually
+                                    means the webhook was never added — but a host set up two
+                                    minutes ago looks identical.
+                                *@
+                                <span class="pill pill--wait">Never</span>
+                            }
+                            else
+                            {
+                                <span class="subtle">—</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <p class="subtle">
+            This table reports the configuration and not a count, because a host that cannot
+            be read from writes nothing to count. A refusal at the door happens before a
+            delivery row exists — so the queues above stay at zero for as long as it lasts,
+            and they are the only other place anybody would look.
+        </p>
+
+        <p class="subtle">
+            A secret that is configured and <em>wrong</em> — rotated on the host, or
+            truncated by a copy and paste — cannot be told from a correct one here: it is
+            present and non-empty, and the delivery it refuses is refused at the signature,
+            which also writes nothing. The only sign is silence, which is why a host set up
+            properly and quiet for
+            @($"{HostHealthQueries.LongEnoughToAsk.TotalDays:0}") days is marked rather than
+            left alone. It may simply mean nobody pushed anything.
+        </p>
+    }
+</section>
+
+<section class="standing">
     <h2>Scheduled jobs</h2>
 
     @if (States.Count == 0)
@@ -117,6 +242,7 @@
                     <th scope="col">Every</th>
                     <th scope="col">Last ran</th>
                     <th scope="col">What it found</th>
+                    <th scope="col"></th>
                 </tr>
             </thead>
             <tbody>
@@ -139,7 +265,18 @@
                             {
                                 @job.LastAt!.Value.ToString("d MMM HH:mm")
 
-                                @if (job.IsOverdue)
+                                @if (job.OnlyEverByHand)
+                                {
+                                    @*
+                                        Said in its own words rather than as "Overdue"
+                                        beside a run that finished two minutes ago, which
+                                        reads as a bug in the screen and gets dismissed.
+                                        This is the screen correctly reporting that the
+                                        only thing running this job is a person.
+                                    *@
+                                    <span class="pill pill--danger">Never on its own</span>
+                                }
+                                else if (job.IsOverdue)
                                 {
                                     <span class="pill pill--danger">Overdue</span>
                                 }
@@ -155,6 +292,25 @@
                                 <span class="pill pill--danger">Failed</span>
                             }
                             <span class="subtle">@(job.LastDetail ?? "—")</span>
+
+                            @if (job.LastWasByHand)
+                            {
+                                <span class="subtle">asked for by @job.LastAskedBy</span>
+                            }
+                        </td>
+                        <td>
+                            @*
+                                Safe to offer because every job is required to be safe to
+                                run twice — IRecurringJob says so, and it has to, since a
+                                process dying between the work and the record produces
+                                exactly the same thing. What this does not do is move the
+                                timetable: the scheduler ignores runs a person asked for.
+                            *@
+                            <EditForm Model="Nothing" method="post"
+                                      FormName="@($"run-{job.Name}")"
+                                      OnValidSubmit="() => Run(job.Name)" class="inline">
+                                <button type="submit">Run it now</button>
+                            </EditForm>
                         </td>
                     </tr>
                 }
@@ -165,6 +321,14 @@
             A job is called overdue after twice its interval, not once. A daily job that
             ran at 09:01 one morning and 09:02 the next is a minute late and not a
             problem; one that has not run in two days has stopped.
+        </p>
+
+        <p class="subtle">
+            Lateness is measured against the scheduler&rsquo;s own runs and not against
+            runs somebody asked for. Otherwise pressing <em>Run it now</em> to check a
+            suspect job would clear its badge, so the act of checking would erase the
+            evidence — and a dead scheduler would look healthy for as long as anybody kept
+            checking.
         </p>
     }
 </section>
@@ -193,7 +357,14 @@
                 {
                     <tr>
                         <td>@run.At.ToString("d MMM HH:mm:ss")</td>
-                        <td><code>@run.Job</code></td>
+                        <td>
+                            <code>@run.Job</code>
+
+                            @if (!run.WasScheduled)
+                            {
+                                <span class="subtle">@run.AskedBy asked</span>
+                            }
+                        </td>
                         <td class="number">@run.Milliseconds ms</td>
                         <td>
                             @if (run.Outcome == JobOutcome.Failed)
@@ -210,18 +381,87 @@
 </section>
 
 @code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    /// <summary>
+    /// A model for the run forms, which submit no fields.
+    /// </summary>
+    /// <remarks>
+    /// This page is statically rendered, so a button outside a form does nothing at all —
+    /// and EditForm insists on a model even when the only thing being said is that the
+    /// button was pressed.
+    /// </remarks>
+    private object Nothing { get; } = new();
+
+    private string? Refusal { get; set; }
+
     private List<JobState> States { get; set; } = [];
 
     private List<JobRun> History { get; set; } = [];
 
     private QueueDepths? Depths { get; set; }
 
-    protected override async Task OnInitializedAsync()
+    private List<HostHealth> Hosting { get; set; } = [];
+
+    private List<HostHealth> Shut => [.. Hosting.Where(host => host.Shut)];
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
     {
         States = await Jobs.JobsAsync();
         History = await Jobs.HistoryAsync();
         Depths = await Jobs.DepthsAsync();
+        Hosting = await Hosts.HostsAsync();
     }
+
+    /// <summary>
+    /// Run one job now, and say who asked.
+    /// </summary>
+    /// <remarks>
+    /// This runs the job inside the request, which is unusual and deliberate. The
+    /// alternative — queueing it and telling the reader to come back — would mean the one
+    /// thing somebody wants from this button, the answer to "does it work now", arrives
+    /// somewhere else. Every job here finishes in milliseconds on this firm's data, and
+    /// the run is recorded either way, so a request that times out still leaves the
+    /// evidence behind.
+    /// </remarks>
+    private async Task Run(string name)
+    {
+        Refusal = null;
+
+        var state = await AuthenticationState;
+
+        var who = state.User.FindFirstValue("display_name")
+            ?? state.User.Identity?.Name
+            ?? "somebody signed in";
+
+        var run = await Runner.RunAsync(name, who);
+
+        if (run is null)
+        {
+            /*
+             * The job was removed from the code between this page rendering and the button
+             * being pressed. Rare, and a five-hundred page for it would be worse than a
+             * sentence.
+             */
+            Refusal = $"No job is registered under the name {name} any more.";
+            await LoadAsync();
+            return;
+        }
+
+        // Reloaded rather than re-rendered, so the history shows the run that just
+        // happened instead of the state this request was built from.
+        Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+    }
+
+    /// <summary>A host's name as its own documentation spells it.</summary>
+    private static string Said(GitProvider provider) => provider switch
+    {
+        GitProvider.AzureDevOps => "Azure DevOps",
+        _ => provider.ToString(),
+    };
 
     /// <summary>An interval as somebody would say it.</summary>
     private static string Said(TimeSpan every) => every switch

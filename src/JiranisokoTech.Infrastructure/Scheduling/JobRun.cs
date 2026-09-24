@@ -28,7 +28,12 @@ public sealed class JobRun
     }
 
     private JobRun(
-        string job, JobOutcome outcome, string detail, DateTimeOffset at, TimeSpan took)
+        string job,
+        JobOutcome outcome,
+        string detail,
+        DateTimeOffset at,
+        TimeSpan took,
+        string? askedBy)
     {
         Id = Guid.CreateVersion7();
         Job = job;
@@ -36,13 +41,24 @@ public sealed class JobRun
         Detail = detail;
         At = at;
         Milliseconds = (long)took.TotalMilliseconds;
+        AskedBy = askedBy;
     }
 
-    public static JobRun Ran(string job, string detail, DateTimeOffset at, TimeSpan took) =>
-        new(job, JobOutcome.Ran, detail, at, took);
+    public static JobRun Ran(
+        string job,
+        string detail,
+        DateTimeOffset at,
+        TimeSpan took,
+        string? askedBy = null) =>
+        new(job, JobOutcome.Ran, detail, at, took, askedBy);
 
-    public static JobRun Failed(string job, string why, DateTimeOffset at, TimeSpan took) =>
-        new(job, JobOutcome.Failed, why, at, took);
+    public static JobRun Failed(
+        string job,
+        string why,
+        DateTimeOffset at,
+        TimeSpan took,
+        string? askedBy = null) =>
+        new(job, JobOutcome.Failed, why, at, took, askedBy);
 
     public Guid Id { get; private init; }
 
@@ -63,4 +79,24 @@ public sealed class JobRun
     public DateTimeOffset At { get; private init; }
 
     public long Milliseconds { get; private init; }
+
+    /// <summary>
+    /// Who pressed the button, or null when the scheduler ran it on its own.
+    /// </summary>
+    /// <remarks>
+    /// The column exists because of what the machinery screen is for. That screen answers
+    /// one question — has this job stopped — by comparing the last run against the
+    /// interval, and an on-demand run indistinguishable from a scheduled one would answer
+    /// it wrongly in the worst direction: somebody presses "run it now" to check a job
+    /// they suspect has stopped, the run succeeds, the overdue badge clears, and a dead
+    /// scheduler now looks healthy.
+    ///
+    /// So the two are recorded apart, and <c>JobQueries</c> measures lateness against
+    /// scheduled runs only. The history shows both, because "who ran this at 14:07 on a
+    /// Tuesday" is exactly the question somebody has when a handler ran twice.
+    /// </remarks>
+    public string? AskedBy { get; private init; }
+
+    /// <summary>The scheduler ran this one, rather than a person asking for it.</summary>
+    public bool WasScheduled => AskedBy is null;
 }

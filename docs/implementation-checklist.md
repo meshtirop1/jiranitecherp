@@ -15,10 +15,11 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 24 September 2026 · 1048 tests · verified against PostgreSQL in
+Last updated: 24 September 2026 · 1081 tests · verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
 container, a lost opportunity surviving its client record being deleted, the
-builds and deployments tables applying to a real Postgres, and
+builds and deployments tables applying to a real Postgres, an abandoned event
+put back by hand and picked up by the dispatcher, and
 every read path measured against a database holding a million rows — see
 [docs/performance.md](performance.md).
 
@@ -27,23 +28,25 @@ every read path measured against a database holding a million rows — see
 ## The honest headline
 
 The foundation and roughly half the core business modules are built and solid.
-**The engineering half of the brief has started.** Git integration is built and
-verified against a real GitHub payload shape: repositories, commits, pull
-requests and reviews arrive on their own, a merged pull request moves the work it
-names to review, and the delivery inbox verifies signatures, refuses replays and
-dead-letters what it cannot handle. Still absent: CI/CD, deployments,
-infrastructure, incidents and assets.
+**The engineering half of the brief is most of the way there.** Git integration
+is built and verified against real payload shapes from four hosts: repositories,
+commits, pull requests and reviews arrive on their own, a merged pull request
+moves the work it names to review, builds and deployments are recorded as the
+hosts report them, and the delivery inbox verifies signatures, refuses replays
+and dead-letters what it cannot handle. Still absent: infrastructure, incidents
+and assets.
 
 That matters more than the count suggests, because the brief's central
 philosophy is that *developers should spend as little time as possible entering
 ERP information manually* and that the system should collect it automatically
-from repositories, pull requests, CI and deployments. The repository half of that
-collection now exists — an engineer who names a branch after their work never
-reports on it again — and the build and deployment half does not. What is built
-is an ERP that a software company could run its business on, plus the beginning
-of the part that makes it developer-native.
+from repositories, pull requests, CI and deployments. All four of those now
+arrive on their own: an engineer who names a branch after their work never
+reports on it again, and the day's commits and deployments are shown beside the
+timesheet rather than typed into it. What is built is an ERP that a software
+company could run its business on, and the part that makes it developer-native
+is no longer the part that is missing.
 
-By section: **37 done, 3 partial, 58 not started, 1 excluded by agreement.**
+By section: **39 done, 3 partial, 56 not started, 1 excluded by agreement.**
 
 That count was recomputed from the tables below rather than adjusted, because the
 figure previously here did not add up to anything the tables said and had been
@@ -52,6 +55,13 @@ can check it: a section is done when every row under it is done, partial when
 its rows disagree or a row names a gap, and not started otherwise. Twenty-six of
 the brief's ninety-nine sections have no row yet at all and are counted as not
 started, which is what they are.
+
+Two of the changes in the latest count are rows that were **stale rather than
+undone**: §19 project profitability has been computed at `/projects/money` since
+§10, and the §94 note below claimed the opposite for several days. A checklist
+whose rows drift behind the code is worth less than no checklist, because
+somebody plans around it — so the count is recomputed from the tables on each
+pass rather than adjusted by the size of the change.
 
 ---
 
@@ -152,7 +162,7 @@ This block is the brief's stated centre of gravity and none of it exists.
 | ✅ | 20 | Expenses | Claim, approve, pay — approval and payment deliberately separate |
 | ✅ | 57 | Multi-currency | Money refuses cross-currency arithmetic; dated rates recorded by hand, conversion available and never stored |
 | ✅ | 18 | Chart of accounts, recurring expenses, financial reports | Income and expense accounts; standing costs that raise their own charges through the scheduler, catching up rather than skipping when it has been off; and one income-and-expenditure report. **No general ledger, and that is the decision rather than an omission:** a stored balance is a number that can disagree with the documents it was added up from, so every figure is summed from the invoices, claims and charges themselves. Accrual on both sides and the page says so. The difference is called a difference — there is no payroll yet (§22), so calling it profit would be wrong by the firm's largest cost |
-| ☐ | 19 | Project profitability | |
+| ✅ | 19 | Project profitability | **The row was stale rather than the work missing.** `ProjectMoneyQueries` and `/projects/money` compute revenue from sent invoices, cost from approved hours at the firm's standard rate plus paid expenses, and the margin between them — per project, every time, from the documents rather than from a stored figure. Costed at a blended rate for a permission reason and not for convenience: a delivery manager holds `projects.manage` and `time.view_all` and not `employees.pay`, and a cost built from real salaries would let them recover any one person's rate by dividing |
 | ☐ | 61 | Procurement — purchase requests, orders, receiving | |
 | ☐ | 62 | Vendor management | |
 
@@ -178,7 +188,7 @@ This block is the brief's stated centre of gravity and none of it exists.
 | ☐ | 59 | Notification rules | |
 | ☐ | 33 | Calendar | |
 | ✅ | 42 | Background jobs | A scheduler with a run history, three jobs registered in code, and the outbox plus two webhook queues beside it |
-| ✅ | 42 | Scheduled jobs | The scheduler runs the qualification and contract reminders on a ladder — 60/30/7 and 90/45/14 days out — against a ledger of notices already given. **This closed a live fault:** both jobs asked "what expires within N days" and mailed every department head every morning, so one contract produced forty-five identical emails, in flat contradiction of IRecurringJob's own stated contract that a job must be safe to run twice. Overdue-invoice chasing is written as a ladder (-7/-21/-45) but has no job yet; SSL and domain expiry need a server inventory, which is §14 |
+| ✅ | 42 | Scheduled jobs | The scheduler runs the qualification and contract reminders on a ladder — 60/30/7 and 90/45/14 days out — against a ledger of notices already given. **This closed a live fault:** both jobs asked "what expires within N days" and mailed every department head every morning, so one contract produced forty-five identical emails, in flat contradiction of IRecurringJob's own stated contract that a job must be safe to run twice. Overdue-invoice chasing is written as a ladder (-7/-21/-45) but has no job yet; SSL and domain expiry need a server inventory, which is §14. **A second live fault in these two jobs was found and fixed afterwards:** both read `Employee.Details.PersonalEmail` — the private address somebody types into their own profile beside their date of birth and their next of kin — and mailed the firm's certification and contract lists to it every morning. Internal notices about colleagues now go to the account address, which is where every other letter in this system already went; `MailRecipients` had the right answer from the day it was written and these were the only two senders that did not ask it. The same filter also dropped any head without a personal address in silence, so a firm whose reminders reached one person out of four had nothing saying so — the job's own sentence now names how many heard nothing. A count of emails sent cannot see either fault, which is why the suite was green: the test recorder now keeps the recipient |
 | ☐ | 43 | Caching | Redis runs and nothing uses it |
 
 ## AI — phase 8 — **not started**
@@ -209,7 +219,7 @@ This block is the brief's stated centre of gravity and none of it exists.
 | ☐ | 55 | Data privacy — export, deletion workflow | |
 | ☐ | 56 | Internationalisation | Strings are in the markup |
 | ✅ | 77 | Performance | Measured against PostgreSQL holding 600k audit rows, 250k hours, 120k work items and 40k invoices. Found five faults no test could see — an invoices screen and API reading all 40,000 to show 50, a work item page reading all 120,000 to show one, an uncapped approval queue with no index — and fixed them. The reads that stay slow are named with their reason in [docs/performance.md](performance.md), and `tools/JiranisokoTech.ScaleCheck` makes it repeatable |
-| ☐ | 84 | Admin tools — job monitoring, failed jobs, integration health | |
+| ✅ | 84 | Admin tools — job monitoring, failed jobs, integration health | Job monitoring was already there under §42. Two holes closed, and both were of the same kind: **something that needed a person, with no way for a person to act, and something broken with no row anywhere to show it.** **The events queue got the screen it never had.** The machinery page has counted abandoned outbox rows since it was built and its own alert said they "will not be tried again without somebody" — while the other two queues had a replay button from the day they were written and this one, the queue carrying hires, invoices and receipts, had a number. `/settings/events` lists them oldest first, because these are work to redo rather than records to read, and puts one or all of them back. A row whose event class no longer exists says so rather than letting somebody press the button and watch it come straight back. **A code host that cannot reach us is now visible.** This was invisible to every screen in the system and the code said so in writing: `WebhookSecrets` warns that a misspelt key "would leave the endpoint refusing every delivery for a reason nothing on a screen would explain". It does — the refusal happens before a delivery row exists, so the host got 503 on every push and gave up within the day while all three queue depths read zero and every job read green. The machinery screen now reports the configuration beside what has been heard from it, because only the two together separate "quiet because nothing happened" from "quiet because nothing can get in". Every refusal also ticks the counter now, tagged unsigned, unconfigured or unreadable — the first is the internet and the other two are our own deployment. **What cannot be told apart is said rather than hidden:** a secret that is present and *wrong* passes every test this can make and is refused at the signature, which also writes nothing, so a fortnight of silence on a watched repository is marked amber instead of claimed as a fault. **A job can be run now**, and the guard matters more than the button: lateness is measured against the scheduler's own runs, so pressing it cannot clear an overdue badge — otherwise checking a suspect job would erase the evidence, and a dead scheduler would look healthy for as long as anybody kept checking. It does not move the timetable either. `JobRunner` was lifted out of `Scheduler` so that both paths record a run identically, and doing it found a fault in the original: the save used the shutdown token, so the one run whose record matters most, the interrupted one, was the one not written down |
 
 ---
 
@@ -235,7 +245,12 @@ assessments, a real offer object and onboarding are still absent.
 
 **§94 Finance** — Client → contract → project → work → invoice → payment →
 revenue → cost → profitability.
-**Works as far as payment.** Cost and profitability are not calculated.
+**Runs end to end.** The last claim in this line was wrong for several days:
+revenue, cost and margin per project have been computed at `/projects/money`
+since §10, from sent invoices, approved hours at the firm's standard rate and
+paid expenses. What is still absent is payroll (§22), which is the firm's largest
+cost — so the difference is called a difference on every screen that shows it and
+never profit.
 
 ---
 

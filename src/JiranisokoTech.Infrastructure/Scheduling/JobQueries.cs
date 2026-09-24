@@ -36,8 +36,22 @@ public sealed class JobQueries(
             {
                 Job = group.Key,
                 At = group.Max(run => run.At),
+
+                /*
+                 * The last SCHEDULED run, kept apart from the last run of any kind, and
+                 * this is the whole reason JobRun records who asked.
+                 *
+                 * Lateness is measured against this one. Somebody who suspects a job has
+                 * stopped presses "run it now" to find out — and if that run counted, the
+                 * overdue badge would clear, so the act of checking would erase the
+                 * evidence. A dead scheduler would look healthy for exactly as long as
+                 * somebody kept pressing the button.
+                 */
+                Scheduled = group
+                    .Where(run => run.AskedBy == null)
+                    .Max(run => (DateTimeOffset?)run.At),
             })
-            .ToDictionaryAsync(entry => entry.Job, entry => entry.At, cancellationToken);
+            .ToDictionaryAsync(entry => entry.Job, entry => entry, cancellationToken);
 
         var latest = await database.JobRuns
             .AsNoTracking()
@@ -55,14 +69,18 @@ public sealed class JobQueries(
                     .OrderByDescending(run => run.At)
                     .FirstOrDefault();
 
+                var seen = runs.GetValueOrDefault(job.Name);
+
                 return new JobState(
                     job.Name,
                     job.Description,
                     job.Every,
-                    runs.TryGetValue(job.Name, out var at) ? at : null,
+                    seen is null ? null : seen.At,
+                    seen?.Scheduled,
                     last?.Outcome,
                     last?.Detail,
                     last?.Milliseconds,
+                    last?.AskedBy,
                     clock.Now);
             }),
         ];
@@ -125,24 +143,44 @@ public sealed record JobState(
     string Description,
     TimeSpan Every,
     DateTimeOffset? LastAt,
+    DateTimeOffset? LastScheduledAt,
     JobOutcome? LastOutcome,
     string? LastDetail,
     long? LastMilliseconds,
+    string? LastAskedBy,
     DateTimeOffset Now)
 {
     /// <summary>
-    /// Has it run recently enough?
+    /// Has the scheduler run it recently enough?
     /// </summary>
     /// <remarks>
     /// Twice its interval, not once. A daily job that runs at 09:01 one morning and 09:02
     /// the next has been late by a minute and is not a problem; one that has not run in
     /// two days has stopped. The slack is what stops the screen crying wolf.
+    ///
+    /// Measured against <see cref="LastScheduledAt"/> rather than <see cref="LastAt"/>, so
+    /// that running a job by hand cannot make a stopped scheduler look alive. See the
+    /// remark on the query that fills it in.
     /// </remarks>
     public bool IsOverdue =>
-        LastAt is not { } last || Now - last > Every + Every;
+        LastScheduledAt is not { } last || Now - last > Every + Every;
 
     /// <summary>It has never run at all, which is different from being late.</summary>
     public bool HasNeverRun => LastAt is null;
+
+    /// <summary>
+    /// The scheduler has never run it, although somebody has.
+    /// </summary>
+    /// <remarks>
+    /// Worth saying in its own words on the screen. "Overdue" next to a run that finished
+    /// two minutes ago reads as a bug in the screen, and somebody dismisses it — when in
+    /// fact it is the screen correctly reporting that the only thing running this job is a
+    /// person.
+    /// </remarks>
+    public bool OnlyEverByHand => LastAt is not null && LastScheduledAt is null;
+
+    /// <summary>The most recent run was one somebody asked for.</summary>
+    public bool LastWasByHand => LastAskedBy is not null;
 
     public bool LastFailed => LastOutcome == JobOutcome.Failed;
 }

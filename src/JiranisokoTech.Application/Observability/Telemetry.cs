@@ -90,17 +90,25 @@ public static class Telemetry
         description: "Deliveries accepted from a Git host.");
 
     /// <summary>
-    /// Requests refused at the door.
+    /// Requests refused at the door, tagged with which door.
     /// </summary>
     /// <remarks>
     /// Worth counting separately from anything else here, because this endpoint is on the
     /// public internet and a sudden rise in refusals is somebody probing it rather than a
     /// fault. Without the count, that shows up as nothing at all.
+    ///
+    /// It counted only wrongly-signed requests until the admin-tools work, and the gap
+    /// mattered more than it sounds. A delivery refused because no secret is configured is
+    /// refused before a row is written, so it left no delivery, no counter tick and nothing
+    /// on any screen — the endpoint returned 503 to every push while the queue depths read
+    /// zero. Every refusal now ticks this, tagged with the reason, so the three are
+    /// separable: <c>unsigned</c> is the internet, and <c>unconfigured</c> or
+    /// <c>unreadable</c> is this firm's own deployment.
     /// </remarks>
     public static Counter<long> DeliveriesRefused { get; } = Meter.CreateCounter<long>(
         "jiranisoko.webhooks.refused",
         unit: "requests",
-        description: "Requests to a webhook endpoint that were not signed with our secret.");
+        description: "Requests to a webhook endpoint that were refused, tagged with why.");
 
     public static Counter<long> DeliveriesDeadLettered { get; } = Meter.CreateCounter<long>(
         "jiranisoko.webhooks.dead_lettered",

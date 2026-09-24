@@ -126,10 +126,18 @@ public sealed class JobRunConfiguration : IEntityTypeConfiguration<Scheduling.Jo
         builder.Property(run => run.Job).HasMaxLength(100).IsRequired();
         builder.Property(run => run.Outcome).HasConversion<int>().IsRequired();
         builder.Property(run => run.Detail).HasMaxLength(500).IsRequired();
+        builder.Property(run => run.AskedBy).HasMaxLength(200);
+
+        builder.Ignore(run => run.WasScheduled);
 
         /*
          * The scheduler's own question on every sweep: when did each job last run. Without
          * this index that is a scan of the whole history, once a minute, forever.
+         *
+         * AskedBy is not in it, although both the sweep and the overdue check now filter
+         * on "the scheduler ran it". On-demand runs are a handful of rows in a history of
+         * thousands, so the planner reads the same index entries either way and discards
+         * one or two — a third column would make every entry wider to save nothing.
          */
         builder.HasIndex(run => new { run.Job, run.At });
     }

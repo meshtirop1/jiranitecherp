@@ -149,6 +149,44 @@ public sealed class OutboxMessage
         Release();
     }
 
+    /// <summary>
+    /// Put an abandoned message back in the queue.
+    /// </summary>
+    /// <remarks>
+    /// The point of keeping abandoned rows rather than deleting them. A handler
+    /// throws, eight attempts burn through in four hours, and the event is lost —
+    /// a leaver's work never released, a letter never sent. Somebody fixes the
+    /// handler, deploys, and without this there is no way to make the events that
+    /// broke on the old code happen. The queue depth on the machinery screen says
+    /// something needs a person and offers nothing a person can do.
+    ///
+    /// The attempt count resets, matching <c>WebhookDelivery.Replay</c> and
+    /// <c>OutboundDelivery.Retry</c>, and for the same reason: the attempts that
+    /// failed were made against code that no longer exists, so charging them
+    /// against the fix would abandon it again on the first hiccup.
+    ///
+    /// <b>Reviving does not promise the message will go through.</b> A message
+    /// abandoned because its event type is no longer in the code will be abandoned
+    /// again on the next pass, within seconds, with the same reason. That is the
+    /// honest outcome and it is visible — the alternative, refusing to revive
+    /// anything the dispatcher might refuse, would mean this class second-guessing
+    /// the registry from the wrong side of the process.
+    /// </remarks>
+    public void Revive(DateTimeOffset at)
+    {
+        if (AbandonedAt is null)
+        {
+            return;
+        }
+
+        AbandonedAt = null;
+        Attempts = 0;
+        NextAttemptAt = at;
+        Error = null;
+
+        Release();
+    }
+
     private void Release()
     {
         ClaimedBy = null;

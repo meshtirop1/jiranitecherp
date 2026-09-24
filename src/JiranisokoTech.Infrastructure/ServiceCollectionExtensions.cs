@@ -110,6 +110,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OutboxDispatcher>();
         services.AddHostedService<OutboxProcessor>();
 
+        /*
+         * Looking at the queue and putting back what gave up. The machinery screen has
+         * counted abandoned rows since it was built and offered nothing to do about them.
+         */
+        services.AddScoped<OutboxAdministration>();
+
         return services;
     }
 
@@ -197,6 +203,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<JobQueries>();
 
         /*
+         * Running one job, used by the scheduler and by the button on the machinery screen.
+         * Scoped rather than a method on the scheduler so that both go through the same
+         * code: two paths writing job history would have drifted, and the drifted one
+         * would be the one nobody tested.
+         */
+        services.AddScoped<JobRunner>();
+
+        /*
          * Counters, and the listener that keeps their totals for /metrics. A singleton,
          * because the totals have to outlive every request — and the listener has to be
          * started before anything records a measurement, which is what the hosted service
@@ -244,6 +258,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEngineeringRepository, EngineeringRepository>();
         services.AddScoped<EngineeringService>();
         services.AddScoped<EngineeringQueries>();
+
+        /*
+         * Whether each code host can reach us at all, which no other screen can tell: a
+         * missing or misspelt webhook secret refuses every delivery before a row is
+         * written, so the queues read zero and the jobs read green.
+         */
+        services.AddScoped<HostHealthQueries>();
         services.AddScoped<WebhookInbox>();
         services.AddScoped<DeliveryDispatcher>();
         services.AddHostedService<DeliveryProcessor>();

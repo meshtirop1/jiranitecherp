@@ -56,6 +56,55 @@ public class SchedulerTests
     }
 
     /// <summary>
+    /// Running a job by hand does not make a stopped scheduler look healthy.
+    /// </summary>
+    /// <remarks>
+    /// The fault this guards against is circular and easy to ship. Somebody sees a job
+    /// marked overdue, presses "run it now" to find out whether it still works, the run
+    /// succeeds — and if that run counted as the last run, the badge clears. The act of
+    /// checking would erase the evidence, and the scheduler could be dead for weeks while
+    /// every check came back clean.
+    ///
+    /// So lateness is measured against the scheduler's own runs, and a job kept alive only
+    /// by somebody pressing a button says so in its own words rather than hiding behind
+    /// one that reads as a bug in the screen.
+    /// </remarks>
+    [Fact]
+    public void A_run_somebody_asked_for_does_not_clear_the_overdue_badge()
+    {
+        var daily = TimeSpan.FromDays(1);
+
+        var neglected = new JobState(
+            "a.job",
+            "Does something.",
+            daily,
+            LastAt: Now.AddMinutes(-2),
+            LastScheduledAt: Now.AddDays(-9),
+            LastOutcome: JobOutcome.Ran,
+            LastDetail: "Nothing to do.",
+            LastMilliseconds: 12,
+            LastAskedBy: "Mesh Tirop",
+            Now: Now);
+
+        Assert.True(neglected.IsOverdue);
+        Assert.False(neglected.HasNeverRun);
+        Assert.True(neglected.LastWasByHand);
+        Assert.False(neglected.OnlyEverByHand);
+
+        var onlyEverByHand = neglected with { LastScheduledAt = null };
+
+        Assert.True(onlyEverByHand.IsOverdue);
+        Assert.True(onlyEverByHand.OnlyEverByHand);
+
+        // And the ordinary case is unaffected: a scheduled run two minutes ago is fine.
+        Assert.False((neglected with
+        {
+            LastScheduledAt = Now.AddMinutes(-2),
+            LastAskedBy = null,
+        }).IsOverdue);
+    }
+
+    /// <summary>
     /// A run records what it found, not only that it ran.
     /// </summary>
     /// <remarks>
@@ -279,6 +328,7 @@ public class SchedulerTests
         Assert.DoesNotContain("# TYPE jiranisoko_jobs_duration histogram", page);
     }
 
+    /// <summary>A job the scheduler has been running, and nobody has touched by hand.</summary>
     private static JobState State(TimeSpan every, DateTimeOffset? lastAt) =>
-        new("a.job", "Does something.", every, lastAt, null, null, null, Now);
+        new("a.job", "Does something.", every, lastAt, lastAt, null, null, null, null, Now);
 }

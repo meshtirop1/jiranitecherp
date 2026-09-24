@@ -1,0 +1,242 @@
+@page "/settings/events"
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Infrastructure.Messaging
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.SettingsManage)]
+@inject OutboxAdministration Outbox
+@inject NavigationManager Navigation
+
+<PageTitle>Events — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs">
+    <a href="/settings">Settings</a>
+    <a href="/settings/machinery">Machinery</a>
+</nav>
+
+<div class="page-head">
+    <h1>Events</h1>
+</div>
+
+<p class="instructions">
+    Every change saved in this system writes an event here in the same transaction, and
+    handlers pick them up afterwards — a leaver's work is released, a letter goes out, a
+    receipt is sent. This is where the ones that have not been picked up live.
+</p>
+
+@if (Totals.Abandoned > 0)
+{
+    <p class="refusal" role="alert">
+        <strong>@Totals.Abandoned</strong>
+        @(Totals.Abandoned == 1 ? "event has" : "events have") given up. Until they are put
+        back, something that happened here had a consequence that did not.
+    </p>
+}
+
+<section class="standing">
+    <h2>Gave up</h2>
+
+    @if (Abandoned.Count == 0)
+    {
+        <p class="empty">Nothing has given up. This is the normal state.</p>
+    }
+    else
+    {
+        <p class="instructions">
+            An event gives up after @Outbox.MostAttempts failed attempts, each waiting
+            longer than the last. It stays here with its final error rather than being
+            deleted, because a message quietly removed is a thing that happened and cannot
+            be explained afterwards. Fix the cause, then put them back.
+        </p>
+
+        @*
+            The whole list in one press, and it is the button somebody actually wants. This
+            failure does not arrive one row at a time — a handler broken by a deployment
+            abandons everything the firm did while that deployment was live, and asking for
+            fifty clicks is asking for one to be missed.
+        *@
+        <EditForm Model="Nothing" method="post" FormName="revive-everything"
+                  OnValidSubmit="ReviveEverything" class="inline">
+            <button type="submit">Put them all back</button>
+        </EditForm>
+
+        <table class="grid">
+            <caption class="visually-hidden">Events that gave up</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Happened</th>
+                    <th scope="col">Event</th>
+                    <th scope="col">Gave up</th>
+                    <th scope="col">Why</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in Abandoned)
+                {
+                    <tr>
+                        <td>@row.OccurredAt.ToString("d MMM HH:mm:ss")</td>
+                        <td>
+                            @row.Said
+                            <span class="subtle"><code>@row.Type</code></span>
+                        </td>
+                        <td>
+                            @(row.AbandonedAt?.ToString("d MMM HH:mm") ?? "—")
+                            <span class="subtle">
+                                after @row.Attempts @(row.Attempts == 1 ? "try" : "tries")
+                            </span>
+                        </td>
+                        <td>
+                            @if (row.Error is { Length: > 0 } why)
+                            {
+                                <span class="subtle">@why</span>
+                            }
+
+                            @if (!row.StillInTheCode)
+                            {
+                                @*
+                                    Said plainly rather than left to be discovered by
+                                    pressing the button and watching the row come straight
+                                    back. An event class deleted in a later release leaves
+                                    rows nothing can ever rebuild.
+                                *@
+                                <span class="stale">
+                                    This event no longer exists in the code. Putting it back
+                                    will give up again within seconds.
+                                </span>
+                            }
+                        </td>
+                        <td>
+                            <EditForm Model="Nothing" method="post"
+                                      FormName="@($"revive-{row.Id}")"
+                                      OnValidSubmit="() => Revive(row.Id)" class="inline">
+                                <button type="submit">Put it back</button>
+                            </EditForm>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        @if (Totals.Abandoned > OutboxAdministration.MostShown)
+        {
+            <p class="subtle">
+                Showing the oldest @OutboxAdministration.MostShown of @Totals.Abandoned.
+                Putting them all back works on these; press it again for the rest.
+            </p>
+        }
+    }
+</section>
+
+<section class="standing">
+    <h2>Still waiting</h2>
+
+    @if (Waiting.Count == 0)
+    {
+        <p class="empty">The queue is empty.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Events still waiting</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Happened</th>
+                    <th scope="col">Event</th>
+                    <th scope="col">Next try</th>
+                    <th scope="col">Last error</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in Waiting)
+                {
+                    <tr>
+                        <td>@row.OccurredAt.ToString("d MMM HH:mm:ss")</td>
+                        <td>
+                            @row.Said
+                            <span class="subtle"><code>@row.Type</code></span>
+                        </td>
+                        <td>
+                            @if (row.Attempts == 0)
+                            {
+                                <span class="pill pill--quiet">Not tried yet</span>
+                            }
+                            else
+                            {
+                                @*
+                                    A row with attempts behind it is waiting out a backoff,
+                                    which is a different thing from one that has only just
+                                    been written — and only one of the two is a sign of
+                                    anything.
+                                *@
+                                <span class="pill pill--wait">Backing off</span>
+                                <span class="subtle">
+                                    @(row.NextAttemptAt?.ToString("HH:mm:ss") ?? "now"),
+                                    @row.Attempts of @Outbox.MostAttempts
+                                </span>
+                            }
+                        </td>
+                        <td><span class="subtle">@(row.Error ?? "—")</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <p class="subtle">
+            A queue with a few rows in it is the dispatcher working, not a fault. It polls
+            every five seconds, and a pass that finds a full batch goes straight round
+            again — so a backlog drains at the speed of the handlers rather than the clock.
+        </p>
+
+        @if (Totals.Waiting > OutboxAdministration.MostShown)
+        {
+            <p class="subtle">
+                Showing the oldest @OutboxAdministration.MostShown of @Totals.Waiting.
+            </p>
+        }
+    }
+</section>
+
+@code {
+    /// <summary>
+    /// A model for the forms, which submit no fields.
+    /// </summary>
+    /// <remarks>
+    /// These pages are statically rendered, so a button outside a form does nothing at all
+    /// — and EditForm insists on a model even when the only thing being said is that the
+    /// button was pressed.
+    /// </remarks>
+    private object Nothing { get; } = new();
+
+    private List<OutboxRow> Abandoned { get; set; } = [];
+
+    private List<OutboxRow> Waiting { get; set; } = [];
+
+    private OutboxTotals Totals { get; set; } = new(0, 0);
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Abandoned = await Outbox.AbandonedAsync();
+        Waiting = await Outbox.WaitingAsync();
+        Totals = await Outbox.CountsAsync();
+    }
+
+    private async Task Revive(Guid id)
+    {
+        await Outbox.ReviveAsync(id);
+
+        /*
+         * Reloaded rather than re-rendered. The row has moved from one table on this page
+         * to the other, and re-rendering from the state this request was built with would
+         * leave it where it was with a button that has already been pressed.
+         */
+        Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+    }
+
+    private async Task ReviveEverything()
+    {
+        await Outbox.ReviveEverythingAbandonedAsync();
+        Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+    }
+}
