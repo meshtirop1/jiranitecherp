@@ -218,6 +218,18 @@ public class AppDbContext(
     /// </remarks>
     public DbSet<Scheduling.JobRun> JobRuns => Set<Scheduling.JobRun>();
 
+    /*
+     * Payroll. The runs and the rates are auditable; the payslips deliberately are not — every
+     * figure on one is somebody's pay, and the trail is append-only and never pruned. See the
+     * remarks on Payslip.
+     */
+    public DbSet<Domain.Payroll.PayRun> PayRuns => Set<Domain.Payroll.PayRun>();
+
+    public DbSet<Domain.Payroll.Payslip> Payslips => Set<Domain.Payroll.Payslip>();
+
+    public DbSet<Domain.Payroll.StatutoryRates> StatutoryRates =>
+        Set<Domain.Payroll.StatutoryRates>();
+
     public override int SaveChanges() =>
         SaveChangesAsync().GetAwaiter().GetResult();
 

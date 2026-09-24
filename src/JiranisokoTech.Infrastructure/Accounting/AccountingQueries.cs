@@ -204,13 +204,63 @@ public sealed class AccountingQueries(AppDbContext database)
             }
         }
 
+        /*
+         * Payroll, section 22, and the reason this report's bottom line could not be called a
+         * profit until now.
+         *
+         * Approved and paid runs only. A draft is a calculation somebody is still checking and
+         * can be rebuilt or abandoned, so counting one would put a cost in the accounts that
+         * might never be incurred — the same reason a draft invoice is not income.
+         *
+         * Dated by the period it pays for rather than by when it was approved or paid, which is
+         * what accrual means and what the rest of this report already does: a run for March
+         * approved in April is March's cost.
+         *
+         * Gross plus the firm's own contributions, never net. What leaves the firm is the gross
+         * — the deductions go to KRA and the funds rather than staying behind — so a cost built
+         * from net would understate the firm's largest cost by roughly a third, quietly.
+         *
+         * One firm-wide figure and no breakdown, deliberately. ProjectMoneyQueries costs
+         * projects at a blended rate precisely so that nobody without employees.pay can divide
+         * their way to a colleague's salary, and a payroll line split by department would hand
+         * back exactly that: a department of two is one subtraction from an individual.
+         */
+        var runs = await database.PayRuns
+            .AsNoTracking()
+            .Include(run => run.Payslips)
+            .ThenInclude(slip => slip.Lines)
+            .Where(run => (run.Status == Domain.Payroll.PayRunStatus.Approved
+                    || run.Status == Domain.Payroll.PayRunStatus.Paid)
+                && run.PeriodEnd >= from
+                && run.PeriodEnd <= to)
+            .ToListAsync(cancellationToken);
+
+        var payroll = 0L;
+
+        foreach (var run in runs)
+        {
+            if (run.Currency != currency)
+            {
+                wrongCurrency++;
+                continue;
+            }
+
+            payroll += run.Gross.MinorUnits;
+
+            foreach (var slip in run.Payslips)
+            {
+                payroll += slip.EmployerPays.MinorUnits;
+            }
+        }
+
         return new IncomeAndExpenditure(
             from,
             to,
             currency,
             [.. Lines(income, accounts, AccountKind.Income, currency)],
             [.. Lines(spent, accounts, AccountKind.Expense, currency)],
-            wrongCurrency);
+            wrongCurrency,
+            payroll);
     }
 
     /// <summary>
@@ -325,23 +375,55 @@ public sealed record IncomeAndExpenditure(
     string Currency,
     IReadOnlyList<ReportLine> Income,
     IReadOnlyList<ReportLine> Expenditure,
-    int LeftOutForCurrency)
+    int LeftOutForCurrency,
+    long PayrollMinorUnits = 0)
 {
     public Money TotalIncome => Sum(Income);
 
-    public Money TotalExpenditure => Sum(Expenditure);
-
     /// <summary>
-    /// What is left, which is not a profit figure and is not called one.
+    /// Everything the period cost, payroll included.
     /// </summary>
     /// <remarks>
-    /// Invoiced income less claimed and accrued costs. It is not profit: there is no payroll
-    /// here (section 22), no depreciation and no tax, so calling it profit would put a number
-    /// in front of somebody that is wrong by the largest cost the firm has.
+    /// Payroll is added here rather than being made an account in the chart, because it is not
+    /// one: an account is something somebody codes an invoice or a claim against, and a pay run
+    /// is neither. Keeping it outside also keeps it unmissable — the firm's largest cost is its
+    /// own line rather than one row among forty.
+    /// </remarks>
+    public Money TotalExpenditure => Sum(Expenditure) + Payroll;
+
+    /// <summary>
+    /// What one period's pay cost the firm, from the approved runs covering it.
+    /// </summary>
+    /// <remarks>
+    /// One figure for the whole firm and no breakdown behind it. Splitting it by department
+    /// would undo the reasoning ProjectMoneyQueries is built on — a department of two is one
+    /// subtraction away from an individual's salary, and this report is read by people who do
+    /// not hold employees.pay.
+    /// </remarks>
+    public Money Payroll => Money.Of(PayrollMinorUnits, Currency);
+
+    /// <summary>
+    /// What is left, which is still not a profit figure and is still not called one.
+    /// </summary>
+    /// <remarks>
+    /// Income less costs, and the costs now include payroll — which closes the largest of the
+    /// three gaps this remark used to name. It is still not profit, and the other two are why:
+    /// there is no depreciation here and no corporation tax. Calling it profit would put a
+    /// figure in front of somebody that is wrong by whatever those come to, and being wrong by
+    /// less is not the same as being right.
     /// </remarks>
     public Money Difference => TotalIncome - TotalExpenditure;
 
-    public bool IsEmpty => Income.Count == 0 && Expenditure.Count == 0;
+    /// <summary>
+    /// There is genuinely nothing to show for this window.
+    /// </summary>
+    /// <remarks>
+    /// Payroll counts, and forgetting it here made the whole report disappear behind "nothing
+    /// was invoiced or claimed" on a window whose only activity was a month's wages — which is
+    /// the firm's largest cost being hidden by the sentence that says there are no costs.
+    /// </remarks>
+    public bool IsEmpty =>
+        Income.Count == 0 && Expenditure.Count == 0 && PayrollMinorUnits == 0;
 
     private Money Sum(IReadOnlyList<ReportLine> lines) =>
         lines.Count == 0

@@ -1,0 +1,354 @@
+@page "/payroll/rates"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Payroll
+@using JiranisokoTech.Application.Settings
+@using JiranisokoTech.Domain.Payroll
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.PayrollRates)]
+@inject IPayrollRepository Payroll
+@inject SettingsService Settings
+
+<PageTitle>Statutory rates — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs">
+    <a href="/accounting">Accounts</a>
+    <a href="/payroll">Payroll</a>
+</nav>
+
+<div class="page-head">
+    <h1>Statutory rates</h1>
+</div>
+
+<p class="instructions">
+    What payroll deducts, recorded rather than built in. Rates and bands change by Act of
+    Parliament, sometimes more than once a year, and the person who has read the Act is the
+    person who should type them in — not somebody waiting for a deployment.
+</p>
+
+<p class="instructions">
+    <strong>This is not tax advice and nothing here checks the figures against the law.</strong>
+    Payroll applies what is recorded here and writes the arithmetic on every payslip line, so
+    an accountant can check a figure without reading any code. Whether the rates themselves are
+    right is a question for whoever signs the return.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Done is not null)
+{
+    <p class="done" role="status">@Done</p>
+}
+
+<section class="standing">
+    <h2>Recorded</h2>
+
+    @if (Sets.Count == 0)
+    {
+        <p class="empty">
+            No rates have been recorded, so payroll would deduct nothing at all.
+        </p>
+    }
+    else
+    {
+        @foreach (var set in Sets)
+        {
+            <article class="panel">
+                <h3>
+                    In force from @set.InForceFrom.ToString("d MMMM yyyy")
+                    @if (set.Source is { Length: > 0 } cited)
+                    {
+                        <span class="subtle">@cited</span>
+                    }
+                </h3>
+
+                <table class="grid">
+                    <caption class="visually-hidden">Tax bands</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Band</th>
+                            <th scope="col" class="number">Rate</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var band in set.Bands)
+                        {
+                            <tr>
+                                <td>
+                                    @Cash(band.FromMinorUnits, set.Currency)
+                                    @(band.ToMinorUnits is { } top
+                                        ? $"to {Cash(top, set.Currency)}"
+                                        : "and above")
+                                </td>
+                                <td class="number">@band.Rate.ToString("P2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+
+                <dl class="facts">
+                    <dt>Personal relief</dt>
+                    <dd>@Cash(set.PersonalReliefMinorUnits, set.Currency) a month, off the tax</dd>
+
+                    <dt>Pension</dt>
+                    <dd>
+                        @set.PensionEmployeeRate.ToString("P2") from the employee,
+                        @set.PensionEmployerRate.ToString("P2") from the firm,
+                        up to @Cash(set.PensionCeilingMinorUnits, set.Currency)
+                    </dd>
+
+                    <dt>Health</dt>
+                    <dd>
+                        @set.HealthRate.ToString("P2"), never below
+                        @Cash(set.HealthFloorMinorUnits, set.Currency)
+                    </dd>
+
+                    <dt>Housing levy</dt>
+                    <dd>@set.HousingRate.ToString("P2"), matched by the firm</dd>
+                </dl>
+            </article>
+        }
+
+        <p class="subtle">
+            Nothing here is ever edited. A set in force is a set some payslip was computed from,
+            so a change is a new set from a new date and the old one stays — which is what makes
+            a run from last March still explicable this March.
+        </p>
+    }
+</section>
+
+<section class="standing">
+    <h2>Record a new set</h2>
+
+    <EditForm Model="Input" method="post" OnValidSubmit="Record" FormName="rates" class="stack">
+        <DataAnnotationsValidator />
+
+        <label>
+            <span>In force from</span>
+            <InputDate @bind-Value="Input.From" />
+            <span class="subtle">
+                Matched against the pay period, not against today, so drafting an old month
+                uses the rates that applied to it.
+            </span>
+        </label>
+
+        <label>
+            <span>Where these come from</span>
+            <InputText @bind-Value="Input.Source" placeholder="Finance Act 2023" />
+            <ValidationMessage For="() => Input.Source" />
+        </label>
+
+        <h3>Tax bands</h3>
+
+        <p class="subtle">
+            Lowest first, starting at nothing, each beginning where the last one ended. Leave
+            the ceiling of the highest band empty — pay above it is taxed at that rate. Six rows
+            because no band table this firm will meet has more; fill as many as you need.
+        </p>
+
+        <table class="grid">
+            <caption class="visually-hidden">New tax bands</caption>
+            <thead>
+                <tr>
+                    <th scope="col">From</th>
+                    <th scope="col">To</th>
+                    <th scope="col">Rate, as a percentage</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < Input.Bands.Count; i++)
+                {
+                    var row = i;
+
+                    <tr>
+                        <td><InputNumber @bind-Value="Input.Bands[row].From" step="0.01" /></td>
+                        <td><InputNumber @bind-Value="Input.Bands[row].To" step="0.01" /></td>
+                        <td><InputNumber @bind-Value="Input.Bands[row].Percent" step="0.01" /></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <h3>The rest</h3>
+
+        <label>
+            <span>Personal relief a month</span>
+            <InputNumber @bind-Value="Input.Relief" step="0.01" />
+        </label>
+
+        <label>
+            <span>Pension, from the employee — percentage</span>
+            <InputNumber @bind-Value="Input.PensionEmployee" step="0.01" />
+        </label>
+
+        <label>
+            <span>Pension, from the firm — percentage</span>
+            <InputNumber @bind-Value="Input.PensionEmployer" step="0.01" />
+        </label>
+
+        <label>
+            <span>Pension ceiling a period</span>
+            <InputNumber @bind-Value="Input.PensionCeiling" step="0.01" />
+        </label>
+
+        <label>
+            <span>Health — percentage of gross</span>
+            <InputNumber @bind-Value="Input.Health" step="0.01" />
+        </label>
+
+        <label>
+            <span>Health, the least it can be</span>
+            <InputNumber @bind-Value="Input.HealthFloor" step="0.01" />
+        </label>
+
+        <label>
+            <span>Housing levy — percentage of gross</span>
+            <InputNumber @bind-Value="Input.Housing" step="0.01" />
+        </label>
+
+        <button type="submit">Record these rates</button>
+    </EditForm>
+</section>
+
+@code {
+    private RatesInput _input = new();
+
+    [SupplyParameterFromForm(FormName = "rates")]
+    private RatesInput Input
+    {
+        get => _input;
+        set => _input = value ?? new RatesInput();
+    }
+
+    private List<StatutoryRates> Sets { get; set; } = [];
+
+    private string Currency { get; set; } = "KES";
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (_input.From == default)
+        {
+            _input.From = DateTime.UtcNow.Date;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Sets = await Payroll.AllRatesAsync();
+        Currency = (await Settings.CurrentAsync()).Currency;
+    }
+
+    private async Task Record()
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            var rates = StatutoryRates.From(DateOnly.FromDateTime(Input.From), Currency);
+
+            foreach (var band in Input.Bands.Where(one => one.Percent is > 0))
+            {
+                rates.Band(
+                    Cash(band.From ?? 0),
+                    band.To is { } top ? Cash(top) : null,
+                    band.Percent!.Value / 100m);
+            }
+
+            /*
+             * Checked before anything is saved, because of how a bad band table fails
+             * otherwise. A gap does not throw when a payslip is computed — it quietly taxes a
+             * slice of everybody's pay at no rate at all, and the payslip that comes out is a
+             * plausible number that is simply too small.
+             */
+            rates.RefuseIfTheBandsDoNotCoverEveryShilling();
+
+            rates.Relief(Cash(Input.Relief ?? 0));
+            rates.Pension(
+                (Input.PensionEmployee ?? 0) / 100m,
+                (Input.PensionEmployer ?? 0) / 100m,
+                Cash(Input.PensionCeiling ?? 0));
+            rates.Health((Input.Health ?? 0) / 100m, Cash(Input.HealthFloor ?? 0));
+            rates.Housing((Input.Housing ?? 0) / 100m);
+
+            if (!string.IsNullOrWhiteSpace(Input.Source))
+            {
+                rates.Cite(Input.Source);
+            }
+
+            Payroll.AddRates(rates);
+            await Payroll.SaveAsync();
+
+            Input = new RatesInput { From = DateTime.UtcNow.Date };
+            Done = "Recorded. Payroll drafted from now on will use these.";
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException
+            or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private JiranisokoTech.Domain.Common.Money Cash(decimal whole) =>
+        JiranisokoTech.Domain.Common.Money.Of(
+            (long)decimal.Round(whole * 100m, 0, MidpointRounding.AwayFromZero), Currency);
+
+    private static string Cash(long minorUnits, string currency) =>
+        JiranisokoTech.Domain.Common.Money.Of(minorUnits, currency).ToString();
+
+    private sealed class RatesInput
+    {
+        public DateTime From { get; set; }
+
+        [Required(ErrorMessage = "Say which Act these come from, so a payslip can be defended.")]
+        [StringLength(200)]
+        public string Source { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Six rows, fixed.
+        /// </summary>
+        /// <remarks>
+        /// A fixed number rather than a list somebody adds to, because a variable-length set of
+        /// inputs cannot bind under static rendering — see CLAUDE.md on per-row forms — and
+        /// making this page interactive to gain a seventh band nobody needs would be the tail
+        /// wagging the dog. Kenya has five.
+        /// </remarks>
+        public List<BandInput> Bands { get; set; } =
+            [new(), new(), new(), new(), new(), new()];
+
+        public decimal? Relief { get; set; }
+
+        public decimal? PensionEmployee { get; set; }
+
+        public decimal? PensionEmployer { get; set; }
+
+        public decimal? PensionCeiling { get; set; }
+
+        public decimal? Health { get; set; }
+
+        public decimal? HealthFloor { get; set; }
+
+        public decimal? Housing { get; set; }
+    }
+
+    private sealed class BandInput
+    {
+        public decimal? From { get; set; }
+
+        public decimal? To { get; set; }
+
+        public decimal? Percent { get; set; }
+    }
+}

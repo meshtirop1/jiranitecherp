@@ -116,10 +116,29 @@
             </tfoot>
         </table>
 
+        @if (Report.Payroll.MinorUnits > 0)
+        {
+            @*
+                Its own line rather than a row in the table above, because payroll is not an
+                account — an account is something somebody codes an invoice or a claim against —
+                and because the firm's largest cost should not be one row among forty.
+
+                One figure for the firm and no breakdown behind it. A payroll line split by
+                department would undo the reasoning the project costing is built on: a
+                department of two is one subtraction from an individual's salary, and this page
+                is read by people who do not hold employees.pay.
+            *@
+            <p class="subtle">
+                Of which payroll: @Report.Payroll
+                <span class="subtle">gross plus the firm's own contributions</span>
+            </p>
+        }
+
         @*
-            Called the difference and never profit. There is no payroll here — that is section
-            22 — no depreciation and no tax, so "profit" would be a number wrong by the largest
-            cost the firm has.
+            Called the difference and never profit. Payroll is in it now — section 22, which
+            used to be the largest of the three reasons this word was chosen — but there is
+            still no depreciation and no corporation tax, and being wrong by less is not the
+            same as being right.
         *@
         <p class="subtle">Difference: @Report.Difference. This is not a profit figure.</p>
 

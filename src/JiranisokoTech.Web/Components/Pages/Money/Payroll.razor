@@ -1,0 +1,306 @@
+@page "/payroll"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Payroll
+@using JiranisokoTech.Application.Settings
+@using JiranisokoTech.Domain.Payroll
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.PayrollView)]
+@inject IPayrollRepository Runs
+@inject PayrollService Service
+@inject SettingsService Settings
+@inject PeopleQueries People
+@inject NavigationManager Navigation
+
+<PageTitle>Payroll — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/accounting">Accounts</a></nav>
+
+<div class="page-head">
+    <h1>Payroll</h1>
+</div>
+
+<p class="instructions">
+    A period's pay, drafted from the staff list. A draft is a calculation and can be built
+    again as often as you like; approving it is what stops the figures moving, because an
+    approved run is what a return is filed against and what the accounts are written from.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Done is not null)
+{
+    <p class="done" role="status">@Done</p>
+}
+
+@if (NoRates)
+{
+    @*
+        Said plainly and early. A run drafted with no rates recorded pays everybody their full
+        salary with nothing taken off, and that is a plausible-looking payslip rather than an
+        obviously broken one — which is the worst way for this to fail.
+    *@
+    <p class="refusal" role="alert">
+        No statutory rates have been recorded, so a run drafted now would deduct nothing at all
+        and pay everybody their gross salary.
+        <a href="/payroll/rates">Record the rates</a> first.
+    </p>
+}
+
+@if (NoRatesForPeriod)
+{
+    @*
+        The sharper version of the warning above, and the one that catches the case that
+        actually happens: rates HAVE been recorded, and none of them commence early enough to
+        apply to the period just drafted. Nothing throws, every payslip comes out at its full
+        gross, and the run looks entirely finished — which is the worst way for this to fail.
+
+        Found by drafting August against a set recorded in September and watching gross equal
+        net on a screen that said nothing about it.
+    *@
+    <p class="refusal" role="alert">
+        No statutory rates were in force for that period, so nothing was deducted and everybody
+        is shown at their full gross salary. Rates apply from the date they commence, and the
+        earliest recorded set starts after this period ended.
+        <a href="/payroll/rates">Record a set from an earlier date</a>.
+    </p>
+}
+
+<AuthorizeView Policy="@RunPolicy" Context="mayRun">
+    <section class="standing">
+        <h2>Draft a period</h2>
+
+        <EditForm Model="Input" method="post" OnValidSubmit="DraftIt" FormName="draft"
+                  class="filters">
+            <DataAnnotationsValidator />
+
+            <label>
+                <span>From</span>
+                <InputDate @bind-Value="Input.From" />
+            </label>
+
+            <label>
+                <span>To</span>
+                <InputDate @bind-Value="Input.To" />
+            </label>
+
+            <button type="submit">Draft it</button>
+
+            @*
+                Inside the form, because a ValidationMessage reads a cascading EditContext and
+                there is none outside one — it does not render blank, it throws, and the whole
+                page becomes the error screen. Found by opening it.
+            *@
+            <ValidationMessage For="() => Input.To" />
+        </EditForm>
+    </section>
+</AuthorizeView>
+
+@if (Skipped.Count > 0)
+{
+    @*
+        Named rather than counted. A payroll that quietly left somebody out would be discovered
+        on payday, by them.
+    *@
+    <section class="standing">
+        <h2>Not in the run</h2>
+
+        <ul class="plain">
+            @foreach (var person in Skipped)
+            {
+                <li>@person</li>
+            }
+        </ul>
+    </section>
+}
+
+<section class="standing">
+    <h2>Runs</h2>
+
+    @if (Drafted.Count == 0)
+    {
+        <p class="empty">No pay run has been drafted yet.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Pay runs</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Period</th>
+                    <th scope="col">State</th>
+                    <th scope="col">People</th>
+                    <th scope="col" class="number">Gross</th>
+                    <th scope="col" class="number">Net</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var run in Drafted)
+                {
+                    <tr>
+                        <td>
+                            <a href="/payroll/@run.Id">
+                                @run.PeriodStart.ToString("d MMM yyyy") to
+                                @run.PeriodEnd.ToString("d MMM yyyy")
+                            </a>
+                        </td>
+                        <td><span class="pill @PillFor(run.Status)">@Say(run.Status)</span></td>
+                        <td class="number">@Counts.GetValueOrDefault(run.Id)</td>
+                        <td class="number">@Totals.GetValueOrDefault(run.Id).Gross</td>
+                        <td class="number">@Totals.GetValueOrDefault(run.Id).Net</td>
+                        <td><a href="/payroll/@run.Id">Open</a></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    private const string RunPolicy = PermissionClaim.PolicyPrefix + Permissions.PayrollRun;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private DraftInput _input = new();
+
+    [SupplyParameterFromForm(FormName = "draft")]
+    private DraftInput Input
+    {
+        get => _input;
+        set => _input = value ?? new DraftInput();
+    }
+
+    private List<PayRun> Drafted { get; set; } = [];
+
+    private Dictionary<Guid, int> Counts { get; set; } = [];
+
+    private Dictionary<Guid, (string Gross, string Net)> Totals { get; set; } = [];
+
+    private List<string> Skipped { get; set; } = [];
+
+    private bool NoRates { get; set; }
+
+    /// <summary>Rates exist, and none of them reach back to the period just drafted.</summary>
+    private bool NoRatesForPeriod { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        // The month just gone, because that is the one somebody is here to run.
+        var first = new DateOnly(today.Year, today.Month, 1).AddMonths(-1);
+
+        _input.From = first.ToDateTime(TimeOnly.MinValue);
+        _input.To = first.AddMonths(1).AddDays(-1).ToDateTime(TimeOnly.MinValue);
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Drafted = await Runs.RunsAsync();
+        NoRates = await Runs.RatesOnAsync(DateOnly.FromDateTime(DateTime.UtcNow)) is null;
+
+        Counts = [];
+        Totals = [];
+
+        foreach (var row in Drafted)
+        {
+            /*
+             * Read one at a time rather than eagerly on the list query, because the list query
+             * is AsNoTracking and does not carry the payslips — and the totals are what somebody
+             * is here to see. A firm of thirty has a handful of runs a year.
+             */
+            if (await Runs.FindRunAsync(row.Id) is { } full)
+            {
+                Counts[row.Id] = full.Payslips.Count;
+                Totals[row.Id] = (full.Gross.ToString(), full.Net.ToString());
+            }
+        }
+    }
+
+    private async Task DraftIt()
+    {
+        Refusal = null;
+        Done = null;
+        Skipped = [];
+
+        try
+        {
+            var firm = await Settings.CurrentAsync();
+
+            var (run, skipped) = await Service.DraftAsync(
+                DateOnly.FromDateTime(Input.From),
+                DateOnly.FromDateTime(Input.To),
+                firm.Currency);
+
+            Skipped = [.. skipped];
+
+            NoRatesForPeriod = run.Payslips.Count > 0
+                && await Runs.RatesOnAsync(run.PeriodEnd) is null;
+
+            Done = run.Payslips.Count switch
+            {
+                0 => "Nobody was in that period.",
+                1 => "Drafted, with one payslip.",
+                _ => $"Drafted, with {run.Payslips.Count} payslips.",
+            };
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException
+            or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private static string Say(PayRunStatus status) => status switch
+    {
+        PayRunStatus.Draft => "Draft",
+        PayRunStatus.Approved => "Approved",
+        PayRunStatus.Paid => "Paid",
+        _ => "Abandoned",
+    };
+
+    private static string PillFor(PayRunStatus status) => status switch
+    {
+        PayRunStatus.Paid => "pill--done",
+        PayRunStatus.Approved => "pill--active",
+        PayRunStatus.Abandoned => "pill--quiet",
+        _ => "pill--wait",
+    };
+
+    private sealed class DraftInput
+    {
+        public DateTime From { get; set; }
+
+        [DateAfter(nameof(From), ErrorMessage = "A period ends after it starts.")]
+        public DateTime To { get; set; }
+    }
+
+    /// <summary>One date is after another.</summary>
+    private sealed class DateAfterAttribute(string other) : ValidationAttribute
+    {
+        protected override ValidationResult? IsValid(object? value, ValidationContext context)
+        {
+            var start = context.ObjectType.GetProperty(other)?.GetValue(context.ObjectInstance);
+
+            return value is DateTime end && start is DateTime from && end < from
+                ? new ValidationResult(ErrorMessage, [context.MemberName!])
+                : ValidationResult.Success;
+        }
+    }
+}

@@ -15,7 +15,7 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 24 September 2026 · 1101 tests · verified against PostgreSQL in
+Last updated: 24 September 2026 · 1112 tests · verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
 container, a lost opportunity surviving its client record being deleted, the
 builds and deployments tables applying to a real Postgres, an abandoned event
@@ -108,7 +108,7 @@ pass rather than adjusted by the size of the change.
 | ☐ | 6 | Employee announcements | |
 | ✅ | 24 | Employee documents | Narrowed to employees.manage plus the person themselves |
 | ✅ | 24 | Document management | Attachments on seven kinds, with versions that supersede rather than replace, tags, and search narrowed to the kinds a reader may see |
-| ☐ | 22 | Payroll | |
+| ✅ | 22 | Payroll | A period drafted from the staff list, agreed, and paid — and it closes the reason this system's income-and-expenditure report called its bottom line "a difference" and never profit. **The statutory rates are recorded rather than compiled in**, which is the decision the rest of this section hangs on. PAYE bands, the pension, the health contribution and the housing levy change by Act of Parliament, sometimes more than once a year; built into the application they would be wrong law on the day the Act commences and stay wrong until somebody shipped a release. They are dated rows somebody enters, the way exchange rates and public holidays already are, and the person who has read the Act is the person who types them in. A set is never edited — a change is a new set from a new date — so a run from last March is still explicable this March. **Every payslip line carries its own arithmetic**, so a figure can be checked against the Act without reading any code: "PAYE 86,619.35, 10% of 24,000 plus 25% of 8,333 plus 30% of 281,787, less 2,400 relief". The order deductions apply in is written down in the domain as an assumption, because that is the shape of the law rather than a number in it, and it is the part an accountant should argue with. **A payslip is deliberately not auditable.** Every figure on one is somebody's pay, the trail is append-only and never pruned, and `Employee.AuditExcludes` already goes to some trouble to keep salary out of it. The run is audited — the period, who approved it, when — because those are the acts; the figures are not. For the same reason the accounts carry one firm-wide payroll total with no breakdown: a department of two is one subtraction from an individual, which is the reasoning project costing at a blended rate is built on. The draft is assembled from what this system knows and a bureau does not: employment terms, joining and leaving dates with pay prorated by working days, approved unpaid leave with weekends and holidays already out, and the rates in force for the period. People it cannot include are named with the reason — paid in another currency, on invoice, no salary recorded — because a payroll that quietly left somebody out is discovered on payday, by them. Drafts rebuild rather than patch, and an approved payslip is the only record of what somebody was actually paid, since nothing else in the system keeps a dated pay history. **Not built, on the record:** filing. Nothing here produces a P9, a P10 or an NSSF return, and the screen says in as many words that it is not tax advice and checks nothing against the law |
 | ✅ | 16 | Clients | Record, state, terms, documents, invoices, and the people at each one — with a leaver kept rather than overwritten, and one of them the person to call first |
 | ✅ | 16 | Pipeline | An enquiry and an opportunity are one record at different stages, so nothing is lost to a conversion step. Backwards moves allowed, decided ones not reopened, losing one demands a reason, and winning one creates nothing. Listed by silence rather than by value |
 | ✅ | 17 | Client contracts | Draft/active/terminated, expiry by date, signed copy attached |
@@ -230,9 +230,16 @@ The brief names four and asks that each work end to end.
 **§91 Engineering** — Client → contract → project → task → branch → commit → PR
 → review → CI → staging → production → release → invoice → payment →
 profitability.
-**Broken.** Everything from branch to release is absent, and profitability is
-not calculated. The business ends work end to end; the engineering middle does
-not exist.
+**One link short.** This note said "everything from branch to release is absent,
+and profitability is not calculated", and both halves stopped being true without
+the line being rewritten — §12 and §13 closed the middle and §19 was already
+computing the end. Every step now exists except **release**: a branch names the
+work it belongs to, commits and pull requests and reviews arrive on their own,
+builds and deployments are recorded from four hosts, the environments screen says
+what is running where, and revenue, cost and margin come out at
+`/projects/money`. What is missing is the one thing that turns a deployment into
+a release anybody can name — §67 — and that is the only gap in the brief's own
+headline chain.
 
 **§92 Hiring** — Requisition → approval → opening → published → applies →
 screening → interview → assessment → offer → accepted → employee → onboarding.
@@ -245,12 +252,13 @@ assessments, a real offer object and onboarding are still absent.
 
 **§94 Finance** — Client → contract → project → work → invoice → payment →
 revenue → cost → profitability.
-**Runs end to end.** The last claim in this line was wrong for several days:
-revenue, cost and margin per project have been computed at `/projects/money`
-since §10, from sent invoices, approved hours at the firm's standard rate and
-paid expenses. What is still absent is payroll (§22), which is the firm's largest
-cost — so the difference is called a difference on every screen that shows it and
-never profit.
+**Runs end to end, and the last gap in it is closed.** Revenue, cost and margin
+per project come out at `/projects/money` from sent invoices, approved hours at
+the firm's standard rate and paid expenses; payroll (§22) now reaches the
+income-and-expenditure report as the firm's largest cost. The bottom line is
+still called a difference and not profit, and the reason has shrunk rather than
+gone: there is no depreciation here and no corporation tax. Being wrong by less
+is not the same as being right.
 
 ---
 

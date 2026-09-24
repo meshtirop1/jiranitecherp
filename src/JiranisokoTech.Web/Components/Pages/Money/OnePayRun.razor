@@ -1,0 +1,325 @@
+@page "/payroll/{Id:guid}"
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Payroll
+@using JiranisokoTech.Domain.Payroll
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.PayrollView)]
+@inject IPayrollRepository Payroll
+@inject PayrollService Service
+@inject PeopleQueries People
+@inject NavigationManager Navigation
+
+<PageTitle>Pay run — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/payroll">Payroll</a></nav>
+
+@if (Run is null)
+{
+    <p class="empty">That pay run no longer exists.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>
+            @Run.PeriodStart.ToString("d MMMM yyyy") to @Run.PeriodEnd.ToString("d MMMM yyyy")
+        </h1>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <p class="count">
+        <span class="pill @PillFor(Run.Status)">@Say(Run.Status)</span>
+        @Run.Payslips.Count @(Run.Payslips.Count == 1 ? "payslip" : "payslips")
+    </p>
+
+    <dl class="facts">
+        <dt>Gross</dt>
+        <dd>@Run.Gross</dd>
+
+        <dt>Deducted</dt>
+        <dd>@(Run.Gross - Run.Net)</dd>
+
+        <dt>Net, what is paid out</dt>
+        <dd>@Run.Net</dd>
+
+        <dt>What it costs the firm</dt>
+        <dd>
+            @Cost
+            @*
+                Gross plus the employer's own contributions, not net. What leaves the firm is
+                the gross — the deductions go to KRA and the funds rather than staying behind —
+                so a cost figure built from net would understate the firm's largest cost by
+                roughly a third, quietly.
+            *@
+            <span class="subtle">gross plus the firm's own contributions</span>
+        </dd>
+
+        @if (Run.ApprovedAt is { } approved)
+        {
+            <dt>Approved</dt>
+            <dd>
+                @approved.ToString("d MMM yyyy HH:mm")
+                @if (ApprovedBy is not null)
+                {
+                    <span class="subtle">by @ApprovedBy</span>
+                }
+            </dd>
+        }
+
+        @if (Run.PaidAt is { } paid)
+        {
+            <dt>Paid</dt>
+            <dd>@paid.ToString("d MMM yyyy HH:mm")</dd>
+        }
+
+        @if (Run.Outcome is { } why)
+        {
+            <dt>Abandoned</dt>
+            <dd>@why</dd>
+        }
+    </dl>
+
+    <div class="row-actions">
+        @if (Run.Status == PayRunStatus.Draft)
+        {
+            <AuthorizeView Policy="@RunPolicy" Context="mayRun">
+                <form method="post" @formname="approve" @onsubmit="Approve">
+                    <AntiforgeryToken />
+                    <button type="submit">Approve the figures</button>
+                </form>
+
+                @*
+                    Abandoning keeps the run rather than deleting it, so somebody asking next
+                    year why March was drafted twice finds the first one saying why it was not
+                    used. The period can then be drafted again.
+                *@
+                <EditForm Model="Abandoning" method="post" FormName="abandon"
+                          OnValidSubmit="Abandon" class="inline">
+                    <InputText @bind-Value="Abandoning.Reason" placeholder="Why not" />
+                    <button type="submit" class="danger">Abandon it</button>
+                </EditForm>
+            </AuthorizeView>
+        }
+
+        @if (Run.Status == PayRunStatus.Approved)
+        {
+            <AuthorizeView Policy="@PayPolicy" Context="mayPay">
+                @*
+                    Paying is its own permission. Approving says the figures are right; this
+                    says the money has left the account, and one person may be allowed to do the
+                    first and not the second.
+                *@
+                <form method="post" @formname="pay" @onsubmit="MarkPaid">
+                    <AntiforgeryToken />
+                    <button type="submit">Record it as paid</button>
+                </form>
+            </AuthorizeView>
+        }
+    </div>
+
+    <section class="standing">
+        <h2>Payslips</h2>
+
+        @if (Run.Payslips.Count == 0)
+        {
+            <p class="empty">Nobody is in this run.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Payslips in this run</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Who</th>
+                        <th scope="col">Paid for</th>
+                        <th scope="col" class="number">Gross</th>
+                        <th scope="col">What came off</th>
+                        <th scope="col" class="number">Net</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var slip in Run.Payslips.OrderBy(one => Name(one.EmployeeId)))
+                    {
+                        <tr>
+                            <td>@Name(slip.EmployeeId)</td>
+                            <td>
+                                @slip.PaidFrom.ToString("d MMM") to @slip.PaidTo.ToString("d MMM")
+                            </td>
+                            <td class="number">@slip.Gross</td>
+                            <td>
+                                @if (slip.Lines.Count == 0)
+                                {
+                                    <span class="subtle">nothing</span>
+                                }
+                                else
+                                {
+                                    <ul class="plain">
+                                        @foreach (var line in slip.Lines)
+                                        {
+                                            <li>
+                                                @line.Name
+                                                @Money(line.MinorUnits, slip.Currency)
+                                                @if (line.Kind == DeductionKind.Employer)
+                                                {
+                                                    <span class="pill pill--quiet">firm pays</span>
+                                                }
+                                                @*
+                                                    The arithmetic beside the figure, because a
+                                                    payslip has to be defensible years after
+                                                    anybody remembers how it was worked out.
+                                                *@
+                                                @if (line.Basis is { Length: > 0 } basis)
+                                                {
+                                                    <span class="subtle">@basis</span>
+                                                }
+                                            </li>
+                                        }
+                                    </ul>
+                                }
+                            </td>
+                            <td class="number">@slip.Net</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+}
+
+@code {
+    private const string RunPolicy = PermissionClaim.PolicyPrefix + Permissions.PayrollRun;
+
+    private const string PayPolicy = PermissionClaim.PolicyPrefix + Permissions.PayrollPay;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private AbandonInput _abandoning = new();
+
+    [SupplyParameterFromForm(FormName = "abandon")]
+    private AbandonInput Abandoning
+    {
+        get => _abandoning;
+        set => _abandoning = value ?? new AbandonInput();
+    }
+
+    private PayRun? Run { get; set; }
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string? ApprovedBy { get; set; }
+
+    private string Cost { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Run = await Payroll.FindRunAsync(Id);
+
+        if (Run is null)
+        {
+            return;
+        }
+
+        Names = await People.NamesAsync();
+
+        ApprovedBy = Run.ApprovedById is { } who ? Names.GetValueOrDefault(who) : null;
+
+        var cost = Run.Gross;
+
+        foreach (var slip in Run.Payslips)
+        {
+            cost += slip.EmployerPays;
+        }
+
+        Cost = cost.ToString();
+    }
+
+    private async Task Approve()
+    {
+        var user = (await AuthenticationState).User;
+
+        if (!Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            || await People.EmployeeForAccountAsync(account) is not { } me)
+        {
+            Refusal =
+                "Your sign-in is not linked to a staff record, so a run cannot be approved in "
+                + "your name. An administrator can link them on the People page.";
+
+            return;
+        }
+
+        await Act(() => Service.ApproveAsync(Id, me), "Approved. The figures are fixed now.");
+    }
+
+    private Task MarkPaid() => Act(
+        () => Service.PayAsync(Id), "Recorded as paid.");
+
+    private Task Abandon() => Act(
+        () => Service.AbandonAsync(Id, Abandoning.Reason),
+        "Abandoned. The period can be drafted again.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private string Name(Guid employeeId) =>
+        Names.GetValueOrDefault(employeeId) ?? "Somebody no longer on the staff list";
+
+    private static string Money(long minorUnits, string currency) =>
+        JiranisokoTech.Domain.Common.Money.Of(minorUnits, currency).ToString();
+
+    private static string Say(PayRunStatus status) => status switch
+    {
+        PayRunStatus.Draft => "Draft",
+        PayRunStatus.Approved => "Approved",
+        PayRunStatus.Paid => "Paid",
+        _ => "Abandoned",
+    };
+
+    private static string PillFor(PayRunStatus status) => status switch
+    {
+        PayRunStatus.Paid => "pill--done",
+        PayRunStatus.Approved => "pill--active",
+        PayRunStatus.Abandoned => "pill--quiet",
+        _ => "pill--wait",
+    };
+
+    private sealed class AbandonInput
+    {
+        public string Reason { get; set; } = string.Empty;
+    }
+}

@@ -28,6 +28,15 @@
                     </div>
                 </AuthorizeView>
 
+                @* Its own entry rather than a link buried in the accounts, because running it
+                   is a monthly errand somebody comes here specifically to do. *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.PayrollView)"
+                               Context="payroll">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="payroll">Payroll</NavLink>
+                    </div>
+                </AuthorizeView>
+
                 <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.RequisitionsView)"
                                Context="hiring">
                     <div class="nav-item px-3">

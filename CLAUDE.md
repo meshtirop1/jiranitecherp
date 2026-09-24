@@ -119,6 +119,11 @@ Each of these cost real time. They are written down so they cost it once.
   build and the whole suite stay green, and `compose up --build` goes on serving
   the previous image rather than stopping — so the browser shows yesterday's
   application and every conclusion drawn from it is wrong.
+- **A `ValidationMessage` outside its `EditForm` throws.** It reads a cascading
+  `EditContext`, and without one it does not render blank — it raises, and the
+  whole page becomes the error screen. One placed just after `</EditForm>` took
+  the payroll page down entirely, and no test saw it because no page test hit
+  that route.
 - **A per-row form with fields in it cannot bind under static rendering.** Blazor
   refuses a page holding two forms with the same name, so a form rendered once
   per row gets a unique one — `score-{id}`. But a model is bound by

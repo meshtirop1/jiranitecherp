@@ -1443,7 +1443,9 @@ code.key {
  */
 .grid td > .pill,
 .grid td > .subtle,
-.grid td > code {
+.grid td > code,
+.grid td li > .pill,
+.grid td li > .subtle {
     margin-left: 0.35rem;
 }
 

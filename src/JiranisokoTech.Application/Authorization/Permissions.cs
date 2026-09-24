@@ -211,6 +211,49 @@ public static class Permissions
     /// </remarks>
     public const string EmployeesPay = "employees.pay";
 
+    // --- payroll -----------------------------------------------------------
+
+    /// <summary>
+    /// Open the payroll and read what a run pays everybody.
+    /// </summary>
+    /// <remarks>
+    /// Its own permission rather than employees.pay, although the two will usually be held by
+    /// the same people. They answer different questions: employees.pay is "what has this person
+    /// been agreed", which is a fact about one staff record, and this is "what did the firm pay
+    /// everybody in March", which is every salary in the firm on one screen. Somebody standing
+    /// in for HR for a fortnight may reasonably be given the first and not the second.
+    ///
+    /// Nobody needs it to read their own payslip. That is theirs, the way their own profile is.
+    /// </remarks>
+    public const string PayrollView = "payroll.view";
+
+    /// <summary>Draft a period's pay and agree the figures.</summary>
+    /// <remarks>
+    /// Drafting and approving are one permission on purpose. A draft changes nothing and can be
+    /// rebuilt as often as anybody likes, so a permission to draft without approving would be a
+    /// door with nothing behind it — and the approval is the act that matters, because it is
+    /// what the figures are frozen by.
+    /// </remarks>
+    public const string PayrollRun = "payroll.run";
+
+    /// <summary>Record that a run has been paid.</summary>
+    /// <remarks>
+    /// Separate from running it, for the reason paying an expense claim is separate from
+    /// approving one: approval says the figures are right and payment says money has left the
+    /// account. The same person will often do both, and the point is that they need not.
+    /// </remarks>
+    public const string PayrollPay = "payroll.pay";
+
+    /// <summary>
+    /// Record the statutory rates that payroll works from.
+    /// </summary>
+    /// <remarks>
+    /// Its own permission because it is a different kind of act. Running the payroll applies the
+    /// rates; this decides what they are, and a mistyped band is wrong on every payslip in the
+    /// firm at once and on the return that follows.
+    /// </remarks>
+    public const string PayrollRates = "payroll.rates";
+
     // --- the code repositories ---------------------------------------------
 
     /// <summary>See which repositories are watched, and what came out of them.</summary>
@@ -248,6 +291,8 @@ public static class Permissions
 
         EmployeesView, EmployeesViewAll, EmployeesManage, EmployeesPay,
         DepartmentsView, DepartmentsManage,
+
+        PayrollView, PayrollRun, PayrollPay, PayrollRates,
 
         RequisitionsCreate, RequisitionsView, PostingsManage, CandidatesView,
         ApplicationsManage, ApplicationsHire, InterviewsSchedule, InterviewsView,
@@ -317,6 +362,18 @@ public static class Roles
                 // A head of department deliberately does not: they decide what their
                 // team does, not what it costs.
                 Permissions.EmployeesPay,
+
+                /*
+                 * And runs it, literally. HR drafts a period, agrees the figures and keeps the
+                 * statutory rates current — the last of those because the person who reads the
+                 * Finance Act is the person who should type the bands in.
+                 *
+                 * Not payroll.pay. Money leaving the account is the office's job, which is the
+                 * same separation expenses already make between approving a claim and paying
+                 * one, and for the same reason: approval says the figures are right and payment
+                 * says the money has gone.
+                 */
+                Permissions.PayrollView, Permissions.PayrollRun, Permissions.PayrollRates,
 
                 Permissions.DepartmentsView,
 

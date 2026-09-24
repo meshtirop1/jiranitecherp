@@ -1,4 +1,5 @@
 using JiranisokoTech.Application.Accounting;
+using JiranisokoTech.Application.Payroll;
 using JiranisokoTech.Infrastructure.Accounting;
 using System.Reflection;
 using JiranisokoTech.Application.Abstractions;
@@ -137,6 +138,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ApprovalQueries>();
 
         services.AddScoped<IAccountingRepository, AccountingRepository>();
+
+        /*
+         * Payroll. Section 22, and the last gap in the finance chain: the
+         * income-and-expenditure report calls its bottom line a difference and never profit
+         * because the firm's largest cost was missing from it.
+         */
+        services.AddScoped<IPayrollRepository, Payroll.PayrollRepository>();
+        services.AddScoped<PayrollService>();
         services.AddScoped<AccountingService>();
         services.AddScoped<AccountingQueries>();
 
