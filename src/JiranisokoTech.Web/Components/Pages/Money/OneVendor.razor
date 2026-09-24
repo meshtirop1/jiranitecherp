@@ -1,0 +1,506 @@
+@page "/vendors/{Id:guid}"
+@rendermode InteractiveServer
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Business
+@using JiranisokoTech.Application.Vendors
+@using JiranisokoTech.Domain.Contracts
+@using JiranisokoTech.Domain.Vendors
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.VendorsView)]
+@inject VendorService Service
+@inject AgreementService Agreements
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    One supplier: their terms, who to ring, and what the firm has signed with them.
+
+    The agreements panel is the point of the section. Before it, a signed hosting agreement and
+    the company it was with lived in two unrelated places — the agreement's Party was free text
+    — and nothing could put them on one page.
+*@
+
+<PageTitle>@(Vendor?.Name ?? "Supplier") — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/vendors">Suppliers</a></nav>
+
+@if (Vendor is null)
+{
+    <p class="empty">That supplier is not on file.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Vendor.Name</h1>
+        <p class="subtle">
+            <span class="pill @PillFor(Vendor.Status)">@Say(Vendor.Status)</span>
+            <code>@Vendor.Code</code>
+            @if (Vendor.Supplies is { } supplies)
+            {
+                <span class="subtle">@supplies</span>
+            }
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <dl class="facts">
+        <dt>Pay within</dt>
+        <dd>@Count(Vendor.PaymentTermDays, "day", "days")</dd>
+
+        <dt>KRA PIN</dt>
+        <dd>
+            @if (Vendor.TaxPin is { } pin)
+            {
+                <code>@pin</code>
+            }
+            else
+            {
+                <span class="subtle">not recorded</span>
+            }
+        </dd>
+
+        <dt>Address</dt>
+        <dd>@(Vendor.Address ?? "not recorded")</dd>
+
+        @if (Vendor.Notes is { } notes)
+        {
+            <dt>Notes</dt>
+            <dd><span class="as-typed">@notes</span></dd>
+        }
+    </dl>
+
+    <section class="standing">
+        <h2>What we have signed with them</h2>
+
+        @*
+            The question section 62 exists to answer. An agreement's Party is still the words on
+            the paper; this list is the ones linked to this supplier, which is a different and
+            newer fact.
+        *@
+        @if (Signed.Count == 0)
+        {
+            <p class="empty">
+                Nothing is linked to them yet. An agreement is linked from
+                <a href="/agreements">its own page</a> — nothing guesses, because a script
+                matching "Safaricom" to "Safaricom PLC" would one day match the wrong one.
+            </p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Agreements with this supplier</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Reference</th>
+                        <th scope="col">What</th>
+                        <th scope="col">State</th>
+                        <th scope="col">Runs out</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var one in Signed)
+                    {
+                        <tr class="@(one.IsLive ? null : "row--closed")">
+                            <td><a href="/agreements/@one.Id">@one.Reference</a></td>
+                            <td><span class="subtle">@one.Title</span></td>
+                            <td>@one.State</td>
+                            <td>
+                                @if (one.EndsOn is { } ends)
+                                {
+                                    @ends.ToString("d MMM yyyy")
+                                    @if (one.HasExpiredOn(Today))
+                                    {
+                                        <span class="pill pill--danger">expired</span>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="subtle">open-ended</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="standing">
+        <h2>Who to ring</h2>
+
+        @if (Contacts.Count == 0)
+        {
+            <p class="empty">Nobody recorded.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">People at this supplier</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Email</th>
+                        <th scope="col">Phone</th>
+                        <AuthorizeView Policy="@Managing" Context="mayManage">
+                            <th scope="col"><span class="visually-hidden">Actions</span></th>
+                        </AuthorizeView>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var person in Contacts)
+                    {
+                        <tr class="@(person.IsHere ? null : "row--closed")">
+                            <td>
+                                @person.Name
+                                @if (person.IsMain)
+                                {
+                                    <span class="pill pill--done">ring first</span>
+                                }
+                                @if (person.JobTitle is { } title)
+                                {
+                                    <span class="subtle">@title</span>
+                                }
+                                @if (!person.IsHere)
+                                {
+                                    <span class="pill pill--quiet">has left</span>
+                                }
+                            </td>
+                            <td>@(person.Email ?? "—")</td>
+                            <td>@(person.Phone ?? "—")</td>
+                            <AuthorizeView Policy="@Managing" Context="mayManage">
+                                <td class="row-actions">
+                                    @if (person.IsHere && !person.IsMain)
+                                    {
+                                        <button type="button" class="button--quiet"
+                                                @onclick="() => Promote(person.Id)">
+                                            Ring first
+                                        </button>
+                                    }
+                                    @if (person.IsHere)
+                                    {
+                                        <button type="button" class="button--quiet"
+                                                @onclick="() => StartEditing(person)">
+                                            Edit
+                                        </button>
+                                        <button type="button" class="button--quiet"
+                                                @onclick="() => Gone(person.Id)">
+                                            They have left
+                                        </button>
+                                    }
+                                </td>
+                            </AuthorizeView>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        <AuthorizeView Policy="@Managing" Context="mayManage">
+            <h3>@(Editing is null ? "Add somebody" : "Change their details")</h3>
+
+            <div class="fields">
+                <label>
+                    <span>Name</span>
+                    <input @bind="ContactName" placeholder="Wanjiku Mwangi" />
+                </label>
+
+                <label>
+                    <span>Job title</span>
+                    <input @bind="ContactTitle" placeholder="Account manager" />
+                </label>
+            </div>
+
+            <div class="fields">
+                <label>
+                    <span>Email</span>
+                    <input @bind="ContactEmail" />
+                </label>
+
+                <label>
+                    <span>Phone</span>
+                    <input @bind="ContactPhone" />
+                </label>
+            </div>
+
+            <div class="row-actions">
+                @if (Editing is null)
+                {
+                    <button type="button" @onclick="AddContact">Add them</button>
+                }
+                else
+                {
+                    <button type="button" @onclick="SaveContact">Save their details</button>
+                    <button type="button" class="button--quiet" @onclick="StopEditing">
+                        Leave it
+                    </button>
+                }
+            </div>
+
+            <p class="subtle">
+                The first person added becomes the one to ring, without being asked. A contact
+                book whose only entry is marked as nothing in particular is one where the next
+                person to write has to guess.
+            </p>
+        </AuthorizeView>
+    </section>
+
+    <AuthorizeView Policy="@Managing" Context="mayManage">
+        <section class="standing">
+            <h2>Their details</h2>
+
+            <div class="fields">
+                <label>
+                    <span>Name</span>
+                    <input @bind="Name" />
+                </label>
+
+                <label>
+                    <span>What they supply</span>
+                    <input @bind="Supplies" />
+                </label>
+            </div>
+
+            <div class="fields">
+                <label>
+                    <span>KRA PIN</span>
+                    <input @bind="TaxPin" placeholder="P051234567X" />
+                    <span class="subtle">Upper-cased, so one PIN is not two taxpayers.</span>
+                </label>
+
+                <label>
+                    <span>Pay within, in days</span>
+                    <input type="number" @bind="Terms" />
+                </label>
+            </div>
+
+            <label class="stack">
+                <span>Address</span>
+                <textarea rows="2" @bind="Address"></textarea>
+            </label>
+
+            <label class="stack">
+                <span>Notes</span>
+                <textarea rows="2" @bind="Notes"></textarea>
+            </label>
+
+            <div class="row-actions">
+                <button type="button" @onclick="Save">Save it</button>
+
+                @if (Vendor.Status != VendorStatus.Active)
+                {
+                    <button type="button" class="button--quiet"
+                            @onclick="() => MoveTo(VendorStatus.Active)">
+                        Buying from them again
+                    </button>
+                }
+                @if (Vendor.Status != VendorStatus.OnHold)
+                {
+                    <button type="button" class="button--quiet"
+                            @onclick="() => MoveTo(VendorStatus.OnHold)">
+                        Put on hold
+                    </button>
+                }
+                @if (Vendor.Status != VendorStatus.Former)
+                {
+                    <button type="button" class="danger"
+                            @onclick="() => MoveTo(VendorStatus.Former)">
+                        No longer used
+                    </button>
+                }
+            </div>
+
+            <p class="subtle">
+                Nothing here deletes a supplier. What was bought stays bought, and the agreements
+                and charges that name them still name them.
+            </p>
+        </section>
+    </AuthorizeView>
+}
+
+@code {
+    private const string Managing = PermissionClaim.PolicyPrefix + Permissions.VendorsManage;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private Vendor? Vendor { get; set; }
+
+    private List<VendorContact> Contacts { get; set; } = [];
+
+    private List<Agreement> Signed { get; set; } = [];
+
+    private string Name { get; set; } = string.Empty;
+
+    private string Supplies { get; set; } = string.Empty;
+
+    private string TaxPin { get; set; } = string.Empty;
+
+    private string Address { get; set; } = string.Empty;
+
+    private string Notes { get; set; } = string.Empty;
+
+    private int Terms { get; set; } = 30;
+
+    private string ContactName { get; set; } = string.Empty;
+
+    private string ContactTitle { get; set; } = string.Empty;
+
+    private string ContactEmail { get; set; } = string.Empty;
+
+    private string ContactPhone { get; set; } = string.Empty;
+
+    private Guid? Editing { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private DateOnly Today => Clock.Today;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Vendor = await Service.OneAsync(Id);
+
+        if (Vendor is null)
+        {
+            return;
+        }
+
+        Contacts = await Service.ContactsForAsync(Id);
+        Signed = [.. (await Agreements.AllAsync()).Where(one => one.VendorId == Id)];
+
+        Name = Vendor.Name;
+        Supplies = Vendor.Supplies ?? string.Empty;
+        TaxPin = Vendor.TaxPin ?? string.Empty;
+        Address = Vendor.Address ?? string.Empty;
+        Notes = Vendor.Notes ?? string.Empty;
+        Terms = Vendor.PaymentTermDays;
+    }
+
+    private Task Save() => Act(
+        async () =>
+        {
+            await Service.DescribeAsync(
+                Id,
+                Name,
+                string.IsNullOrWhiteSpace(Supplies) ? null : Supplies,
+                string.IsNullOrWhiteSpace(Notes) ? null : Notes);
+
+            await Service.RegisteredAsync(
+                Id,
+                string.IsNullOrWhiteSpace(TaxPin) ? null : TaxPin,
+                string.IsNullOrWhiteSpace(Address) ? null : Address,
+                Terms);
+        },
+        "Saved.");
+
+    private Task MoveTo(VendorStatus status) => Act(
+        () => Service.MoveToAsync(Id, status), "Saved.");
+
+    private Task AddContact() => Act(
+        async () =>
+        {
+            await Service.AddContactAsync(
+                Id,
+                ContactName,
+                string.IsNullOrWhiteSpace(ContactTitle) ? null : ContactTitle,
+                string.IsNullOrWhiteSpace(ContactEmail) ? null : ContactEmail,
+                string.IsNullOrWhiteSpace(ContactPhone) ? null : ContactPhone);
+
+            ContactName = string.Empty;
+            ContactTitle = string.Empty;
+            ContactEmail = string.Empty;
+            ContactPhone = string.Empty;
+        },
+        "Added.");
+
+    private void StartEditing(VendorContact person)
+    {
+        Editing = person.Id;
+        ContactName = person.Name;
+        ContactTitle = person.JobTitle ?? string.Empty;
+        ContactEmail = person.Email ?? string.Empty;
+        ContactPhone = person.Phone ?? string.Empty;
+    }
+
+    private void StopEditing()
+    {
+        Editing = null;
+        ContactName = string.Empty;
+        ContactTitle = string.Empty;
+        ContactEmail = string.Empty;
+        ContactPhone = string.Empty;
+    }
+
+    private Task SaveContact() => Act(
+        async () =>
+        {
+            await Service.UpdateContactAsync(
+                Editing!.Value,
+                ContactName,
+                string.IsNullOrWhiteSpace(ContactTitle) ? null : ContactTitle,
+                string.IsNullOrWhiteSpace(ContactEmail) ? null : ContactEmail,
+                string.IsNullOrWhiteSpace(ContactPhone) ? null : ContactPhone);
+
+            StopEditing();
+        },
+        "Saved.");
+
+    private Task Promote(Guid contactId) => Act(
+        () => Service.PromoteAsync(contactId), "They are the one to ring.");
+
+    private Task Gone(Guid contactId) => Act(
+        () => Service.GoneAsync(contactId),
+        "Recorded. Their row stays, and somebody else takes the post.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException
+            or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private static string Count(int many, string one, string more) =>
+        $"{many} {(many == 1 ? one : more)}";
+
+    private static string Say(VendorStatus status) => status switch
+    {
+        VendorStatus.Active => "Active",
+        VendorStatus.OnHold => "On hold",
+        VendorStatus.Former => "No longer used",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(status), status, "Nothing has decided what this supplier state is called."),
+    };
+
+    private static string PillFor(VendorStatus status) => status switch
+    {
+        VendorStatus.Active => "pill--done",
+        VendorStatus.OnHold => "pill--wait",
+        VendorStatus.Former => "pill--quiet",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(status), status, "Nothing has decided how this supplier state is shown."),
+    };
+}

@@ -30,6 +30,7 @@ builder.Services.AddModules(builder.Configuration);
 
 // How mail leaves, and who gets told what.
 builder.Services.AddMail(builder.Configuration);
+builder.Services.AddCaching(builder.Configuration);
 
 // Accounts and sign-in, then authorization. Registered in that order because
 // the authorization fallback below assumes authentication exists.

@@ -154,6 +154,19 @@ public class AppDbContext(
     public DbSet<Client> Clients => Set<Client>();
 
     /// <summary>
+    /// The firm's suppliers.
+    /// </summary>
+    /// <remarks>
+    /// A separate table from clients rather than one party table with flags, because a company
+    /// can be both — Safaricom sells this firm airtime and could buy software from it — and one
+    /// row has one status column that would have to say Former and Active at once.
+    /// </remarks>
+    public DbSet<Domain.Vendors.Vendor> Vendors => Set<Domain.Vendors.Vendor>();
+
+    public DbSet<Domain.Vendors.VendorContact> VendorContacts =>
+        Set<Domain.Vendors.VendorContact>();
+
+    /// <summary>
     /// The exercises candidates are set, and what the marker made of them.
     /// </summary>
     /// <remarks>

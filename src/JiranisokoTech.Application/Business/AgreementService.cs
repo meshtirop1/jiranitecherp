@@ -49,6 +49,7 @@ public sealed class AgreementService(IAgreementRepository agreements, IClock clo
         string title,
         string party,
         Guid? employeeId = null,
+        Guid? vendorId = null,
         CancellationToken cancellationToken = default)
     {
         if (await agreements.ReferenceTakenAsync(
@@ -61,7 +62,7 @@ public sealed class AgreementService(IAgreementRepository agreements, IClock clo
         }
 
         var agreement = Agreement.Draft(
-            kind, reference, title, party, clock.Now, employeeId);
+            kind, reference, title, party, clock.Now, employeeId, vendorId);
 
         agreements.Add(agreement);
         await agreements.SaveAsync(cancellationToken);
@@ -75,12 +76,13 @@ public sealed class AgreementService(IAgreementRepository agreements, IClock clo
         string title,
         string party,
         Guid? employeeId,
+        Guid? vendorId,
         string? notes,
         CancellationToken cancellationToken = default)
     {
         var agreement = await Required(id, cancellationToken);
 
-        agreement.Describe(kind, title, party, employeeId, notes);
+        agreement.Describe(kind, title, party, employeeId, vendorId, notes);
 
         await agreements.SaveAsync(cancellationToken);
     }

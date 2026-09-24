@@ -385,7 +385,12 @@ public sealed class ContactService(IBusinessRepository business, IClock clock)
 
         if (main)
         {
-            Demote(existing);
+            // Cleared here rather than through WhoToCallFirst.Promote, because the contact
+            // being promoted does not exist yet — there is nothing for that rule to find.
+            foreach (var other in existing.Where(one => one.IsMain).ToList())
+            {
+                other.Main(false);
+            }
         }
 
         var contact = Contact.At(clientId, name, jobTitle, email, phone, main, clock.Now);
@@ -411,20 +416,18 @@ public sealed class ContactService(IBusinessRepository business, IClock clock)
     }
 
     /// <summary>Make this the one to call first.</summary>
+    /// <remarks>
+    /// Through <see cref="WhoToCallFirst"/> since section 62, rather than the copy that used to
+    /// live here. The vendor contact book answers to exactly the same policy, and two copies of
+    /// it would be two copies to change — one of which would be missed.
+    /// </remarks>
     public async Task MainIsAsync(Guid contactId, CancellationToken cancellationToken = default)
     {
         var contact = await Required(contactId, cancellationToken);
+        var book = await business.ContactsForAsync(contact.ClientId, cancellationToken);
 
-        if (!contact.IsHere)
-        {
-            throw new InvalidOperationException(
-                $"{contact.Name} has left. Somebody who is not there cannot be the first "
-                + "person to call.");
-        }
+        WhoToCallFirst.Promote(book, contactId);
 
-        Demote(await business.ContactsForAsync(contact.ClientId, cancellationToken));
-
-        contact.Main(true);
         await business.SaveAsync(cancellationToken);
     }
 
@@ -457,29 +460,12 @@ public sealed class ContactService(IBusinessRepository business, IClock clock)
 
         if (wasTheOneToCall)
         {
-            var remaining = await business.ContactsForAsync(contact.ClientId, cancellationToken);
+            var book = await business.ContactsForAsync(contact.ClientId, cancellationToken);
 
-            var next = remaining
-                .Where(one => one.IsHere && one.Id != contact.Id)
-                .OrderBy(one => one.AddedAt)
-                .FirstOrDefault();
-
-            next?.Main(true);
+            WhoToCallFirst.Inherit(book, contact.Id);
         }
 
         await business.SaveAsync(cancellationToken);
-    }
-
-    /// <remarks>
-    /// Iterated over a copy, because clearing the flag is a write to a tracked entity and
-    /// the sequence it came from is the repository's own query result.
-    /// </remarks>
-    private static void Demote(List<Contact> contacts)
-    {
-        foreach (var other in contacts.Where(one => one.IsMain).ToList())
-        {
-            other.Main(false);
-        }
     }
 
     private async Task<Contact> Required(Guid id, CancellationToken cancellationToken) =>

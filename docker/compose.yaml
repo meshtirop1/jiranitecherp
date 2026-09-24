@@ -53,6 +53,10 @@ services:
       # tells the host to try again later rather than to give up — so setting
       # this afterwards does not cost the deliveries that arrived in between.
       Git__Providers__GitHub__Secret: ${GITHUB_WEBHOOK_SECRET:-}
+
+      # Section 43. Blank turns caching off rather than breaking startup, so this file is the
+      # only thing that has to change to run without Redis.
+      Cache__Connection: ${CACHE_CONNECTION:-cache:6379}
       # The token a metrics collector presents. Left unset the /metrics endpoint is not
       # mounted at all, rather than mounted and refusing — an endpoint that exists and
       # always answers 401 tells a prober that metrics are here and a token is worth
@@ -82,6 +86,11 @@ services:
         # container is up, and a web process that starts in that gap dies on its
         # first query.
         condition: service_healthy
+      cache:
+        # Started is enough, unlike the database. The cache degrades to computing
+        # the answer when it cannot be reached, so a web process that comes up a
+        # moment early serves the truth slowly rather than failing.
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health"]
       interval: 30s

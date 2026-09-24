@@ -1,0 +1,187 @@
+@page "/vendors"
+@rendermode InteractiveServer
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Vendors
+@using JiranisokoTech.Domain.Vendors
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.VendorsView)]
+@inject VendorService Service
+@inject NavigationManager Navigation
+
+@*
+    The firm's suppliers.
+
+    Section 62, and it exists to answer one question on one page: what have we signed with them,
+    what do we pay them every month, and who do I ring. Before this the answer was in three
+    places and could not be joined up — a supplier's name was free text on an agreement, on a
+    standing cost, and on a platform resource.
+
+    A separate book from the clients, because a company can be both. One row with an IsClient and
+    an IsVendor flag has one status column, and the day the firm stops selling to somebody and
+    goes on buying from them it would have to say Former and Active at the same time.
+*@
+
+<PageTitle>Suppliers — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Suppliers</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+<p class="instructions">
+    Who the firm buys from. Separate from <a href="/clients">the clients</a> on purpose: a
+    company can be both, and one row could not say the relationship had ended on one side and
+    not the other.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<AuthorizeView Policy="@Managing" Context="mayManage">
+    <section class="standing">
+        <h2>Put one on the books</h2>
+
+        <div class="fields">
+            <label>
+                <span>Name</span>
+                <input @bind="Name" placeholder="HostPinnacle Ltd" />
+            </label>
+
+            <label>
+                <span>What they supply</span>
+                <input @bind="Supplies" placeholder="Hosting and domains" />
+                <span class="subtle">
+                    A few words, so the list can be read without opening every row.
+                </span>
+            </label>
+        </div>
+
+        <div class="row-actions">
+            <button type="button" @onclick="TakeOn">Add the supplier</button>
+        </div>
+    </section>
+</AuthorizeView>
+
+<section class="standing">
+    <h2>On the books</h2>
+
+    @if (Rows.Count == 0)
+    {
+        <p class="empty">No suppliers yet.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">The firm's suppliers</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Supplies</th>
+                    <th scope="col">Terms</th>
+                    <th scope="col">State</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var vendor in Rows)
+                {
+                    <tr class="@(vendor.IsCurrent ? null : "row--closed")">
+                        <td>
+                            <a href="/vendors/@vendor.Id">@vendor.Name</a>
+                            <code>@vendor.Code</code>
+                        </td>
+                        <td>
+                            @if (vendor.Supplies is { } supplies)
+                            {
+                                @supplies
+                            }
+                            else
+                            {
+                                <span class="subtle">not said</span>
+                            }
+                        </td>
+                        <td>@Count(vendor.PaymentTermDays, "day", "days")</td>
+                        <td>
+                            <span class="pill @PillFor(vendor.Status)">@Say(vendor.Status)</span>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    private const string Managing = PermissionClaim.PolicyPrefix + Permissions.VendorsManage;
+
+    private List<Vendor> Rows { get; set; } = [];
+
+    private string Name { get; set; } = string.Empty;
+
+    private string Supplies { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string Headline
+    {
+        get
+        {
+            if (Rows.Count == 0)
+            {
+                return "No suppliers yet.";
+            }
+
+            var current = Rows.Count(one => one.IsCurrent);
+
+            return current == Rows.Count
+                ? $"{Count(current, "supplier", "suppliers")}."
+                : $"{Count(current, "supplier", "suppliers")} still bought from, "
+                  + $"{Rows.Count - current} no longer.";
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync() => Rows = await Service.AllAsync();
+
+    private async Task TakeOn()
+    {
+        Refusal = null;
+
+        try
+        {
+            var vendor = await Service.TakeOnAsync(
+                Name, null, string.IsNullOrWhiteSpace(Supplies) ? null : Supplies);
+
+            Navigation.NavigateTo($"/vendors/{vendor.Id}");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string Count(int many, string one, string more) =>
+        $"{many} {(many == 1 ? one : more)}";
+
+    private static string Say(VendorStatus status) => status switch
+    {
+        VendorStatus.Active => "Active",
+        VendorStatus.OnHold => "On hold",
+        VendorStatus.Former => "No longer used",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(status), status, "Nothing has decided what this supplier state is called."),
+    };
+
+    private static string PillFor(VendorStatus status) => status switch
+    {
+        VendorStatus.Active => "pill--done",
+        VendorStatus.OnHold => "pill--wait",
+        VendorStatus.Former => "pill--quiet",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(status), status, "Nothing has decided how this supplier state is shown."),
+    };
+}

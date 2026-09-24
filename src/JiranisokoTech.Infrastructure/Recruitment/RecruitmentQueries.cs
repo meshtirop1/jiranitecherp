@@ -5,7 +5,10 @@ using Microsoft.EntityFrameworkCore;
 namespace JiranisokoTech.Infrastructure.Recruitment;
 
 /// <summary>The reads the hiring screens do.</summary>
-public sealed class RecruitmentQueries(AppDbContext database)
+public sealed class RecruitmentQueries(
+    AppDbContext database,
+    JiranisokoTech.Application.Abstractions.ICache cache,
+    Microsoft.Extensions.Options.IOptions<Caching.CacheOptions> cacheOptions)
 {
     public async Task<List<RequisitionRow>> RequisitionsAsync(
         bool openOnly = false, CancellationToken cancellationToken = default)
@@ -95,7 +98,27 @@ public sealed class RecruitmentQueries(AppDbContext database)
     /// An advert past its closing date drops off on its own, so nobody has to
     /// remember to take it down.
     /// </remarks>
-    public async Task<List<OpeningRow>> OpeningsAsync(
+    /// <remarks>
+    /// <b>The one read in this application that is cached, and section 43 says why it is the
+    /// only one.</b> It has no reader: both pages that call it are anonymous, so there is no
+    /// identity a key could omit and no way to serve one person another's answer. It is also the
+    /// only page the open internet can reach, which is the only place a cache is protecting
+    /// anything rather than saving a millisecond.
+    ///
+    /// The key names no reader for that reason, and the lifetime is the correctness guarantee:
+    /// an advert whose closing date passes at midnight expires with no domain event at all —
+    /// nothing happened, so nothing was raised — and eviction alone would leave it on the
+    /// careers page until somebody next touched a posting.
+    /// </remarks>
+    public Task<List<OpeningRow>> OpeningsAsync(
+        CancellationToken cancellationToken = default) =>
+        cache.GetOrSetAsync(
+            JiranisokoTech.Application.Abstractions.CacheKeys.Openings,
+            cacheOptions.Value.OpeningsLife,
+            AdvertsAsync,
+            cancellationToken);
+
+    private async Task<List<OpeningRow>> AdvertsAsync(
         CancellationToken cancellationToken = default)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);

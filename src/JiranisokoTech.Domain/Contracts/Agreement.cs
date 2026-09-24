@@ -90,13 +90,17 @@ public sealed class Agreement : Entity, IAuditable
         string title,
         string party,
         Guid? employeeId,
+        Guid? vendorId,
         DateTimeOffset at)
     {
+        OneOrTheOther(employeeId, vendorId);
+
         Kind = kind;
         Reference = Required(reference, nameof(reference));
         Title = Required(title, nameof(title));
         Party = Required(party, nameof(party));
         EmployeeId = employeeId;
+        VendorId = vendorId;
         State = AgreementState.Draft;
         DraftedAt = at;
     }
@@ -107,8 +111,9 @@ public sealed class Agreement : Entity, IAuditable
         string title,
         string party,
         DateTimeOffset at,
-        Guid? employeeId = null) =>
-        new(kind, reference, title, party, employeeId, at);
+        Guid? employeeId = null,
+        Guid? vendorId = null) =>
+        new(kind, reference, title, party, employeeId, vendorId, at);
 
     public AgreementKind Kind { get; private set; }
 
@@ -126,6 +131,26 @@ public sealed class Agreement : Entity, IAuditable
 
     /// <summary>The staff record it belongs to, when it is one of theirs.</summary>
     public Guid? EmployeeId { get; private set; }
+
+    /// <summary>
+    /// The supplier it is with, when there is one on file.
+    /// </summary>
+    /// <remarks>
+    /// Section 62, closing the gap the remarks above name. Nullable, and that is what protects
+    /// every agreement already in the table: the migration adds a column and backfills nothing,
+    /// because a script matching "Safaricom" to "Safaricom PLC" is a script that will one day
+    /// match the wrong one and say nothing about it. Somebody links an old agreement when they
+    /// next open it.
+    ///
+    /// <see cref="Party"/> stays required and stays the display string even when this is set.
+    /// The reminder job and <see cref="AgreementSigned"/> both read it, so an agreement with a
+    /// vendor link and no party would have no subject line — and it is also what the paper
+    /// actually says, which does not change when a supplier is renamed.
+    ///
+    /// An agreement names a member of staff or a company, never both. One row can answer that,
+    /// so the refusal is here.
+    /// </remarks>
+    public Guid? VendorId { get; private set; }
 
     public AgreementState State { get; private set; }
 
@@ -170,12 +195,20 @@ public sealed class Agreement : Entity, IAuditable
     public bool IsLive => State is AgreementState.Draft or AgreementState.Signed;
 
     public void Describe(
-        AgreementKind kind, string title, string party, Guid? employeeId, string? notes)
+        AgreementKind kind,
+        string title,
+        string party,
+        Guid? employeeId,
+        Guid? vendorId,
+        string? notes)
     {
+        OneOrTheOther(employeeId, vendorId);
+
         Kind = kind;
         Title = Required(title, nameof(title));
         Party = Required(party, nameof(party));
         EmployeeId = employeeId;
+        VendorId = vendorId;
         Notes = Trimmed(notes);
     }
 
@@ -272,6 +305,25 @@ public sealed class Agreement : Entity, IAuditable
     /// the same permission a personnel file is.
     /// </remarks>
     public static IReadOnlySet<string> AuditExcludes { get; } = new HashSet<string>();
+
+    /// <summary>
+    /// An agreement is with a person or with a company, and not with both.
+    /// </summary>
+    /// <remarks>
+    /// Refused rather than tolerated because the screen has to pick one to show, and a row
+    /// holding both would have it showing whichever the markup happened to test first — which is
+    /// a page that disagrees with itself depending on the order somebody wrote two if statements.
+    /// </remarks>
+    private static void OneOrTheOther(Guid? employeeId, Guid? vendorId)
+    {
+        if (employeeId is not null && vendorId is not null)
+        {
+            throw new ArgumentException(
+                "An agreement is with a member of staff or with a supplier, not both. Clear one "
+                + "of them.",
+                nameof(vendorId));
+        }
+    }
 
     private static string Required(string value, string parameter) =>
         string.IsNullOrWhiteSpace(value)

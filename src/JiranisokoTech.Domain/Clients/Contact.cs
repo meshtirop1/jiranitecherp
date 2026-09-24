@@ -20,7 +20,7 @@ namespace JiranisokoTech.Domain.Clients;
 /// what a person actually needs to know is who to call first, and everything beyond that is
 /// in the job title they typed.
 /// </remarks>
-public sealed class Contact : Entity, IAuditable
+public sealed class Contact : Entity, IAuditable, IContactInABook
 {
     private Contact()
     {

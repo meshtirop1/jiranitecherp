@@ -131,6 +131,27 @@ public static class Permissions
 
     // --- clients -----------------------------------------------------------
     public const string ClientsView = "clients.view";
+
+    /// <summary>
+    /// See the suppliers and who to ring at each of them.
+    /// </summary>
+    /// <remarks>
+    /// Its own permission rather than clients.view, because they are opposite relationships and
+    /// held by different people: a delivery manager needs the client book and has no business
+    /// in what the firm pays its landlord. Read widely enough that somebody chasing a late
+    /// delivery can find the number without asking.
+    /// </remarks>
+    public const string VendorsView = "vendors.view";
+
+    /// <summary>
+    /// Put a supplier on the books, change their terms, keep the contact book.
+    /// </summary>
+    /// <remarks>
+    /// Narrow. A supplier's payment terms decide when money leaves, and their tax number is what
+    /// the firm files against — neither is something a delivery manager should be able to edit
+    /// while chasing a delivery.
+    /// </remarks>
+    public const string VendorsManage = "vendors.manage";
     public const string ClientsManage = "clients.manage";
 
     // --- time and leave ----------------------------------------------------
@@ -492,6 +513,8 @@ public static class Permissions
 
         ClientsView, ClientsManage,
 
+        VendorsView, VendorsManage,
+
         TimeLogOwn, TimeViewAll, TimeApprove,
         LeaveAsk, LeaveViewAll, LeaveApprove,
 
@@ -641,6 +664,13 @@ public static class Roles
                  * opening or retiring an account is not their act.
                  */
                 Permissions.AccountingView,
+
+                /*
+                 * The supplier book, read and not written. A head chasing a late delivery needs
+                 * the number; changing a supplier's payment terms decides when money leaves the
+                 * firm, and that is not their act either.
+                 */
+                Permissions.VendorsView,
 
                 // A head gives their own team work and releases what it
                 // finishes. Review without create means they can only ever react

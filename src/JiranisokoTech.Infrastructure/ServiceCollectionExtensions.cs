@@ -48,6 +48,7 @@ using JiranisokoTech.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace JiranisokoTech.Infrastructure;
 
@@ -157,6 +158,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<AccountingQueries>();
 
         services.AddScoped<IBusinessRepository, BusinessRepository>();
+
+        services.AddScoped<Application.Vendors.IVendorRepository, Vendors.VendorRepository>();
+
+        services.AddScoped<Application.Vendors.VendorService>();
         services.AddScoped<ClientService>();
         services.AddScoped<OpportunityService>();
         services.AddScoped<ContactService>();
@@ -224,6 +229,17 @@ public static class ServiceCollectionExtensions
             Application.Notices.TellPeopleTheirWorkMoved>();
         services.AddScoped<IDomainEventHandler<Domain.Approvals.ApprovalSettled>,
             Application.Notices.TellSomebodyTheirRequestWasSettled>();
+        /*
+         * A cache is always registered, and by default it holds nothing.
+         *
+         * RecruitmentQueries takes an ICache, so without a default every host that builds its own
+         * container — the test host does — would fail to construct it. Registering the empty one
+         * here means caching is a thing the application can be given rather than a thing it
+         * depends on, and AddCaching replaces this when a Redis connection is configured.
+         */
+        services.TryAddSingleton<Application.Abstractions.ICache, Caching.NoCache>();
+        services.Configure<Caching.CacheOptions>(_ => { });
+
         services.AddScoped<RecruitmentQueries>();
         services.AddScoped<ICvStore, FileCvStore>();
 
@@ -441,6 +457,54 @@ public static class ServiceCollectionExtensions
     /// message would mean a code path that only ever runs in production, which
     /// is the one nobody has watched work.
     /// </remarks>
+    /// <summary>
+    /// The cache, chosen once at startup from configuration.
+    /// </summary>
+    /// <remarks>
+    /// Section 43. A blank connection string means the feature is off rather than misconfigured —
+    /// the same reading the metrics token and the mail transport already have — so a developer
+    /// running this without Redis gets an application that works rather than one that refuses to
+    /// start.
+    ///
+    /// Chosen once rather than per call, for the reason AddMail gives about the mailer: deciding
+    /// per call leaves a code path that only ever runs in production, which is the one nobody has
+    /// watched work.
+    /// </remarks>
+    public static IServiceCollection AddCaching(
+        this IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<Caching.CacheOptions>(
+            configuration.GetSection(Caching.CacheOptions.Section));
+
+        var connection = configuration
+            .GetSection(Caching.CacheOptions.Section)
+            .GetValue(nameof(Caching.CacheOptions.Connection), string.Empty);
+
+        if (string.IsNullOrWhiteSpace(connection))
+        {
+            // AddInfrastructure already registered the empty one; nothing more to do.
+            return services;
+        }
+
+        services.AddStackExchangeRedisCache(options => options.Configuration = connection);
+
+        // Replaces the empty one registered by AddInfrastructure, rather than sitting beside it.
+        services.RemoveAll<Application.Abstractions.ICache>();
+        services.AddSingleton<Application.Abstractions.ICache, Caching.RedisCache>();
+
+        /*
+         * The two events that change what is on the careers page. Registered only when there is
+         * a cache to clear: with NoCache they would run on every posting change and do nothing,
+         * which is a handler whose failure mode is invisible because it has no effect either way.
+         */
+        services.AddScoped<IDomainEventHandler<Domain.Recruitment.PostingPublished>,
+            Application.Recruitment.ForgetTheOpeningsWhenAnAdvertMoves>();
+        services.AddScoped<IDomainEventHandler<Domain.Recruitment.PostingClosed>,
+            Application.Recruitment.ForgetTheOpeningsWhenAnAdvertMoves>();
+
+        return services;
+    }
+
     public static IServiceCollection AddMail(
         this IServiceCollection services, IConfiguration configuration)
     {

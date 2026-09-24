@@ -11,6 +11,7 @@
 @inject AgreementService Service
 @inject PeopleQueries People
 @inject JiranisokoTech.Application.Abstractions.IClock Clock
+@inject JiranisokoTech.Application.Vendors.VendorService Vendors
 
 @*
     One piece of paper.
@@ -61,6 +62,19 @@ else
             @if (Agreement.EmployeeId is { } who)
             {
                 <a href="/people/@who">@Agreement.Party</a>
+            }
+            else if (Agreement.VendorId is { } supplier)
+            {
+                <a href="/vendors/@supplier">@SupplierName(supplier)</a>
+                @if (!string.Equals(SupplierName(supplier), Agreement.Party, StringComparison.Ordinal))
+                {
+                    @*
+                        The two differ when the supplier has been renamed since. Both are true:
+                        the paper says one thing and the company is called another, and hiding
+                        either would make somebody doubt the record.
+                    *@
+                    <span class="subtle">named on the paper as @Agreement.Party</span>
+                }
             }
             else
             {
@@ -177,7 +191,35 @@ else
                 <label>
                     <span>With</span>
                     <input @bind="Party" />
+                    <span class="subtle">
+                        The name on the paper. It stays what the paper says even when the
+                        supplier below is renamed.
+                    </span>
                 </label>
+
+                @*
+                    Section 62. Nullable, and nothing guesses: an agreement written before
+                    suppliers existed keeps its free-text party until somebody links it here.
+                    A script matching "Safaricom" to "Safaricom PLC" would one day match the
+                    wrong one and say nothing about it.
+                *@
+                @if (Agreement.EmployeeId is null)
+                {
+                    <label>
+                        <span>The supplier</span>
+                        <select @bind="VendorId">
+                            <option value="">Not linked to one</option>
+                            @foreach (var vendor in Suppliers)
+                            {
+                                <option value="@vendor.Id">@vendor.Name</option>
+                            }
+                        </select>
+                        <span class="subtle">
+                            An agreement is with a member of staff or with a supplier, never
+                            both.
+                        </span>
+                    </label>
+                }
             </div>
 
             <div class="fields">
@@ -298,6 +340,10 @@ else
 
     private string Why { get; set; } = string.Empty;
 
+    private Guid? VendorId { get; set; }
+
+    private List<JiranisokoTech.Domain.Vendors.Vendor> Suppliers { get; set; } = [];
+
     private string? Refusal { get; set; }
 
     private string? Done { get; set; }
@@ -324,6 +370,12 @@ else
         Notes = Agreement.Notes ?? string.Empty;
 
         Copies = await Documents.ForAsync(AttachedTo.Agreement, Id);
+
+        VendorId = Agreement.VendorId;
+
+        // Former suppliers included, because an agreement may well be with one — the
+        // relationship ending is exactly when somebody goes looking for what was signed.
+        Suppliers = await Vendors.AllAsync();
     }
 
     private Task Save() => Act(
@@ -335,6 +387,7 @@ else
                 Title,
                 Party,
                 Agreement!.EmployeeId,
+                VendorId,
                 string.IsNullOrWhiteSpace(Notes) ? null : Notes);
 
             await Service.RunsAsync(
@@ -372,6 +425,9 @@ else
 
         await LoadAsync();
     }
+
+    private string SupplierName(Guid vendorId) =>
+        Suppliers.FirstOrDefault(one => one.Id == vendorId)?.Name ?? Agreement!.Party;
 
     private static string Said(AgreementKind kind) => kind switch
     {
