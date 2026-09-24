@@ -1,0 +1,370 @@
+@page "/purchases/{Id:guid}"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Procurement
+@using JiranisokoTech.Domain.Procurement
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.PurchasesRequest)]
+@inject ProcurementService Service
+@inject PeopleQueries People
+
+@*
+    One request: the argument for spending the money, what is being asked for, and where the
+    decision got to.
+
+    The lines can only change while it is a draft. Once it is submitted the list is what the
+    approver is reading, and changing it afterwards is the fault an invoice's draft rule exists to
+    prevent — somebody approves one thing and the record says another.
+*@
+
+<PageTitle>@(Request?.Reference ?? "Request") — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/purchases">Purchases</a></nav>
+
+@if (Request is null)
+{
+    <p class="empty">That request is not on file.</p>
+}
+else if (!MayRead)
+{
+    @*
+        A request names who asked and what the firm was told about spending money. Somebody who
+        may only raise their own sees only their own.
+    *@
+    <p class="empty">That request is not one you can see.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Request.Reference</h1>
+        <p class="subtle">
+            <span class="pill @PillFor(Request.State)">@Say(Request.State)</span>
+            <span class="subtle">asked by @Who(Request.RaisedById)</span>
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <dl class="facts">
+        <dt>Why</dt>
+        <dd><span class="as-typed">@Request.Justification</span></dd>
+
+        <dt>Needed by</dt>
+        <dd>
+            @if (Request.NeededBy is { } by)
+            {
+                @by.ToString("d MMMM yyyy")
+            }
+            else
+            {
+                <span class="subtle">not said</span>
+            }
+        </dd>
+
+        <dt>Estimate</dt>
+        <dd>@(Request.Estimate is { } total ? total.ToString() : "nothing on it yet")</dd>
+
+        @if (Request.Outcome is { } outcome)
+        {
+            <dt>What happened</dt>
+            <dd><span class="as-typed">@outcome</span></dd>
+        }
+    </dl>
+
+    <section class="standing">
+        <h2>What is being asked for</h2>
+
+        @if (Request.Lines.Count == 0)
+        {
+            <p class="empty">Nothing on it yet.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Lines on this request</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">What</th>
+                        <th scope="col">How many</th>
+                        <th scope="col">Each</th>
+                        <th scope="col">Estimate</th>
+                        @if (Request.IsDraft && IsMine)
+                        {
+                            <th scope="col"><span class="visually-hidden">Actions</span></th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in Request.Lines)
+                    {
+                        <tr>
+                            <td>@line.Description</td>
+                            <td>@line.Quantity</td>
+                            <td>@line.Unit</td>
+                            <td>@line.Estimate</td>
+                            @if (Request.IsDraft && IsMine)
+                            {
+                                <td class="row-actions">
+                                    <button type="button" class="button--quiet"
+                                            @onclick="() => RemoveLine(line.Id)">
+                                        Take it off
+                                    </button>
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        @if (Request.IsDraft && IsMine)
+        {
+            <div class="fields">
+                <label>
+                    <span>What</span>
+                    <input @bind="Description" placeholder="Laptop, 16GB" />
+                </label>
+
+                <label>
+                    <span>How many</span>
+                    <input type="number" @bind="Quantity" />
+                </label>
+
+                <label>
+                    <span>Each, in @Currency</span>
+                    <input type="number" @bind="Unit" />
+                    <span class="subtle">
+                        A request is in one currency. Anything bought in another is a second
+                        request, because nothing here converts between them.
+                    </span>
+                </label>
+            </div>
+
+            <div class="row-actions">
+                <button type="button" @onclick="AddLine">Add it</button>
+                <button type="button" @onclick="Submit">Send for approval</button>
+            </div>
+
+            <h3>Change the request itself</h3>
+
+            <div class="fields">
+                <label>
+                    <span>Why the firm should buy it</span>
+                    <input @bind="EditJustification" />
+                </label>
+
+                <label>
+                    <span>Needed by</span>
+                    <input type="date" @bind="EditNeededBy" />
+                </label>
+            </div>
+
+            <div class="row-actions">
+                <button type="button" class="button--quiet" @onclick="SaveRequest">Save it</button>
+            </div>
+        }
+    </section>
+
+    @if (Request.State == PurchaseRequestState.Submitted)
+    {
+        <AuthorizeView Policy="@Deciding" Context="mayDecide">
+            <section class="standing">
+                <h2>Decide it</h2>
+
+                <div class="fields">
+                    <label>
+                        <span>A note, or why not</span>
+                        <input @bind="Note" />
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="Approve">Approve it</button>
+                    <button type="button" class="danger" @onclick="Refuse">Refuse it</button>
+                </div>
+
+                <p class="subtle">
+                    Approving says the firm agrees to spend this. Committing it to a supplier is
+                    a separate act behind a separate permission, so that one person cannot
+                    approve and order unaided.
+                </p>
+            </section>
+        </AuthorizeView>
+    }
+
+    @if (IsMine && Request.State is PurchaseRequestState.Draft or PurchaseRequestState.Submitted)
+    {
+        <section class="standing">
+            <h2>Take it back</h2>
+
+            <div class="fields">
+                <label>
+                    <span>Why</span>
+                    <input @bind="Why" placeholder="the laptop was repaired instead" />
+                </label>
+            </div>
+
+            <div class="row-actions">
+                <button type="button" class="button--quiet" @onclick="Withdraw">Withdraw it</button>
+            </div>
+        </section>
+    }
+}
+
+@code {
+    private const string Deciding = PermissionClaim.PolicyPrefix + Permissions.ApprovalsDecide;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private PurchaseRequest? Request { get; set; }
+
+    private Guid? Me { get; set; }
+
+    private bool MayRead { get; set; }
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string Description { get; set; } = string.Empty;
+
+    private int Quantity { get; set; } = 1;
+
+    private long Unit { get; set; }
+
+    private string EditJustification { get; set; } = string.Empty;
+
+    private DateTime? EditNeededBy { get; set; }
+
+    private string Note { get; set; } = string.Empty;
+
+    private string Why { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private bool IsMine => Request is not null && Me == Request.RaisedById;
+
+    /// <summary>
+    /// The currency a line goes in.
+    /// </summary>
+    /// <remarks>
+    /// Whatever the first line used, so the second line cannot silently be in another — and the
+    /// firm's own currency when there is nothing on it yet.
+    /// </remarks>
+    private string Currency =>
+        Request?.Lines.FirstOrDefault()?.Currency ?? "KES";
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        Me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        Request = await Service.RequestAsync(Id);
+        Names = await People.NamesAsync();
+
+        if (Request is not null)
+        {
+            EditJustification = Request.Justification;
+            EditNeededBy = Request.NeededBy?.ToDateTime(TimeOnly.MinValue);
+        }
+
+        MayRead = Request is not null
+            && (user.HasClaim(PermissionClaim.Type, Permissions.PurchasesView)
+                || Me == Request.RaisedById);
+    }
+
+    private Task AddLine() => Act(
+        async () =>
+        {
+            await Service.AddLineAsync(Id, Description, Quantity, Unit, Currency);
+
+            Description = string.Empty;
+            Quantity = 1;
+            Unit = 0;
+        },
+        "Added.");
+
+    private Task RemoveLine(Guid lineId) => Act(
+        () => Service.RemoveLineAsync(Id, lineId), "Taken off.");
+
+    private Task SaveRequest() => Act(
+        () => Service.DescribeRequestAsync(
+            Id,
+            EditJustification,
+            EditNeededBy is { } by ? DateOnly.FromDateTime(by) : null),
+        "Saved.");
+
+    private Task Submit() => Act(
+        () => Service.SubmitAsync(Id), "Sent for approval.");
+
+    private Task Approve() => Act(
+        () => Service.ApproveAsync(Id, string.IsNullOrWhiteSpace(Note) ? null : Note),
+        "Approved. Somebody with purchases.order can now commit it to a supplier.");
+
+    private Task Refuse() => Act(
+        () => Service.RefuseAsync(Id, Note), "Refused.");
+
+    private Task Withdraw() => Act(
+        () => Service.WithdrawAsync(Id, Why), "Withdrawn.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException
+            or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private string Who(Guid employeeId) =>
+        Names.GetValueOrDefault(employeeId) ?? "Somebody no longer on the staff list";
+
+    private static string Say(PurchaseRequestState state) => state switch
+    {
+        PurchaseRequestState.Draft => "draft",
+        PurchaseRequestState.Submitted => "waiting on a decision",
+        PurchaseRequestState.Approved => "approved",
+        PurchaseRequestState.Refused => "refused",
+        PurchaseRequestState.Withdrawn => "withdrawn",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(state), state, "Nothing has decided what this request state is called."),
+    };
+
+    private static string PillFor(PurchaseRequestState state) => state switch
+    {
+        PurchaseRequestState.Approved => "pill--done",
+        PurchaseRequestState.Refused => "pill--danger",
+        PurchaseRequestState.Withdrawn => "pill--quiet",
+        _ => "pill--wait",
+    };
+}

@@ -292,6 +292,17 @@
                         <NavLink class="nav-link" href="invoices">Invoices</NavLink>
                     </div>
                 </AuthorizeView>
+                @*
+                    Beside the invoices, because they are the two directions money moves. Behind
+                    purchases.request rather than purchases.view, since everybody who works here
+                    can ask for something and the page shows them their own.
+                *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.PurchasesRequest)"
+                               Context="purchases">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="purchases">Purchases</NavLink>
+                    </div>
+                </AuthorizeView>
 
                 @* Each link is behind the permission the page itself checks,
                    so nobody is shown a door that will refuse them. *@

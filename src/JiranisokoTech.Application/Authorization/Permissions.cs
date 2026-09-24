@@ -152,6 +152,47 @@ public static class Permissions
     /// while chasing a delivery.
     /// </remarks>
     public const string VendorsManage = "vendors.manage";
+
+    /// <summary>Ask the firm to buy something.</summary>
+    /// <remarks>
+    /// Held by everybody who works here, like logging hours and claiming expenses. An engineer
+    /// who needs a second monitor and cannot ask for one through the system asks in a corridor,
+    /// and the firm loses the record of what it spends and why.
+    /// </remarks>
+    public const string PurchasesRequest = "purchases.request";
+
+    /// <summary>Read the requests and the orders.</summary>
+    public const string PurchasesView = "purchases.view";
+
+    /// <summary>
+    /// Commit the firm to a supplier.
+    /// </summary>
+    /// <remarks>
+    /// Narrow, and deliberately not held by whoever can approve a request. Approving says the
+    /// firm agrees to spend; placing an order is the act that spends it, and a system where one
+    /// person can do both unaided has no separation at the only point money leaves.
+    /// </remarks>
+    public const string PurchasesOrder = "purchases.order";
+
+    /// <summary>
+    /// Record what arrived.
+    /// </summary>
+    /// <remarks>
+    /// Separate from ordering on purpose, and the separation is the point rather than an
+    /// accident of naming: somebody who can both place an order and sign for its arrival can
+    /// record goods that never came. Wider than ordering, because whoever is at the door when
+    /// the boxes arrive is the person who should be typing it in.
+    /// </remarks>
+    public const string PurchasesReceive = "purchases.receive";
+
+    /// <summary>
+    /// Record that a supplier was paid.
+    /// </summary>
+    /// <remarks>
+    /// The same split expenses already make between approving a claim and paying one, and for
+    /// the same reason: approval says the figures are right and payment says the money has gone.
+    /// </remarks>
+    public const string PurchasesPay = "purchases.pay";
     public const string ClientsManage = "clients.manage";
 
     // --- time and leave ----------------------------------------------------
@@ -515,6 +556,10 @@ public static class Permissions
 
         VendorsView, VendorsManage,
 
+        PurchasesRequest, PurchasesView, PurchasesOrder, PurchasesReceive,
+
+        PurchasesPay,
+
         TimeLogOwn, TimeViewAll, TimeApprove,
         LeaveAsk, LeaveViewAll, LeaveApprove,
 
@@ -628,6 +673,11 @@ public static class Roles
                 // them describes somebody who does not work here.
                 Permissions.TimeLogOwn, Permissions.LeaveAsk, Permissions.ExpensesClaim,
 
+                // And asks the firm to buy things, for the same reason. Somebody who cannot ask
+                // through the system asks in a corridor, and the record of what the firm spends
+                // and why is lost.
+                Permissions.PurchasesRequest,
+
                 // Leave is HR's book to keep, and hours are how absence is
                 // reconciled against it.
                 Permissions.LeaveViewAll, Permissions.LeaveApprove,
@@ -671,6 +721,14 @@ public static class Roles
                  * firm, and that is not their act either.
                  */
                 Permissions.VendorsView,
+
+                /*
+                 * A head reads the purchasing for their part of the firm and signs for what
+                 * arrives at the door. Placing the order and paying for it are deliberately not
+                 * theirs: somebody who could order and also sign for the arrival could record
+                 * goods that never came.
+                 */
+                Permissions.PurchasesView, Permissions.PurchasesReceive,
 
                 // A head gives their own team work and releases what it
                 // finishes. Review without create means they can only ever react
@@ -722,6 +780,11 @@ public static class Roles
                 // them describes somebody who does not work here.
                 Permissions.TimeLogOwn, Permissions.LeaveAsk, Permissions.ExpensesClaim,
 
+                // And asks the firm to buy things, for the same reason. Somebody who cannot ask
+                // through the system asks in a corridor, and the record of what the firm spends
+                // and why is lost.
+                Permissions.PurchasesRequest,
+
                 // A head signs off their team's hours, absence and spending.
                 // Not payment: that is the office's job, and a head who could
                 // both approve and pay could reimburse themselves.
@@ -739,6 +802,10 @@ public static class Roles
                 // A delivery manager assembles the team that does the work, which is the
                 // reason teams.manage is not held by HR alone.
                 Permissions.TeamsView, Permissions.TeamsManage,
+
+                // And reads the purchasing, because the equipment a project is waiting on is
+                // the thing they are chasing.
+                Permissions.PurchasesView,
 
                 // Their own goals and their own review. A delivery manager runs the board
                 // rather than the line, so somebody's appraisal is not theirs to write.
@@ -768,6 +835,11 @@ public static class Roles
                 // claims money back. These are not privileges; a role without
                 // them describes somebody who does not work here.
                 Permissions.TimeLogOwn, Permissions.LeaveAsk, Permissions.ExpensesClaim,
+
+                // And asks the firm to buy things, for the same reason. Somebody who cannot ask
+                // through the system asks in a corridor, and the record of what the firm spends
+                // and why is lost.
+                Permissions.PurchasesRequest,
 
                 // A delivery manager bills the work, so they hold the clients
                 // and the draft invoices. Sending one is somebody else's.
@@ -830,6 +902,11 @@ public static class Roles
                 // claims money back. These are not privileges; a role without
                 // them describes somebody who does not work here.
                 Permissions.TimeLogOwn, Permissions.LeaveAsk, Permissions.ExpensesClaim,
+
+                // And asks the firm to buy things, for the same reason. Somebody who cannot ask
+                // through the system asks in a corridor, and the record of what the firm spends
+                // and why is lost.
+                Permissions.PurchasesRequest,
             ],
 
             [Interviewer] =

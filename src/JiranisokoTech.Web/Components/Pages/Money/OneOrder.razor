@@ -1,0 +1,683 @@
+@page "/purchases/orders/{Id:guid}"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Procurement
+@using JiranisokoTech.Domain.Procurement
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.PurchasesView)]
+@inject ProcurementService Service
+@inject PeopleQueries People
+@inject JiranisokoTech.Application.Vendors.VendorService Vendors
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    One order: what was committed to, what has arrived, and what was paid.
+
+    The column that matters is "still to come", and it is summed from the receipts rather than
+    stored. Ordering ten laptops and getting seven leaves three outstanding, and the order says so
+    until somebody either receives them or writes them off with a reason — it never quietly
+    decides itself finished.
+
+    Receiving is behind its own permission, separate from ordering, and the separation is the
+    point: somebody who could both place an order and sign for its arrival could record goods that
+    never came.
+*@
+
+<PageTitle>@(Order?.Number ?? "Order") — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/purchases">Purchases</a></nav>
+
+@if (Order is null)
+{
+    <p class="empty">That order is not on file.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Order.Number</h1>
+        <p class="subtle">
+            <span class="pill @PillFor(Order.State)">@Say(Order.State)</span>
+            <span class="subtle">with @Supplier</span>
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    <dl class="facts">
+        <dt>Total</dt>
+        <dd>@(Order.Total is { } total ? total.ToString() : "nothing on it yet")</dd>
+
+        <dt>Paid</dt>
+        <dd>
+            @if (Order.Paid is { } paid)
+            {
+                @paid
+                @if (Order.Total is { } due && paid.MinorUnits < due.MinorUnits)
+                {
+                    <span class="subtle">
+                        @(due - paid) still owed
+                    </span>
+                }
+            }
+            else
+            {
+                <span class="subtle">nothing recorded</span>
+            }
+        </dd>
+
+        <dt>Expected</dt>
+        <dd>
+            @if (Order.ExpectedOn is { } when)
+            {
+                @when.ToString("d MMMM yyyy")
+            }
+            else
+            {
+                <span class="subtle">not said</span>
+            }
+        </dd>
+
+        @if (Order.Outcome is { } outcome)
+        {
+            <dt>What happened</dt>
+            <dd><span class="as-typed">@outcome</span></dd>
+        }
+    </dl>
+
+    <section class="standing">
+        <h2>What was ordered</h2>
+
+        @if (Order.Lines.Count == 0)
+        {
+            <p class="empty">Nothing on it yet.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Lines on this order</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">What</th>
+                        <th scope="col">Ordered</th>
+                        <th scope="col">Arrived</th>
+                        <th scope="col">Written off</th>
+                        <th scope="col">Still to come</th>
+                        <th scope="col">Amount</th>
+                        @if (Order.IsDraft)
+                        {
+                            <th scope="col"><span class="visually-hidden">Actions</span></th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in Order.Lines)
+                    {
+                        <tr>
+                            <td>@line.Description</td>
+                            <td>@line.Quantity</td>
+                            <td>@Order.ReceivedOnLine(line.Id)</td>
+                            <td>@(line.Short == 0 ? "—" : line.Short.ToString())</td>
+                            <td>
+                                @if (Order.OutstandingOn(line.Id) is var left && left > 0)
+                                {
+                                    <span class="pill pill--wait">@left</span>
+                                }
+                                else
+                                {
+                                    <span class="subtle">none</span>
+                                }
+                            </td>
+                            <td>@line.Amount</td>
+                            @if (Order.IsDraft)
+                            {
+                                <td class="row-actions">
+                                    <button type="button" class="button--quiet"
+                                            @onclick="() => RemoveLine(line.Id)">
+                                        Take it off
+                                    </button>
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        @if (Order.IsDraft)
+        {
+            <AuthorizeView Policy="@Ordering" Context="mayOrder">
+                <div class="fields">
+                    <label>
+                        <span>What</span>
+                        <input @bind="Description" placeholder="Laptop, 16GB" />
+                    </label>
+
+                    <label>
+                        <span>How many</span>
+                        <input type="number" @bind="Quantity" />
+                    </label>
+
+                    <label>
+                        <span>Each, in @Currency</span>
+                        <input type="number" @bind="Unit" />
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="AddLine">Add it</button>
+                    <button type="button" @onclick="Place">Place the order</button>
+                </div>
+
+                <p class="subtle">
+                    Placing it freezes the lines. The supplier will be holding a document with
+                    these figures on it, and editing our copy afterwards leaves the two
+                    disagreeing with nothing to say which is right.
+                </p>
+
+                <h3>The order itself</h3>
+
+                <div class="fields">
+                    <label>
+                        <span>Goes against</span>
+                        <select @bind="AccountId">
+                            @foreach (var (id, name) in Accounts.OrderBy(one => one.Value))
+                            {
+                                <option value="@id">@name</option>
+                            }
+                        </select>
+                    </label>
+
+                    <label>
+                        <span>Expected</span>
+                        <input type="date" @bind="ExpectedOn" />
+                    </label>
+                </div>
+
+                <label class="stack">
+                    <span>Notes</span>
+                    <textarea rows="2" @bind="Notes"></textarea>
+                </label>
+
+                <div class="row-actions">
+                    <button type="button" class="button--quiet" @onclick="SaveOrder">Save it</button>
+                </div>
+            </AuthorizeView>
+        }
+    </section>
+
+    @if (Order.IsPlaced)
+    {
+        <AuthorizeView Policy="@Receiving" Context="mayReceive">
+            <section class="standing">
+                <h2>Record what arrived</h2>
+
+                <div class="fields">
+                    <label>
+                        <span>Which line</span>
+                        <select @bind="LineId">
+                            <option value="">Choose one</option>
+                            @foreach (var line in Order.Lines.Where(
+                                one => Order.OutstandingOn(one.Id) > 0))
+                            {
+                                <option value="@line.Id">
+                                    @line.Description (@Order.OutstandingOn(line.Id) to come)
+                                </option>
+                            }
+                        </select>
+                    </label>
+
+                    <label>
+                        <span>How many</span>
+                        <input type="number" @bind="Arrived" />
+                    </label>
+
+                    <label>
+                        <span>On</span>
+                        <input type="date" @bind="ReceivedOn" />
+                        <span class="subtle">
+                            The day it came, not the day the paperwork was done.
+                        </span>
+                    </label>
+
+                    <label>
+                        <span>Condition</span>
+                        <select @bind="Condition">
+                            <option value="@ReceivedCondition.Good">Good</option>
+                            <option value="@ReceivedCondition.Damaged">Damaged</option>
+                            <option value="@ReceivedCondition.Wrong">Not what was ordered</option>
+                        </select>
+                    </label>
+                </div>
+
+                <label class="stack">
+                    <span>Note</span>
+                    <textarea rows="2" @bind="Note"></textarea>
+                </label>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="Receive">Record it</button>
+                </div>
+            </section>
+
+            <section class="standing">
+                <h2>Write off what is not coming</h2>
+
+                <div class="fields">
+                    <label>
+                        <span>Which line</span>
+                        <select @bind="ShortLineId">
+                            <option value="">Choose one</option>
+                            @foreach (var line in Order.Lines.Where(
+                                one => Order.OutstandingOn(one.Id) > 0))
+                            {
+                                <option value="@line.Id">
+                                    @line.Description (@Order.OutstandingOn(line.Id) to come)
+                                </option>
+                            }
+                        </select>
+                    </label>
+
+                    <label>
+                        <span>Why it is not coming</span>
+                        <input @bind="Why" placeholder="discontinued; the supplier refunded us" />
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" class="button--quiet" @onclick="CloseShort">
+                        Write it off
+                    </button>
+                </div>
+
+                <p class="subtle">
+                    The honest end for an order where three of ten never came. Without it the only
+                    ways to close are to pretend they arrived — which puts three things on the
+                    register that do not exist — or to leave the order open for ever.
+                </p>
+            </section>
+        </AuthorizeView>
+    }
+
+    @if (Order.Receipts.Count > 0)
+    {
+        <section class="standing">
+            <h2>What has arrived</h2>
+
+            <table class="grid">
+                <caption class="visually-hidden">Deliveries against this order</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">What</th>
+                        <th scope="col">How many</th>
+                        <th scope="col">When</th>
+                        <th scope="col">Condition</th>
+                        <th scope="col">Signed for by</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var receipt in Order.Receipts)
+                    {
+                        <tr>
+                            <td>@LineName(receipt.OrderLineId)</td>
+                            <td>@receipt.Quantity</td>
+                            <td>@receipt.ReceivedOn.ToString("d MMM yyyy")</td>
+                            <td>
+                                <span class="pill @ConditionPill(receipt.Condition)">
+                                    @ConditionSay(receipt.Condition)
+                                </span>
+                                @if (receipt.Note is { } note)
+                                {
+                                    <span class="subtle">@note</span>
+                                }
+                            </td>
+                            <td>@Who(receipt.ReceivedById)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <p class="subtle">
+                Appended and never edited. The condition is a fact about a moment rather than
+                about the order, and it settles the argument six months later about whether the
+                screen was already cracked.
+            </p>
+        </section>
+    }
+
+    <AuthorizeView Policy="@Paying" Context="mayPay">
+        @if (Order.State is PurchaseOrderState.Placed or PurchaseOrderState.Complete)
+        {
+            <section class="standing">
+                <h2>Record a payment</h2>
+
+                @if (Order.Payments.Count > 0)
+                {
+                    <ul class="plain">
+                        @foreach (var payment in Order.Payments)
+                        {
+                            <li>
+                                @payment.Amount
+                                <span class="subtle">
+                                    @payment.PaidOn.ToString("d MMM yyyy")
+                                </span>
+                                @if (payment.Reference is { } reference)
+                                {
+                                    <code>@reference</code>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+
+                <div class="fields">
+                    <label>
+                        <span>How much, in @Currency</span>
+                        <input type="number" @bind="PaidAmount" />
+                    </label>
+
+                    <label>
+                        <span>On</span>
+                        <input type="date" @bind="PaidOn" />
+                    </label>
+
+                    <label>
+                        <span>Bank reference</span>
+                        <input @bind="PaidReference" />
+                        <span class="subtle">So a payment can be found again on a statement.</span>
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" @onclick="Pay">Record it</button>
+                </div>
+
+                <p class="subtle">
+                    This records that money went out. Nothing here touches a bank — a control that
+                    looked like it moved money and did not would be the most dangerous one in the
+                    application.
+                </p>
+            </section>
+        }
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@Ordering" Context="mayOrder">
+        @if (Order.State is PurchaseOrderState.Draft or PurchaseOrderState.Placed
+            && Order.Receipts.Count == 0)
+        {
+            <section class="standing">
+                <h2>Cancel it</h2>
+
+                <div class="fields">
+                    <label>
+                        <span>Why</span>
+                        <input @bind="CancelWhy" placeholder="ordered from somebody else" />
+                    </label>
+                </div>
+
+                <div class="row-actions">
+                    <button type="button" class="danger" @onclick="Cancel">Cancel the order</button>
+                </div>
+            </section>
+        }
+    </AuthorizeView>
+}
+
+@code {
+    private const string Ordering = PermissionClaim.PolicyPrefix + Permissions.PurchasesOrder;
+
+    private const string Receiving = PermissionClaim.PolicyPrefix + Permissions.PurchasesReceive;
+
+    private const string Paying = PermissionClaim.PolicyPrefix + Permissions.PurchasesPay;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private PurchaseOrder? Order { get; set; }
+
+    private Guid? Me { get; set; }
+
+    private string Supplier { get; set; } = "a supplier";
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private string Description { get; set; } = string.Empty;
+
+    private int Quantity { get; set; } = 1;
+
+    private long Unit { get; set; }
+
+    private Guid? LineId { get; set; }
+
+    private int Arrived { get; set; } = 1;
+
+    private DateTime ReceivedOn { get; set; }
+
+    private ReceivedCondition Condition { get; set; } = ReceivedCondition.Good;
+
+    private string Note { get; set; } = string.Empty;
+
+    private Guid? ShortLineId { get; set; }
+
+    private string Why { get; set; } = string.Empty;
+
+    private long PaidAmount { get; set; }
+
+    private DateTime PaidOn { get; set; }
+
+    private string PaidReference { get; set; } = string.Empty;
+
+    private string CancelWhy { get; set; } = string.Empty;
+
+    private Dictionary<Guid, string> Accounts { get; set; } = [];
+
+    private Guid? AccountId { get; set; }
+
+    private DateTime? ExpectedOn { get; set; }
+
+    private string Notes { get; set; } = string.Empty;
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private string Currency => Order?.Currency ?? "KES";
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        Me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        Order = await Service.OrderAsync(Id);
+        Names = await People.NamesAsync();
+
+        if (ReceivedOn == default)
+        {
+            ReceivedOn = Clock.Today.ToDateTime(TimeOnly.MinValue);
+            PaidOn = ReceivedOn;
+        }
+
+        if (Order is not null)
+        {
+            Supplier = (await Vendors.OneAsync(Order.VendorId))?.Name ?? "a supplier";
+
+            AccountId = Order.AccountId;
+            ExpectedOn = Order.ExpectedOn?.ToDateTime(TimeOnly.MinValue);
+            Notes = Order.Notes ?? string.Empty;
+
+            Accounts = (await Accounting.AccountsAsync())
+                .Where(one => one.IsOpen
+                    && one.Kind == JiranisokoTech.Domain.Money.AccountKind.Expense)
+                .ToDictionary(one => one.Id, one => one.Name);
+        }
+    }
+
+    private Task AddLine() => Act(
+        async () =>
+        {
+            await Service.AddOrderLineAsync(Id, Description, Quantity, Unit, Currency);
+
+            Description = string.Empty;
+            Quantity = 1;
+            Unit = 0;
+        },
+        "Added.");
+
+    [Inject]
+    private JiranisokoTech.Infrastructure.Accounting.AccountingQueries Accounting { get; set; } =
+        default!;
+
+    private Task RemoveLine(Guid lineId) => Act(
+        () => Service.RemoveOrderLineAsync(Id, lineId), "Taken off.");
+
+    private Task SaveOrder() => Act(
+        async () =>
+        {
+            if (AccountId is not { } account)
+            {
+                throw new ArgumentException("Say which account it goes against.");
+            }
+
+            await Service.DescribeOrderAsync(
+                Id,
+                account,
+                ExpectedOn is { } when ? DateOnly.FromDateTime(when) : null,
+                string.IsNullOrWhiteSpace(Notes) ? null : Notes);
+        },
+        "Saved.");
+
+    private Task Place() => Act(
+        () => Service.PlaceAsync(Id), "Placed. The lines are frozen now.");
+
+    private Task Receive() => Act(
+        async () =>
+        {
+            if (LineId is not { } line)
+            {
+                throw new ArgumentException("Say which line arrived.");
+            }
+
+            await Service.ReceiveAsync(
+                Id,
+                line,
+                Arrived,
+                DateOnly.FromDateTime(ReceivedOn),
+                Condition,
+                Me!.Value,
+                string.IsNullOrWhiteSpace(Note) ? null : Note);
+
+            LineId = null;
+            Arrived = 1;
+            Note = string.Empty;
+        },
+        "Recorded.");
+
+    private Task CloseShort() => Act(
+        async () =>
+        {
+            if (ShortLineId is not { } line)
+            {
+                throw new ArgumentException("Say which line is not coming.");
+            }
+
+            await Service.CloseShortAsync(Id, line, Why);
+
+            ShortLineId = null;
+            Why = string.Empty;
+        },
+        "Written off.");
+
+    private Task Pay() => Act(
+        async () =>
+        {
+            await Service.PayAsync(
+                Id,
+                PaidAmount,
+                Currency,
+                DateOnly.FromDateTime(PaidOn),
+                string.IsNullOrWhiteSpace(PaidReference) ? null : PaidReference);
+
+            PaidAmount = 0;
+            PaidReference = string.Empty;
+        },
+        "Recorded.");
+
+    private Task Cancel() => Act(
+        () => Service.CancelOrderAsync(Id, CancelWhy), "Cancelled.");
+
+    private async Task Act(Func<Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            await work();
+            Done = done;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException
+            or ArgumentOutOfRangeException)
+        {
+            Refusal = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private string Who(Guid employeeId) =>
+        Names.GetValueOrDefault(employeeId) ?? "Somebody no longer on the staff list";
+
+    private string LineName(Guid lineId) =>
+        Order?.Lines.FirstOrDefault(one => one.Id == lineId)?.Description ?? "a line";
+
+    private static string Say(PurchaseOrderState state) => state switch
+    {
+        PurchaseOrderState.Draft => "draft",
+        PurchaseOrderState.Placed => "placed",
+        PurchaseOrderState.Complete => "complete",
+        PurchaseOrderState.Cancelled => "cancelled",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(state), state, "Nothing has decided what this order state is called."),
+    };
+
+    private static string PillFor(PurchaseOrderState state) => state switch
+    {
+        PurchaseOrderState.Complete => "pill--done",
+        PurchaseOrderState.Cancelled => "pill--quiet",
+        PurchaseOrderState.Placed => "pill--wait",
+        _ => "pill--quiet",
+    };
+
+    private static string ConditionSay(ReceivedCondition condition) => condition switch
+    {
+        ReceivedCondition.Good => "good",
+        ReceivedCondition.Damaged => "damaged",
+        ReceivedCondition.Wrong => "not what was ordered",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(condition), condition, "Nothing has decided what this condition is called."),
+    };
+
+    private static string ConditionPill(ReceivedCondition condition) => condition switch
+    {
+        ReceivedCondition.Good => "pill--done",
+        _ => "pill--danger",
+    };
+}

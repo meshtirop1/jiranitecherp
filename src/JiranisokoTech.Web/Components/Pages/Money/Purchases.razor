@@ -1,0 +1,469 @@
+@page "/purchases"
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Procurement
+@using JiranisokoTech.Domain.Procurement
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.PurchasesRequest)]
+@inject ProcurementService Service
+@inject PeopleQueries People
+@inject NavigationManager Navigation
+
+@*
+    Buying things: what has been asked for, and what the firm has committed to.
+
+    Section 61. A request and an order are separate records rather than one with more states,
+    because they are not one-to-one — a request splits across suppliers, an order combines lines
+    from two requests, and an order is filled by several deliveries.
+
+    "Approved and nobody ordered it" is the list this page exists to show, and it is a query over
+    the orders rather than a flag on the request. A stored flag is a figure that can disagree with
+    the documents it came from, and the day it does nobody can tell which is wrong.
+*@
+
+<PageTitle>Purchases — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Purchases</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Done is not null)
+{
+    <p class="done" role="status">@Done</p>
+}
+
+<AuthorizeView Policy="@Viewing" Context="mayView">
+    @if (Waiting.Count > 0)
+    {
+        <section class="standing">
+            <h2>Approved and nothing ordered</h2>
+
+            <p class="instructions">
+                The firm has agreed to spend this and nobody has committed it to a supplier yet.
+                Worked out from the orders rather than stored on the request.
+            </p>
+
+            <table class="grid">
+                <caption class="visually-hidden">Approved requests with nothing ordered</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Reference</th>
+                        <th scope="col">Who asked</th>
+                        <th scope="col">Estimate</th>
+                        <th scope="col">Needed by</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var one in Waiting)
+                    {
+                        <tr>
+                            <td><a href="/purchases/@one.Id">@one.Reference</a></td>
+                            <td>@Who(one.RaisedById)</td>
+                            <td>@Said(one.Estimate)</td>
+                            <td>
+                                @if (one.NeededBy is { } by)
+                                {
+                                    @by.ToString("d MMM yyyy")
+                                }
+                                else
+                                {
+                                    <span class="subtle">not said</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+</AuthorizeView>
+
+<section class="standing">
+    <h2>@(MayView ? "Requests" : "Your requests")</h2>
+
+    @if (Requests.Count == 0)
+    {
+        <p class="empty">Nothing has been asked for.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">Purchase requests</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Reference</th>
+                    <th scope="col">What for</th>
+                    <th scope="col">Estimate</th>
+                    <th scope="col">State</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var one in Requests)
+                {
+                    <tr class="@(one.State == PurchaseRequestState.Refused
+                        || one.State == PurchaseRequestState.Withdrawn ? "row--closed" : null)">
+                        <td><a href="/purchases/@one.Id">@one.Reference</a></td>
+                        <td><span class="subtle">@Short(one.Justification)</span></td>
+                        <td>@Said(one.Estimate)</td>
+                        <td>
+                            <span class="pill @PillFor(one.State)">@Say(one.State)</span>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+<section class="standing">
+    <h2>Ask for something</h2>
+
+    <div class="fields">
+        <label>
+            <span>Why the firm should buy it</span>
+            <input @bind="Justification"
+                   placeholder="The despatch laptop will not run the new scanner software" />
+            <span class="subtle">
+                The field the whole request exists to carry. An approver reading a list of items
+                and a total is deciding about arithmetic; the argument is what they are actually
+                being asked about.
+            </span>
+        </label>
+
+        <label>
+            <span>Needed by</span>
+            <input type="date" @bind="NeededBy" />
+        </label>
+    </div>
+
+    <div class="row-actions">
+        <button type="button" @onclick="Raise">Start a request</button>
+    </div>
+</section>
+
+<AuthorizeView Policy="@Ordering" Context="mayOrder">
+    <section class="standing">
+        <h2>Commit to a supplier</h2>
+
+        <p class="instructions">
+            A separate act from approving, behind a separate permission, so that one person
+            cannot agree to spend the firm's money and spend it unaided.
+        </p>
+
+        <div class="fields">
+            <label>
+                <span>Supplier</span>
+                <select @bind="VendorId">
+                    <option value="">Choose one</option>
+                    @foreach (var (id, name) in Suppliers.OrderBy(one => one.Value))
+                    {
+                        <option value="@id">@name</option>
+                    }
+                </select>
+            </label>
+
+            <label>
+                <span>Goes against</span>
+                <select @bind="AccountId">
+                    <option value="">Choose an account</option>
+                    @foreach (var (id, name) in Accounts.OrderBy(one => one.Value))
+                    {
+                        <option value="@id">@name</option>
+                    }
+                </select>
+                <span class="subtle">
+                    Required, so the spending appears on the report it exists to appear on.
+                </span>
+            </label>
+        </div>
+
+        <div class="row-actions">
+            <button type="button" @onclick="RaiseOrder">Start an order</button>
+        </div>
+    </section>
+</AuthorizeView>
+
+<AuthorizeView Policy="@Viewing" Context="mayView">
+    <section class="standing">
+        <h2>Orders</h2>
+
+        @if (Orders.Count == 0)
+        {
+            <p class="empty">Nothing has been ordered.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Purchase orders</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Number</th>
+                        <th scope="col">Supplier</th>
+                        <th scope="col">Total</th>
+                        <th scope="col">Still to come</th>
+                        <th scope="col">State</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var one in Orders)
+                    {
+                        <tr class="@(one.State == PurchaseOrderState.Cancelled ? "row--closed" : null)">
+                            <td><a href="/purchases/orders/@one.Id">@one.Number</a></td>
+                            <td>@Supplier(one.VendorId)</td>
+                            <td>@Said(one.Total)</td>
+                            @*
+                                Summed from the receipts, never stored. Ordering ten and getting
+                                seven leaves three, and the order says so until somebody either
+                                receives them or writes them off with a reason.
+                            *@
+                            <td>@Outstanding(one)</td>
+                            <td>
+                                <span class="pill @OrderPill(one.State)">@OrderSay(one.State)</span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+</AuthorizeView>
+
+@code {
+    private const string Viewing = PermissionClaim.PolicyPrefix + Permissions.PurchasesView;
+
+    private const string Ordering = PermissionClaim.PolicyPrefix + Permissions.PurchasesOrder;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private Guid? Me { get; set; }
+
+    private bool MayView { get; set; }
+
+    private List<PurchaseRequest> Requests { get; set; } = [];
+
+    private List<PurchaseRequest> Waiting { get; set; } = [];
+
+    private List<PurchaseOrder> Orders { get; set; } = [];
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private Dictionary<Guid, string> Suppliers { get; set; } = [];
+
+    private string Justification { get; set; } = string.Empty;
+
+    private DateTime? NeededBy { get; set; }
+
+    private Dictionary<Guid, string> Accounts { get; set; } = [];
+
+    private Guid? VendorId { get; set; }
+
+    private Guid? AccountId { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private string Headline
+    {
+        get
+        {
+            if (!MayView)
+            {
+                return Requests.Count switch
+                {
+                    0 => "You have asked for nothing.",
+                    1 => "One request of yours.",
+                    var many => $"{many} requests of yours.",
+                };
+            }
+
+            return Waiting.Count == 0
+                ? $"{Count(Requests.Count, "request", "requests")}, "
+                  + $"{Count(Orders.Count, "order", "orders")}."
+                : $"{Count(Waiting.Count, "request", "requests")} approved and not ordered.";
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        MayView = user.HasClaim(PermissionClaim.Type, Permissions.PurchasesView);
+
+        Me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        Names = await People.NamesAsync();
+
+        /*
+         * Somebody who may only raise a request sees their own and nothing else. Not filtered
+         * from a wider list — the narrower query is issued instead, which is the discipline the
+         * search box follows and the reason a filter cannot be forgotten.
+         */
+        Requests = MayView
+            ? await Service.RequestsAsync()
+            : Me is { } me ? await Service.RequestsForAsync(me) : [];
+
+        if (!MayView)
+        {
+            return;
+        }
+
+        Waiting = await Service.ApprovedAndUnorderedAsync();
+        Orders = await Service.OrdersAsync();
+
+        Suppliers = (await Vendors.AllAsync(includeFormer: false))
+            .ToDictionary(one => one.Id, one => one.Name);
+
+        /*
+         * Open expense accounts only. An order against a closed account, or against an income
+         * one, is money that cannot appear on the report it exists to appear on.
+         */
+        Accounts = (await Accounting.AccountsAsync())
+            .Where(one => one.IsOpen
+                && one.Kind == JiranisokoTech.Domain.Money.AccountKind.Expense)
+            .ToDictionary(one => one.Id, one => one.Name);
+    }
+
+    [Inject]
+    private JiranisokoTech.Application.Vendors.VendorService Vendors { get; set; } = default!;
+
+    [Inject]
+    private JiranisokoTech.Infrastructure.Accounting.AccountingQueries Accounting { get; set; } = default!;
+
+    private async Task RaiseOrder()
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            if (VendorId is not { } vendor)
+            {
+                throw new ArgumentException("Say which supplier the order is with.");
+            }
+
+            if (AccountId is not { } account)
+            {
+                throw new ArgumentException("Say which account it goes against.");
+            }
+
+            if (Me is not { } me)
+            {
+                throw new InvalidOperationException(
+                    "An order carries the name of whoever raised it, and this account is not "
+                    + "linked to a staff record.");
+            }
+
+            var order = await Service.RaiseOrderAsync(vendor, account, me);
+
+            Navigation.NavigateTo($"/purchases/orders/{order.Id}");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private async Task Raise()
+    {
+        Refusal = null;
+        Done = null;
+
+        try
+        {
+            if (Me is not { } me)
+            {
+                throw new InvalidOperationException(
+                    "A request carries the name of whoever asked, and this account is not linked "
+                    + "to a staff record.");
+            }
+
+            var request = await Service.RaiseAsync(
+                me,
+                Justification,
+                NeededBy is { } by ? DateOnly.FromDateTime(by) : null);
+
+            Navigation.NavigateTo($"/purchases/{request.Id}");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private string Who(Guid employeeId) =>
+        Names.GetValueOrDefault(employeeId) ?? "Somebody no longer on the staff list";
+
+    private string Supplier(Guid vendorId) =>
+        Suppliers.GetValueOrDefault(vendorId) ?? "a supplier";
+
+    private static string Outstanding(PurchaseOrder order)
+    {
+        var left = order.Lines.Sum(one => order.OutstandingOn(one.Id));
+
+        return left == 0 ? "—" : left.ToString();
+    }
+
+    private static string Said(JiranisokoTech.Domain.Common.Money? amount) =>
+        amount is { } money ? money.ToString() : "—";
+
+    private static string Short(string justification) =>
+        justification.Length <= 70 ? justification : justification[..70] + "…";
+
+    private static string Count(int many, string one, string more) =>
+        $"{many} {(many == 1 ? one : more)}";
+
+    private static string Say(PurchaseRequestState state) => state switch
+    {
+        PurchaseRequestState.Draft => "draft",
+        PurchaseRequestState.Submitted => "waiting",
+        PurchaseRequestState.Approved => "approved",
+        PurchaseRequestState.Refused => "refused",
+        PurchaseRequestState.Withdrawn => "withdrawn",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(state), state, "Nothing has decided what this request state is called."),
+    };
+
+    private static string PillFor(PurchaseRequestState state) => state switch
+    {
+        PurchaseRequestState.Approved => "pill--done",
+        PurchaseRequestState.Refused => "pill--danger",
+        PurchaseRequestState.Withdrawn => "pill--quiet",
+        _ => "pill--wait",
+    };
+
+    private static string OrderSay(PurchaseOrderState state) => state switch
+    {
+        PurchaseOrderState.Draft => "draft",
+        PurchaseOrderState.Placed => "placed",
+        PurchaseOrderState.Complete => "complete",
+        PurchaseOrderState.Cancelled => "cancelled",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(state), state, "Nothing has decided what this order state is called."),
+    };
+
+    private static string OrderPill(PurchaseOrderState state) => state switch
+    {
+        PurchaseOrderState.Complete => "pill--done",
+        PurchaseOrderState.Cancelled => "pill--quiet",
+        PurchaseOrderState.Placed => "pill--wait",
+        _ => "pill--quiet",
+    };
+}

@@ -163,6 +163,21 @@ public class AppDbContext(
     /// </remarks>
     public DbSet<Domain.Vendors.Vendor> Vendors => Set<Domain.Vendors.Vendor>();
 
+    /// <summary>
+    /// Asking to buy something, and committing to a supplier.
+    /// </summary>
+    /// <remarks>
+    /// Two aggregates rather than one with more states, because they are not one-to-one: a
+    /// request splits across suppliers, an order combines lines from two requests, and an order
+    /// is filled by several deliveries. Receiving is an owned collection on the order, not a
+    /// third table of its own.
+    /// </remarks>
+    public DbSet<Domain.Procurement.PurchaseRequest> PurchaseRequests =>
+        Set<Domain.Procurement.PurchaseRequest>();
+
+    public DbSet<Domain.Procurement.PurchaseOrder> PurchaseOrders =>
+        Set<Domain.Procurement.PurchaseOrder>();
+
     public DbSet<Domain.Vendors.VendorContact> VendorContacts =>
         Set<Domain.Vendors.VendorContact>();
 

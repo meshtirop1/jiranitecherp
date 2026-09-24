@@ -162,6 +162,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<Application.Vendors.IVendorRepository, Vendors.VendorRepository>();
 
         services.AddScoped<Application.Vendors.VendorService>();
+
+
+        services.AddScoped<Application.Procurement.IProcurementRepository,
+
+            Procurement.ProcurementRepository>();
+
+        services.AddScoped<Application.Procurement.ProcurementService>();
         services.AddScoped<ClientService>();
         services.AddScoped<OpportunityService>();
         services.AddScoped<ContactService>();
