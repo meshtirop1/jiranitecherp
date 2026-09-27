@@ -4,6 +4,8 @@
 @using JiranisokoTech.Application.Abstractions
 @using JiranisokoTech.Application.Authorization
 @using JiranisokoTech.Application.Business
+@using JiranisokoTech.Application.Documents
+@using JiranisokoTech.Domain.Documents
 @using JiranisokoTech.Domain.Money
 @using JiranisokoTech.Infrastructure.Business
 @using JiranisokoTech.Infrastructure.People
@@ -14,6 +16,7 @@
 @inject BusinessQueries Queries
 @inject PeopleQueries People
 @inject ExpenseService Service
+@inject DocumentService Files
 @inject WorkQueries Work
 @inject IClock Clock
 @inject NavigationManager Navigation
@@ -37,7 +40,8 @@
 }
 else
 {
-    <EditForm Model="Input" method="post" OnValidSubmit="Claim" FormName="claim" class="panel stack">
+    <EditForm Model="Input" method="post" OnValidSubmit="Claim" FormName="claim"
+              enctype="multipart/form-data" class="panel stack">
         <DataAnnotationsValidator />
 
         <h2>Claim something back</h2>
@@ -98,6 +102,16 @@ else
             </label>
         </div>
 
+        @*
+            A plain file input rather than InputFile, because this page is statically rendered
+            and InputFile needs a circuit. The file arrives with the form and is read from the
+            request in the handler.
+        *@
+        <label>
+            <span>Receipt</span>
+            <input type="file" name="receipt" />
+        </label>
+
         <button type="submit">Claim it</button>
     </EditForm>
 
@@ -155,6 +169,9 @@ else
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
 
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
     private ClaimInput _input = new();
 
     [SupplyParameterFromForm]
@@ -206,8 +223,30 @@ else
                 (running, claim) => running + claim.Amount);
     }
 
+    /// <summary>
+    /// Claim it, with its receipt if one came, and send it for a decision.
+    /// </summary>
+    /// <remarks>
+    /// The file is checked before the claim exists. Checked afterwards, a refused file — the
+    /// wrong type, too large — would leave a draft claim behind that nobody meant to make,
+    /// sitting in the list with a Submit button beside it.
+    ///
+    /// A claim without a receipt is still accepted. A lost receipt is ordinary, and refusing
+    /// the claim would push somebody to invent one; the approver sees "No receipt" beside it
+    /// and decides.
+    /// </remarks>
     private async Task Claim()
     {
+        var receipt = Request?.Request.Form.Files["receipt"];
+
+        if (receipt is { Length: > 0 } && !Documents.Accepts(receipt.FileName, receipt.Length, out var why))
+        {
+            Refusal = why;
+            await LoadAsync();
+
+            return;
+        }
+
         await TryAsync(async () =>
         {
             var claim = await Service.ClaimAsync(
@@ -217,6 +256,21 @@ else
                 Input.SpentOn,
                 Input.Description,
                 string.IsNullOrWhiteSpace(Input.ProjectId) ? null : Guid.Parse(Input.ProjectId));
+
+            if (receipt is { Length: > 0 })
+            {
+                await using var contents = receipt.OpenReadStream();
+
+                var stored = await Files.AttachAsync(
+                    AttachedTo.ExpenseClaim,
+                    claim.Id,
+                    contents,
+                    receipt.FileName,
+                    receipt.Length,
+                    Me);
+
+                await Service.AttachReceiptAsync(claim.Id, stored.Id, receipt.FileName);
+            }
 
             await Service.SubmitAsync(claim.Id);
         });

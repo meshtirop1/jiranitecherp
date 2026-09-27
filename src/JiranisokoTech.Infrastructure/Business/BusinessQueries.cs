@@ -545,6 +545,7 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
                 claim.PaidAt,
                 claim.Outcome,
                 claim.ReceiptFileName,
+                claim.ReceiptStoredName,
             })
             .ToListAsync(cancellationToken);
 
@@ -561,7 +562,8 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
             claim.Status,
             claim.PaidAt,
             claim.Outcome,
-            claim.ReceiptFileName)).ToList();
+            claim.ReceiptFileName,
+            Guid.TryParse(claim.ReceiptStoredName, out var receipt) ? receipt : null)).ToList();
     }
 
     // --- invoices -----------------------------------------------------------
@@ -922,7 +924,8 @@ public sealed record ClaimRow(
     ClaimStatus Status,
     DateTimeOffset? PaidAt,
     string? Outcome,
-    string? ReceiptFileName);
+    string? ReceiptFileName,
+    Guid? ReceiptId = null);
 
 public sealed record InvoiceRow(
     Guid Id,

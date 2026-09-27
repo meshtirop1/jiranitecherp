@@ -941,6 +941,32 @@ public sealed class ExpenseService(IBusinessRepository business, IClock clock)
         return claim;
     }
 
+    /// <summary>
+    /// Say which stored document is a claim's receipt.
+    /// </summary>
+    /// <remarks>
+    /// The claim keeps the document's identifier as the name its receipt is stored under, so
+    /// that the approver's screen can link straight to it through the document endpoint — which
+    /// checks the permission to see an expense claim's attachments on every download. The file
+    /// itself is stored, typed and size-checked by the document service like every other
+    /// attachment; this only records which one it is.
+    ///
+    /// Until this existed, <c>ExpenseClaim.Attach</c> had no caller and no screen offered a
+    /// file, so no claim ever carried a receipt and every approver approved on the claimant's
+    /// word.
+    /// </remarks>
+    public async Task AttachReceiptAsync(
+        Guid claimId,
+        Guid documentId,
+        string fileName,
+        CancellationToken cancellationToken = default)
+    {
+        var claim = await RequiredClaim(claimId, cancellationToken);
+
+        claim.Attach(fileName, documentId.ToString());
+        await business.SaveAsync(cancellationToken);
+    }
+
     public async Task SubmitAsync(Guid claimId, CancellationToken cancellationToken = default)
     {
         var claim = await RequiredClaim(claimId, cancellationToken);
