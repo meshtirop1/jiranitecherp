@@ -36,7 +36,7 @@ public class ReportingTests
 
         private BusinessRepository Repository => new(_context);
 
-        public PeopleService People => new(new PeopleRepository(_context), new AssetRepository(_context), db.Clock);
+        public PeopleService People => new(new PeopleRepository(_context), new AssetRepository(_context), db.Clock, new JiranisokoTech.Tests.Infrastructure.NoAccounts());
 
         public WorkService Work =>
             new(

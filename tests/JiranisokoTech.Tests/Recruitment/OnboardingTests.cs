@@ -195,7 +195,7 @@ public class OnboardingTests
 
         var repository = new PeopleRepository(context);
         var register = new AssetRepository(context);
-        var people = new PeopleService(repository, register, fixture.Clock);
+        var people = new PeopleService(repository, register, fixture.Clock, new JiranisokoTech.Tests.Infrastructure.NoAccounts());
         var assets = new AssetService(register, fixture.Clock);
 
         var employee = await Joined(fixture, context);

@@ -139,6 +139,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<PeopleQueries>();
 
         services.AddScoped<UserAdministration>();
+        services.AddScoped<IAccountAccess, AccountAccess>();
         services.AddScoped<UserDirectory>();
 
         services.AddScoped<IApprovalRepository, ApprovalRepository>();
