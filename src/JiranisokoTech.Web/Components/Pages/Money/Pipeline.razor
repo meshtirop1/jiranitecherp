@@ -263,7 +263,7 @@ else
 
     private MoveInput _moving = new();
 
-    [SupplyParameterFromForm(FormName = "move")]
+    [SupplyParameterFromForm]
     private MoveInput Moving
     {
         get => _moving;
@@ -272,7 +272,7 @@ else
 
     private NoteInput _noting = new();
 
-    [SupplyParameterFromForm(FormName = "note")]
+    [SupplyParameterFromForm]
     private NoteInput Noting
     {
         get => _noting;
