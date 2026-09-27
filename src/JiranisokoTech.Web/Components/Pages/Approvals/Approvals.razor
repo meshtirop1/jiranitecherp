@@ -295,7 +295,7 @@ else
         {
             0 => "today",
             1 => "a day",
-            < 14 => $"{days} days",
+            _ when days < 14 => $"{days} days",
             _ => $"{days / 7} weeks",
         };
     }
