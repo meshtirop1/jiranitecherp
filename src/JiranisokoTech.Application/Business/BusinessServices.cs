@@ -1014,6 +1014,24 @@ public sealed class InvoiceService(
     IBusinessRepository business, Settings.SettingsService settings, IClock clock)
 {
     /// <summary>
+    /// Say which project an invoice bills for, or that it bills for none.
+    /// </summary>
+    /// <remarks>
+    /// Without this, a project could never show what it earned: an invoice knew its
+    /// client, and a client has four projects running. Nullable because a retainer or a
+    /// licence renewal is billed to a client and not to a project.
+    /// </remarks>
+    public async Task BillForAsync(
+        Guid invoiceId, Guid? projectId, CancellationToken cancellationToken = default)
+    {
+        var invoice = await business.FindInvoiceAsync(invoiceId, cancellationToken)
+            ?? throw new InvalidOperationException("There is no invoice with that identifier.");
+
+        invoice.BillsFor(projectId);
+        await business.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Start a bill for a client.
     /// </summary>
     /// <remarks>
@@ -1034,27 +1052,16 @@ public sealed class InvoiceService(
     /// contract page says what has been billed against it. If that turns out to
     /// be ignored, the refusal becomes a defensible next step — with a backfill
     /// behind it, which is the part that has to exist first.
+    ///
+    /// <b>The currency is the caller's to choose, and defaults to the firm's.</b> It used to
+    /// be the firm's with no way to change it, so a client billed in dollars could not be
+    /// invoiced at all: the invoice was in shillings, and the aggregate rightly refuses a line
+    /// in any other currency. Chosen once, at drafting, because every line and payment after
+    /// that is held to it. The code is read through <c>Money</c>, which normalises it and
+    /// refuses anything that is not three letters.
     /// </remarks>
-    /// <summary>
-    /// Say which project an invoice bills for, or that it bills for none.
-    /// </summary>
-    /// <remarks>
-    /// Without this, a project could never show what it earned: an invoice knew its
-    /// client, and a client has four projects running. Nullable because a retainer or a
-    /// licence renewal is billed to a client and not to a project.
-    /// </remarks>
-    public async Task BillForAsync(
-        Guid invoiceId, Guid? projectId, CancellationToken cancellationToken = default)
-    {
-        var invoice = await business.FindInvoiceAsync(invoiceId, cancellationToken)
-            ?? throw new InvalidOperationException("There is no invoice with that identifier.");
-
-        invoice.BillsFor(projectId);
-        await business.SaveAsync(cancellationToken);
-    }
-
     public async Task<Invoice> DraftAsync(
-        Guid clientId, CancellationToken cancellationToken = default)
+        Guid clientId, string? currency = null, CancellationToken cancellationToken = default)
     {
         var client = await business.FindClientAsync(clientId, cancellationToken)
             ?? throw new InvalidOperationException("There is no client with that identifier.");
@@ -1071,7 +1078,9 @@ public sealed class InvoiceService(
         var invoice = Invoice.Draft(
             clientId,
             await NextNumberAsync(firm.InvoicePrefix, cancellationToken),
-            firm.Currency,
+            string.IsNullOrWhiteSpace(currency)
+                ? firm.Currency
+                : Domain.Common.Money.Of(0, currency).Currency,
             clock.Today,
             client.PaymentTermDays);
 

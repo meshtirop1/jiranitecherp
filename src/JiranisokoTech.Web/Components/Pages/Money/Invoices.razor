@@ -16,9 +16,9 @@
 
 <div class="page-head">
     <h1>Invoices</h1>
-    @if (Outstanding is { } owed)
+    @if (Outstanding.Count > 0)
     {
-        <p class="subtle">@owed outstanding@(Overdue > 0 ? $", {Overdue} overdue" : null).</p>
+        <p class="subtle">@string.Join(" · ", Outstanding) outstanding@(Overdue > 0 ? $", {Overdue} overdue" : null).</p>
     }
 </div>
 
@@ -49,6 +49,16 @@
                         <option value="@client.Id">@client.Name</option>
                     }
                 </InputSelect>
+            </label>
+
+            @*
+                Blank means the firm's own. Asked here because it cannot be changed later:
+                every line and payment is held to the currency the invoice was drafted in.
+            *@
+            <label>
+                <span>In</span>
+                <InputText @bind-Value="Input.Currency" maxlength="3" placeholder="Firm's own"
+                           aria-label="Currency, three letters, blank for the firm's own" />
             </label>
 
             <button type="submit">Draft it</button>
@@ -134,7 +144,7 @@ else
 
     private List<ClientRow> Billable { get; set; } = [];
 
-    private Domain.Common.Money? Outstanding { get; set; }
+    private IReadOnlyList<Domain.Common.Money> Outstanding { get; set; } = [];
 
     private int Overdue { get; set; }
 
@@ -193,7 +203,7 @@ else
 
         try
         {
-            var invoice = await Service.DraftAsync(Input.ClientId!.Value);
+            var invoice = await Service.DraftAsync(Input.ClientId!.Value, Input.Currency);
             Navigation.NavigateTo($"/invoices/{invoice.Id}", forceLoad: true);
         }
         catch (Exception exception) when (
@@ -214,5 +224,7 @@ else
     private sealed class DraftInput
     {
         public Guid? ClientId { get; set; }
+
+        public string? Currency { get; set; }
     }
 }

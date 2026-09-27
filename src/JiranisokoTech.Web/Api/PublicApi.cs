@@ -72,7 +72,8 @@ public static class PublicApi
                 status = client.Status.ToString(),
                 paymentTermDays = client.PaymentTermDays,
                 projects = client.Projects,
-                owed = client.Owed?.ToString(),
+                // One currency reads exactly as it always did; several are joined.
+                owed = client.Owed.Count == 0 ? null : string.Join(" · ", client.Owed),
             }));
         })
         .RequirePermission(Permissions.ClientsView)
