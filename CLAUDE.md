@@ -213,8 +213,18 @@ Each of these cost real time. They are written down so they cost it once.
   one and reported success. Neither is visible to `EnforcementTests` (the
   permission IS checked) or `ReachabilityTests` (the service method DOES have a
   caller). A per-row form with no fields is fine, because the handler closes over
-  the row's id; the moment it needs an input, the row's actions belong in an
-  interactive child component where `@bind` and `@onclick` need no names at all.
+  the row's id.
+
+  **The fix is to leave the name off the binding.** A bare
+  `[SupplyParameterFromForm]` binds from whichever form was posted, so it takes
+  the row's values whatever the form is called — proved by posting the API key
+  revocation form both ways, named (reason empty, key still live) and unnamed
+  (revoked, reason kept). That keeps the page static and pressable by a test.
+  This entry used to say the only way out was an interactive child component,
+  and while it said so an audit found ten more of these, including the one that
+  meant a leaked API key could not be revoked. `PerRowFormTests` now fails the
+  build for a per-row form with fields whose model is bound by name, and
+  `PerRowFormPostTests` posts the real ones.
 - **An interactive page is a page no test can press.** Page tests POST real
   forms. Before putting `@rendermode InteractiveServer` on a page, check what
   posts to it — the usual answer is to leave the page static and make an

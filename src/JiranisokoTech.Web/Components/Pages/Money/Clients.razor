@@ -104,7 +104,7 @@ else
                     </td>
                     <td class="number">@client.PaymentTermDays days</td>
                     <td class="number">@client.Projects</td>
-                    <td class="number">@(client.Owed?.ToString() ?? "—")</td>
+                    <td class="number">@(client.Owed.Count == 0 ? "—" : string.Join(" · ", client.Owed))</td>
                     <td><span class="pill @PillFor(client.Status)">@Words.For(client.Status)</span></td>
                 </tr>
             }

@@ -47,7 +47,7 @@ public class ReadingAtVolumeTests
 
         public InvoiceService Invoices => new(Repository, Settings, db.Clock);
 
-        public PeopleService People => new(new PeopleRepository(_context), new AssetRepository(_context), db.Clock);
+        public PeopleService People => new(new PeopleRepository(_context), new AssetRepository(_context), db.Clock, new JiranisokoTech.Tests.Infrastructure.NoAccounts());
 
         public TimesheetService Timesheets =>
             new(Repository, new PeopleRepository(_context), db.Clock);

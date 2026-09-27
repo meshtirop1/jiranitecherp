@@ -21,7 +21,7 @@ public class ApprovalServiceTests
     {
         private readonly TestDbContext _context = db.NewContext();
 
-        public PeopleService People => new(new PeopleRepository(_context), new AssetRepository(_context), db.Clock);
+        public PeopleService People => new(new PeopleRepository(_context), new AssetRepository(_context), db.Clock, new JiranisokoTech.Tests.Infrastructure.NoAccounts());
 
         public ApprovalService Approvals =>
             new(new ApprovalRepository(_context), new PeopleRepository(_context), db.Clock);

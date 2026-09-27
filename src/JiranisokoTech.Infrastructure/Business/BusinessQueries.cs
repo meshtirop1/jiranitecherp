@@ -68,7 +68,7 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
             client.ContactEmail,
             client.PaymentTermDays,
             projects.GetValueOrDefault(client.Id),
-            owed.GetValueOrDefault(client.Id))).ToList();
+            owed.GetValueOrDefault(client.Id) ?? [])).ToList();
     }
 
     /// <summary>
@@ -82,7 +82,7 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
     /// definition of "what is owed" in the database, and the day the two
     /// disagree is the day somebody chases a client for the wrong amount.
     /// </remarks>
-    private async Task<Dictionary<Guid, Money>> OwedByClientAsync(
+    private async Task<Dictionary<Guid, IReadOnlyList<Money>>> OwedByClientAsync(
         CancellationToken cancellationToken)
     {
         var unpaid = await database.Invoices
@@ -97,10 +97,32 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
             .GroupBy(invoice => invoice.ClientId)
             .ToDictionary(
                 group => group.Key,
-                group => group.Aggregate(
-                    Money.Zero(group.First().Currency),
-                    (running, invoice) => running + invoice.Outstanding));
+                group => PerCurrency(group.Select(invoice => invoice.Outstanding)));
     }
+
+    /// <summary>
+    /// Amounts added up within each currency, one figure per currency.
+    /// </summary>
+    /// <remarks>
+    /// <b>This exists because the totals above assumed one currency.</b> Each started from the
+    /// first invoice's currency and added the rest, so the first client billed in dollars
+    /// beside shillings made <c>Money</c> refuse the addition — rightly — and the refusal took
+    /// down the invoice list and the client list for everybody. It could not happen while every
+    /// invoice was drafted in the firm's currency, and it became reachable the moment an
+    /// invoice could be drafted in another.
+    ///
+    /// Several figures rather than a converted one. A conversion would need a rate chosen for
+    /// a date, and a receivable reported in a currency nobody is going to be paid in is a
+    /// forecast dressed as a fact. Ordered by currency code so the same figures always read in
+    /// the same order.
+    /// </remarks>
+    private static IReadOnlyList<Money> PerCurrency(IEnumerable<Money> amounts) =>
+        amounts
+            .GroupBy(amount => amount.Currency)
+            .OrderBy(group => group.Key, StringComparer.Ordinal)
+            .Select(group => group.Aggregate(
+                Money.Zero(group.Key), (running, amount) => running + amount))
+            .ToList();
 
     // --- the pipeline ------------------------------------------------------
 
@@ -545,6 +567,7 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
                 claim.PaidAt,
                 claim.Outcome,
                 claim.ReceiptFileName,
+                claim.ReceiptStoredName,
             })
             .ToListAsync(cancellationToken);
 
@@ -561,7 +584,8 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
             claim.Status,
             claim.PaidAt,
             claim.Outcome,
-            claim.ReceiptFileName)).ToList();
+            claim.ReceiptFileName,
+            Guid.TryParse(claim.ReceiptStoredName, out var receipt) ? receipt : null)).ToList();
     }
 
     // --- invoices -----------------------------------------------------------
@@ -652,7 +676,7 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
     /// "what is owed" written in SQL is a number that will one day disagree with the one
     /// on the invoice.
     /// </remarks>
-    public async Task<(Money? Owed, int Overdue)> OutstandingAsync(
+    public async Task<(IReadOnlyList<Money> Owed, int Overdue)> OutstandingAsync(
         DateOnly today, CancellationToken cancellationToken = default)
     {
         var unsettled = await database.Invoices
@@ -665,12 +689,10 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
 
         if (unsettled.Count == 0)
         {
-            return (null, 0);
+            return ([], 0);
         }
 
-        var owed = unsettled.Aggregate(
-            Money.Zero(unsettled[0].Outstanding.Currency),
-            (running, invoice) => running + invoice.Outstanding);
+        var owed = PerCurrency(unsettled.Select(invoice => invoice.Outstanding));
 
         /*
          * The same rule the row record states, written once here against the aggregate.
@@ -804,7 +826,7 @@ public sealed record ClientRow(
     string? ContactEmail,
     int PaymentTermDays,
     int Projects,
-    Money? Owed);
+    IReadOnlyList<Money> Owed);
 
 /// <summary>
 /// One opportunity as the pipeline shows it.
@@ -922,7 +944,8 @@ public sealed record ClaimRow(
     ClaimStatus Status,
     DateTimeOffset? PaidAt,
     string? Outcome,
-    string? ReceiptFileName);
+    string? ReceiptFileName,
+    Guid? ReceiptId = null);
 
 public sealed record InvoiceRow(
     Guid Id,

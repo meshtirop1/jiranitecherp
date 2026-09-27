@@ -89,7 +89,8 @@ builder.Services.AddScoped<OwnerSeeder>();
  * crash loop.
  */
 builder.Services.AddHealthChecks()
-    .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"]);
+    .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"])
+    .AddCheck<DatabaseReady>(DatabaseReady.Name);
 
 /*
  * A limit on the one form a stranger can post to.

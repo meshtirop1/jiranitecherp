@@ -182,7 +182,7 @@ else
 
     private MoveInput _moving = new();
 
-    [SupplyParameterFromForm(FormName = "reassign")]
+    [SupplyParameterFromForm]
     private MoveInput Moving
     {
         get => _moving;
@@ -191,7 +191,7 @@ else
 
     private SkipInput _skipping = new();
 
-    [SupplyParameterFromForm(FormName = "skip")]
+    [SupplyParameterFromForm]
     private SkipInput Skipping
     {
         get => _skipping;
@@ -295,7 +295,7 @@ else
         {
             0 => "today",
             1 => "a day",
-            < 14 => $"{days} days",
+            _ when days < 14 => $"{days} days",
             _ => $"{days / 7} weeks",
         };
     }

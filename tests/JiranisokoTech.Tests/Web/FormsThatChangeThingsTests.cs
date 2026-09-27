@@ -113,6 +113,103 @@ public class FormsThatChangeThingsTests(ApplicationFactory factory)
         Assert.Null(stored.AssigneeId);
     }
 
+    /// <summary>
+    /// Saying which client a project is for records it, and the client then counts it.
+    /// </summary>
+    /// <remarks>
+    /// Before this there was no way to do it at all. <c>Project.ForClient</c> had no caller
+    /// outside a test, so every project was for nobody and every client page said it had none —
+    /// the first link of the chain from a client to its profitability, missing while the
+    /// checklist said every link was there. The count is asserted as well as the row, because
+    /// the count is what a person reading the client page actually sees.
+    /// </remarks>
+    [Fact]
+    public async Task Saying_which_client_a_project_is_for_records_it()
+    {
+        var (browser, project, client) = await AProjectAndAClient();
+
+        await PostClientAsync(browser, project, client.ToString());
+
+        using var scope = factory.Services.CreateScope();
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var stored = await database.Projects.AsNoTracking().SingleAsync(one => one.Id == project);
+        Assert.Equal(client, stored.ClientId);
+
+        var clients = await scope.ServiceProvider
+            .GetRequiredService<JiranisokoTech.Infrastructure.Business.BusinessQueries>()
+            .ClientsAsync();
+        Assert.Equal(1, clients.Single(one => one.Id == client).Projects);
+    }
+
+    /// <summary>
+    /// Making a project internal again takes the client off it.
+    /// </summary>
+    /// <remarks>
+    /// The direction the seeding fault gets wrong: the select is filled with the stored client
+    /// when somebody arrives, and if that ran on the POST as well, the empty choice would be
+    /// overwritten with the client it was meant to remove.
+    /// </remarks>
+    [Fact]
+    public async Task Making_a_project_internal_again_takes_the_client_off_it()
+    {
+        var (browser, project, client) = await AProjectAndAClient();
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<WorkService>()
+                .ForClientAsync(project, client);
+        }
+
+        await PostClientAsync(browser, project, string.Empty);
+
+        using var after = factory.Services.CreateScope();
+        var database = after.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var stored = await database.Projects.AsNoTracking().SingleAsync(one => one.Id == project);
+        Assert.Null(stored.ClientId);
+    }
+
+    private static async Task PostClientAsync(HttpClient browser, Guid project, string client)
+    {
+        var page = await browser.GetAsync($"/projects/{project}");
+
+        var fields = HtmlForm.Fill(
+            await page.Content.ReadAsStringAsync(),
+            new Dictionary<string, string>
+            {
+                ["_handler"] = "client",
+                ["Serving.ClientId"] = client,
+            });
+
+        var posted = await browser.PostAsync(
+            $"/projects/{project}", new FormUrlEncodedContent(fields));
+
+        // The page redirects to itself when the change is made and renders its refusal in place
+        // when it is not, so a redirect is the page saying it did it.
+        Assert.Equal(HttpStatusCode.Found, posted.StatusCode);
+    }
+
+    private async Task<(HttpClient Browser, Guid Project, Guid Client)> AProjectAndAClient()
+    {
+        var browser = await SignedInAsync("projects@jiranisokotech.co.ke", Roles.Administrator);
+
+        using var scope = factory.Services.CreateScope();
+
+        // The tail, not the head: a version 7 identifier starts with the time, so two made in the
+        // same millisecond share their first eight characters and the project codes collide.
+        var suffix = Guid.CreateVersion7().ToString("N")[^8..];
+
+        var project = await scope.ServiceProvider.GetRequiredService<WorkService>()
+            .BeginProjectAsync("Statements " + suffix);
+
+        var client = await scope.ServiceProvider
+            .GetRequiredService<JiranisokoTech.Application.Business.ClientService>()
+            .TakeOnAsync("Acme " + suffix);
+
+        return (browser, project.Id, client.Id);
+    }
+
     /// <summary>A work item held by one person, and somebody else to give it to.</summary>
     private async Task<(HttpClient Browser, Guid Item, Guid Brian)>
         AWorkItemAssignedToSomebody()

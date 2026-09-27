@@ -82,7 +82,7 @@ else
                                   FormName="@($"access-{leaving.Id}")"
                                   OnValidSubmit="() => CloseAccess(leaving.EmployeeId)"
                                   class="inline">
-                            <button type="submit">I have closed it</button>
+                            <button type="submit" class="danger">Close their sign-in</button>
                         </EditForm>
                     }
                 </dd>
@@ -156,7 +156,7 @@ else
 
     private InterviewInput _interview = new();
 
-    [SupplyParameterFromForm(FormName = "interview")]
+    [SupplyParameterFromForm]
     private InterviewInput Interview
     {
         get => _interview;

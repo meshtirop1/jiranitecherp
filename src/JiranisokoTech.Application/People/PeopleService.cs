@@ -19,7 +19,8 @@ namespace JiranisokoTech.Application.People;
 public sealed class PeopleService(
     IPeopleRepository people,
     Assets.IAssetRepository assets,
-    Abstractions.IClock clock)
+    Abstractions.IClock clock,
+    IAccountAccess accounts)
 {
     public async Task<Department> OpenDepartmentAsync(
         string name,
@@ -289,18 +290,36 @@ public sealed class PeopleService(
     }
 
     /// <summary>
-    /// Record that a leaver's sign-in has been closed.
+    /// Close a leaver's sign-in, and record that it is closed.
     /// </summary>
     /// <remarks>
-    /// Marked by a person rather than done on the leaving date. People leave on a date and
+    /// Done when a person presses it rather than on the leaving date. People leave on a date and
     /// then work a handover week, so an account cut off at midnight locks somebody out
     /// mid-sentence — and a leaving date entered wrongly, which happens, would destroy
     /// access with nobody having decided anything.
+    ///
+    /// <b>This used to record the tick and do nothing else.</b> The leavers page then showed
+    /// "Sign-in: Closed" in green while the account could still sign in, which is worse than
+    /// showing nothing: it is the one item on the checklist whose omission is a security
+    /// finding, and the screen said it had been done. The account is now withdrawn first and
+    /// the tick recorded after, so a refusal — the leaver is the only owner, or is the person
+    /// pressing it — leaves the item open instead of claiming something that did not happen.
+    /// Somebody who never had an account here has nothing to withdraw, and the tick then means
+    /// what it always meant: their access elsewhere has been dealt with.
     /// </remarks>
     public async Task AccessRemovedAsync(
         Guid employeeId, Guid byEmployeeId, CancellationToken cancellationToken = default)
     {
         var offboarding = await RequiredOffboarding(employeeId, cancellationToken);
+
+        var leaver = await people.FindAsync(employeeId, cancellationToken);
+
+        if (leaver?.AccountId is { } account)
+        {
+            var acting = (await people.FindAsync(byEmployeeId, cancellationToken))?.AccountId;
+
+            await accounts.WithdrawAsync(account, acting, cancellationToken);
+        }
 
         offboarding.AccessRemoved(byEmployeeId, clock.Now);
         await people.SaveAsync(cancellationToken);

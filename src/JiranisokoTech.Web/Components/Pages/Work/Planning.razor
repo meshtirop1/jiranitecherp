@@ -388,7 +388,7 @@
 
             return days switch
             {
-                < 0 => "ran out",
+                _ when days < 0 => "ran out",
                 0 => "ends today",
                 1 => "one day left",
                 _ => $"{days} days left",

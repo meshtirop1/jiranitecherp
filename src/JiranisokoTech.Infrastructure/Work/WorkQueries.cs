@@ -158,8 +158,13 @@ public sealed class WorkQueries(AppDbContext database)
                 project.Status,
                 project.DueOn,
                 project.LeadId,
+                project.ClientId,
             })
             .ToListAsync(cancellationToken);
+
+        var clients = await database.Clients
+            .AsNoTracking()
+            .ToDictionaryAsync(client => client.Id, client => client.Name, cancellationToken);
 
         var counts = await database.WorkItems
             .AsNoTracking()
@@ -189,7 +194,9 @@ public sealed class WorkQueries(AppDbContext database)
                 project.DueOn,
                 project.LeadId is { } lead ? people.GetValueOrDefault(lead) : null,
                 count?.Open ?? 0,
-                count?.Total ?? 0);
+                count?.Total ?? 0,
+                project.ClientId,
+                project.ClientId is { } client ? clients.GetValueOrDefault(client) : null);
         }).ToList();
     }
 
@@ -269,4 +276,6 @@ public sealed record ProjectRow(
     DateOnly? DueOn,
     string? LeadName,
     int OpenItems,
-    int TotalItems);
+    int TotalItems,
+    Guid? ClientId = null,
+    string? ClientName = null);

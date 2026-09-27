@@ -23,6 +23,10 @@ public sealed class WorkRepository(AppDbContext database) : IWorkRepository
     public Task<Project?> FindProjectAsync(Guid id, CancellationToken cancellationToken = default) =>
         database.Projects.FirstOrDefaultAsync(project => project.Id == id, cancellationToken);
 
+    public Task<bool> ClientExistsAsync(
+        Guid clientId, CancellationToken cancellationToken = default) =>
+        database.Clients.AnyAsync(client => client.Id == clientId, cancellationToken);
+
     public Task<bool> CodeTakenAsync(
         string code, Guid? exceptProjectId = null, CancellationToken cancellationToken = default) =>
         database.Projects.AnyAsync(

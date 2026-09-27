@@ -58,7 +58,19 @@
                     <tr>
                         <td>@claim.EmployeeName</td>
                         <td>@claim.SpentOn.ToString("d MMM yyyy")</td>
-                        <td>@claim.Description</td>
+                        <td>
+                            @* In a span, because Razor emits no space between an expression and
+                               the element after it, and the link would run into the text. *@
+                            <span>@claim.Description</span>
+                            @if (claim.ReceiptId is { } receipt)
+                            {
+                                <a class="subtle" href="/documents/@receipt">Receipt</a>
+                            }
+                            else
+                            {
+                                <span class="pill pill--quiet">No receipt</span>
+                            }
+                        </td>
                         <td>@Words.For(claim.Category)</td>
                         <td class="number">@claim.Amount</td>
                         <td class="actions">

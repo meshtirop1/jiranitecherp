@@ -505,7 +505,52 @@ public class AppDbContext(
                 after));
         }
 
+        recorded.AddRange(CaptureRoleChanges(now));
+
         return recorded;
+    }
+
+    /// <summary>
+    /// Record a role given to or taken from an account.
+    /// </summary>
+    /// <remarks>
+    /// <b>Granting somebody a role used to leave no trace.</b> A role grant is a row in Identity's
+    /// join table, which is not an entity of ours and cannot be marked <see cref="IAuditable"/>,
+    /// and the only column that moves on the account itself is its security stamp — excluded,
+    /// rightly, because it is a token. So the capture above saw nothing, and making somebody an
+    /// administrator was the one change to access that the audit trail could not show. That is
+    /// the change an audit trail is most often opened to find.
+    ///
+    /// Recorded against the account rather than the role, because the question asked of it is
+    /// "what could this person do, and since when". The role is named rather than identified:
+    /// the trail outlives what it describes, and an identifier for a role since removed would
+    /// be a number nobody could read. The role is found through the tracker, where
+    /// <c>UserManager</c> has already loaded it to check that it exists.
+    /// </remarks>
+    private IEnumerable<AuditEntry> CaptureRoleChanges(DateTimeOffset now)
+    {
+        foreach (var entry in ChangeTracker.Entries<Microsoft.AspNetCore.Identity.IdentityUserRole<Guid>>())
+        {
+            if (entry.State is not (EntityState.Added or EntityState.Deleted))
+            {
+                continue;
+            }
+
+            var granted = entry.State is EntityState.Added;
+            var role = Set<ApplicationRole>().Find(entry.Entity.RoleId)?.Name
+                ?? entry.Entity.RoleId.ToString();
+            var held = new Dictionary<string, string?> { ["Role"] = role };
+
+            yield return AuditEntry.Record(
+                granted ? "role.granted" : "role.revoked",
+                nameof(ApplicationUser),
+                entry.Entity.UserId,
+                now,
+                currentUser.Id,
+                currentUser.Name,
+                before: granted ? null : held,
+                after: granted ? held : null);
+        }
     }
 
     private static IReadOnlySet<string> ExcludedProperties(EntityEntry<IAuditable> entry)
