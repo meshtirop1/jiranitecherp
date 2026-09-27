@@ -1,4 +1,6 @@
 using JiranisokoTech.Infrastructure.Identity;
+using JiranisokoTech.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using SignInService = JiranisokoTech.Web.Identity.SignInService;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
@@ -141,6 +143,81 @@ public class UserAdministrationTests(ApplicationFactory factory)
 
             await administration.RevokeAsync(user, Roles.ProjectManager);
             Assert.Empty(await administration.RolesOfAsync(user));
+        });
+    }
+
+    /// <summary>
+    /// Giving somebody a role, and taking it away, is on the audit trail.
+    /// </summary>
+    /// <remarks>
+    /// It was not. A grant is a row in Identity's join table, which the audit capture could not
+    /// see, and the only column moving on the account was the security stamp, excluded as a
+    /// token — so making somebody an administrator left no trace at all, while the checklist
+    /// said every important mutation was audited.
+    /// </remarks>
+    [Fact]
+    public async Task Granting_and_revoking_a_role_is_on_the_audit_trail()
+    {
+        var user = await InviteAsync("audited-roles@jiranisokotech.co.ke", "Wanjiru Kamau");
+
+        await InScopeAsync(async services =>
+        {
+            var administration = services.GetRequiredService<UserAdministration>();
+
+            await administration.GrantAsync(user, Roles.ProjectManager);
+            await administration.RevokeAsync(user, Roles.ProjectManager);
+        });
+
+        await InScopeAsync(async services =>
+        {
+            var trail = await services.GetRequiredService<AppDbContext>().AuditEntries
+                .AsNoTracking()
+                .Where(entry => entry.SubjectId == user && entry.Action.StartsWith("role."))
+                .ToListAsync();
+
+            var granted = Assert.Single(trail, entry => entry.Action == "role.granted");
+            Assert.Equal(Roles.ProjectManager, granted.After!["Role"]);
+
+            var revoked = Assert.Single(trail, entry => entry.Action == "role.revoked");
+            Assert.Equal(Roles.ProjectManager, revoked.Before!["Role"]);
+        });
+    }
+
+    /// <summary>
+    /// Switching the second factor off an account is on the audit trail.
+    /// </summary>
+    /// <remarks>
+    /// The flag had been excluded from the trail alongside the password hash, as though it were
+    /// a credential. It is a yes or no, and whether somebody turned it off is one of the first
+    /// questions asked about an account that has been misused.
+    /// </remarks>
+    [Fact]
+    public async Task Switching_the_second_factor_off_is_on_the_audit_trail()
+    {
+        var user = await InviteAsync("audited-mfa@jiranisokotech.co.ke", "Otieno Achieng");
+
+        await InScopeAsync(async services =>
+        {
+            var users = services.GetRequiredService<UserManager<ApplicationUser>>();
+            var stored = await users.FindByIdAsync(user.ToString());
+
+            await users.SetTwoFactorEnabledAsync(stored!, true);
+            await users.SetTwoFactorEnabledAsync(stored!, false);
+        });
+
+        await InScopeAsync(async services =>
+        {
+            var trail = await services.GetRequiredService<AppDbContext>().AuditEntries
+                .AsNoTracking()
+                .Where(entry => entry.SubjectId == user)
+                .ToListAsync();
+
+            Assert.Contains(trail, entry =>
+                entry.Action == "application_user.modified"
+                && entry.After is { } after
+                && after.TryGetValue(nameof(ApplicationUser.TwoFactorEnabled), out var value)
+                && value == "false"
+                && entry.Before![nameof(ApplicationUser.TwoFactorEnabled)] == "true");
         });
     }
 

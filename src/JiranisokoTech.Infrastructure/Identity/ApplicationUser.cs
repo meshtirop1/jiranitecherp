@@ -96,13 +96,18 @@ public sealed class ApplicationUser : IdentityUser<Guid>, IAuditable
     /// <see cref="IdentityUser{TKey}.LockoutEnd"/> is not excluded. It moves
     /// rarely, it can also be set by an administrator deliberately, and that
     /// is exactly the sort of act the trail is for.
+    ///
+    /// Nor is <see cref="IdentityUser{TKey}.TwoFactorEnabled"/>, though it used
+    /// to be, filed among the credentials. It is a yes or no, not a secret, and
+    /// somebody switching off the second factor on an account is one of the
+    /// first things anybody investigating that account would look for. The
+    /// authenticator key itself lives in the tokens table and is not copied.
     /// </remarks>
     public static IReadOnlySet<string> AuditExcludes { get; } = new HashSet<string>
     {
         nameof(PasswordHash),
         nameof(SecurityStamp),
         nameof(ConcurrencyStamp),
-        nameof(TwoFactorEnabled),
         nameof(NormalizedEmail),
         nameof(NormalizedUserName),
 
