@@ -1,6 +1,11 @@
 using System.Net;
 using JiranisokoTech.Tests.Identity;
+using JiranisokoTech.Web;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 
 namespace JiranisokoTech.Tests.Infrastructure;
 
@@ -62,6 +67,59 @@ public class HealthEndpointTests(ApplicationFactory factory)
         // each one runs, asserted where the checks are registered rather than
         // by breaking a dependency here.
         Assert.Equal("Healthy", await live.Content.ReadAsStringAsync());
+    }
+
+    /// <summary>
+    /// Readiness asks the database, and liveness does not.
+    /// </summary>
+    /// <remarks>
+    /// Written because readiness asked nothing: the only check registered was one that always
+    /// answers Healthy, while the comment above it and the test before this one both said it
+    /// checked dependencies. Asserted on the registrations, because the split is the point —
+    /// the database check on /health would restart every instance in a loop during an outage,
+    /// and its absence from /ready sends traffic to an instance that cannot serve it.
+    /// </remarks>
+    [Fact]
+    public void Readiness_checks_the_database_and_liveness_does_not()
+    {
+        var checks = factory.Services
+            .GetRequiredService<IOptions<HealthCheckServiceOptions>>()
+            .Value.Registrations;
+
+        var database = Assert.Single(checks, check => check.Name == DatabaseReady.Name);
+
+        Assert.DoesNotContain("live", database.Tags);
+    }
+
+    /// <summary>
+    /// A database that cannot be reached makes the instance not ready.
+    /// </summary>
+    /// <remarks>
+    /// A SQLite file under a directory that does not exist, opened read-only so that nothing
+    /// creates it: the nearest thing in a test to a database server that has gone.
+    /// </remarks>
+    [Fact]
+    public async Task A_database_that_cannot_be_reached_is_not_ready()
+    {
+        var gone = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "gone.db");
+
+        using var scope = factory.Services.CreateScope();
+        var clock = scope.ServiceProvider
+            .GetRequiredService<JiranisokoTech.Application.Abstractions.IClock>();
+        var user = scope.ServiceProvider
+            .GetRequiredService<JiranisokoTech.Application.Abstractions.ICurrentUser>();
+
+        await using var unreachable = new JiranisokoTech.Infrastructure.Persistence.AppDbContext(
+            new DbContextOptionsBuilder<JiranisokoTech.Infrastructure.Persistence.AppDbContext>()
+                .UseSqlite($"Data Source={gone};Mode=ReadOnly")
+                .Options,
+            clock,
+            user);
+
+        var result = await new DatabaseReady(unreachable)
+            .CheckHealthAsync(new HealthCheckContext());
+
+        Assert.Equal(HealthStatus.Unhealthy, result.Status);
     }
 
     /// <summary>
