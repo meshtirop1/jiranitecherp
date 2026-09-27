@@ -319,7 +319,13 @@ else
         Me = await Staff.FindAsync(employeeId);
         Photo = (await Files.ForAsync(AttachedTo.Photo, employeeId)).LastOrDefault();
 
-        if (!_filled && Me is not null)
+        /*
+         * FirstLook as well as the flag. The flag alone does nothing under static rendering:
+         * every request is a new instance, so on a POST it is false again and this ran before
+         * the handler, putting the stored values back over the ones just posted — the form
+         * reported success and saved nothing. See FirstLook.
+         */
+        if (!_filled && Me is not null && FirstLook.ThisTime(Request))
         {
             _filled = true;
 
@@ -468,7 +474,7 @@ else
         [StringLength(50)]
         public string? Phone { get; set; }
 
-        [EmailAddress(ErrorMessage = "That does not look like an email address.")]
+        [EmailOrBlank]
         [StringLength(200)]
         public string? PersonalEmail { get; set; }
 

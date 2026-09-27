@@ -148,6 +148,20 @@ Each of these cost real time. They are written down so they cost it once.
   "Assigned." Guard on the request method instead — see `FirstLook` — and keep
   the flag for the interactive case. `FormsThatChangeThingsTests` posts the real
   form and asserts the row.
+
+  Written down after four pages, it was then found on three more — the staff
+  record's pay and contact forms, your own profile and the candidate page — and
+  between them nobody's salary could be recorded from the screen, so every pay
+  run came out empty with nothing on any page saying why. `FirstLookTests` now
+  fails the build for a first-pass guard on a static page that does not also ask
+  `FirstLook`.
+- **`[EmailAddress]` makes an optional field required, silently.** It lets null
+  through and refuses `""`, and a browser posts an empty text box as `""`. So
+  leaving the personal email empty on your profile refused the whole form —
+  your phone number too — and the forms show no message beside those boxes, so
+  nothing said why. Use `[EmailOrBlank]`, with `[Required]` beside it where the
+  field really is required. `EmailAttributeTests` fails the build for
+  `[EmailAddress]` in the web project.
 - **A directory default that is relative lands inside the image.** The file mail
   transport writes to `mail`, which resolves to `/app/mail` — owned by root,
   inside the image, unwritable by the non-root user the container runs as. So

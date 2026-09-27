@@ -200,7 +200,7 @@ else
         public string FullName { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "We need an address to reply to.")]
-        [EmailAddress(ErrorMessage = "That does not look like an email address.")]
+        [EmailOrBlank]
         [StringLength(255)]
         public string Email { get; set; } = string.Empty;
 

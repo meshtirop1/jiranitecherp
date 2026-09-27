@@ -382,7 +382,7 @@ else
         [StringLength(40)]
         public string? Telephone { get; set; }
 
-        [EmailAddress(ErrorMessage = "That does not look like an email address.")]
+        [EmailOrBlank]
         [StringLength(320)]
         public string? Email { get; set; }
 

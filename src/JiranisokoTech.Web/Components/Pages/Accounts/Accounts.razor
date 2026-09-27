@@ -197,7 +197,7 @@
         public string DisplayName { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "An email address is needed.")]
-        [EmailAddress(ErrorMessage = "That does not look like an email address.")]
+        [EmailOrBlank]
         public string Email { get; set; } = string.Empty;
 
         [StringLength(150)]
