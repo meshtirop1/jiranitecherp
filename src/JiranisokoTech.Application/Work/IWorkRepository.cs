@@ -20,6 +20,8 @@ public interface IWorkRepository
 
     Task<Project?> FindProjectAsync(Guid id, CancellationToken cancellationToken = default);
 
+    Task<bool> ClientExistsAsync(Guid clientId, CancellationToken cancellationToken = default);
+
     Task<bool> CodeTakenAsync(
         string code, Guid? exceptProjectId = null, CancellationToken cancellationToken = default);
 

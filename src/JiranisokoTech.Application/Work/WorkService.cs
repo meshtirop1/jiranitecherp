@@ -117,6 +117,30 @@ public sealed class WorkService(
         await work.SaveAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Say which client a project is for, or that it is internal.
+    /// </summary>
+    /// <remarks>
+    /// This had no caller. <c>Project.ForClient</c> existed and the queries read the column,
+    /// but no screen and no service ever set it, so every project in the system was for
+    /// nobody: each client page counted none, and the chain from a client through its work to
+    /// its invoices broke at the first link. Checked here rather than left to the foreign key,
+    /// so that a stale form naming a deleted client is told so in words.
+    /// </remarks>
+    public async Task ForClientAsync(
+        Guid projectId, Guid? clientId, CancellationToken cancellationToken = default)
+    {
+        var project = await RequiredProject(projectId, cancellationToken);
+
+        if (clientId is { } id && !await work.ClientExistsAsync(id, cancellationToken))
+        {
+            throw new InvalidOperationException("That client does not exist.");
+        }
+
+        project.ForClient(clientId);
+        await work.SaveAsync(cancellationToken);
+    }
+
     public async Task<WorkItem> RaiseAsync(
         string title,
         Guid raisedById,

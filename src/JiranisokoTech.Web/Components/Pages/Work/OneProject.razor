@@ -52,6 +52,18 @@ else
         <dt>Code</dt>
         <dd><code>@Project.Code</code></dd>
 
+        <dt>For</dt>
+        <dd>
+            @if (Project.ClientId is { } client)
+            {
+                <a href="/clients/@client">@Project.ClientName</a>
+            }
+            else
+            {
+                <span>Internal — no client</span>
+            }
+        </dd>
+
         <dt>Led by</dt>
         <dd>@(Project.LeadName ?? "Nobody yet")</dd>
 
@@ -93,6 +105,21 @@ else
                         @foreach (var person in Staff)
                         {
                             <option value="@person.Id">@person.FullName</option>
+                        }
+                    </InputSelect>
+                </label>
+                <button type="submit" class="button button--quiet">Set</button>
+            </EditForm>
+
+            <EditForm Model="Serving" method="post" OnValidSubmit="SetClient" FormName="client"
+                      class="inline">
+                <label>
+                    <span>For</span>
+                    <InputSelect @bind-Value="Serving.ClientId">
+                        <option value="">Internal — no client</option>
+                        @foreach (var client in Clients)
+                        {
+                            <option value="@client.Id">@client.Name</option>
                         }
                     </InputSelect>
                 </label>
@@ -242,6 +269,15 @@ else
         set => _leading = value ?? new LeadInput();
     }
 
+    private ClientInput _serving = new();
+
+    [SupplyParameterFromForm(FormName = "client")]
+    private ClientInput Serving
+    {
+        get => _serving;
+        set => _serving = value ?? new ClientInput();
+    }
+
     private ReasonInput _holding = new();
 
     [SupplyParameterFromForm(FormName = "hold")]
@@ -279,6 +315,8 @@ else
 
     private List<PersonRow> Staff { get; set; } = [];
 
+    private List<ClientRow> Clients { get; set; } = [];
+
     private int Logged { get; set; }
 
     private int Unbilled { get; set; }
@@ -308,6 +346,15 @@ else
 
         Items = await Work.ItemsAsync(projectId: Id);
         Staff = await People.RosterAsync(status: EmploymentStatus.Active);
+        Clients = await Business.ClientsAsync();
+
+        // Seeded only when somebody arrives. On the POST the posted choice is in the model, and
+        // seeding it here would put the stored client back before the handler reads it — the
+        // fault FirstLook exists for.
+        if (FirstLook.ThisTime(Request))
+        {
+            Serving.ClientId = Project.ClientId;
+        }
         Attached = await Files.ForAsync(AttachedTo.Project, Id);
 
         // By identifier, not by name. Two projects may share a name, and a
@@ -322,6 +369,8 @@ else
     }
 
     private Task SetLead() => TryAsync(() => Service.LeadProjectAsync(Id, Leading.EmployeeId));
+
+    private Task SetClient() => TryAsync(() => Service.ForClientAsync(Id, Serving.ClientId));
 
     private Task Hold() => TryAsync(() => Service.HoldProjectAsync(Id, Holding.Reason));
 
@@ -385,6 +434,11 @@ else
     private sealed class LeadInput
     {
         public Guid? EmployeeId { get; set; }
+    }
+
+    private sealed class ClientInput
+    {
+        public Guid? ClientId { get; set; }
     }
 
     private sealed class ReasonInput
