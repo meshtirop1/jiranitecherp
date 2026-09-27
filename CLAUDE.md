@@ -36,8 +36,9 @@ The ERP lives in its own repository, separate from the public website at
 
 ## What is being built, and how far along it is
 
-The brief is a 99-section master prompt for a developer-native ERP. It is
-tracked in `docs/implementation-checklist.md`, section by section, with an
+The brief is a 99-section master prompt for a developer-native ERP, kept
+verbatim in `docs/master-prompt.md`. Read it rather than inferring it from the
+checklist, and do not edit it to match what was built. It is tracked in `docs/implementation-checklist.md`, section by section, with an
 honest status against each. **Section 96 of the brief asks for that file to be
 kept live — update it whenever something is finished, and do not mark anything
 done because a page exists.**
