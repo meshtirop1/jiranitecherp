@@ -1,6 +1,7 @@
 # Implementation checklist
 
-The brief is a 99-section master prompt: a developer-native ERP for a software
+The brief is a 99-section master prompt, kept verbatim in
+[docs/master-prompt.md](master-prompt.md): a developer-native ERP for a software
 company, where engineering activity, business operations, HR, recruitment,
 finance, clients, infrastructure, DevOps, automation and AI are one connected
 system. Section 96 of that brief asks for this file to exist and to be kept
