@@ -37,6 +37,20 @@ public class ApplicationFactory : WebApplicationFactory<Program>
         _pin.Open();
 
         builder.UseSetting("ConnectionStrings:Default", _connectionString);
+
+        /*
+         * Testing, not the Development the factory would otherwise choose. Development is the
+         * one environment whose pipeline differs from production's — the developer error page
+         * instead of /error, no HSTS, the HTTPS redirect, the API description published — so
+         * every page test ran against a pipeline no deployed copy of this application uses.
+         *
+         * Static assets have to be asked for, because only Development finds them in the build
+         * output by itself; anywhere else they are expected to have been published. Without
+         * this the framework script is a 404 and the test that it is served is the one that
+         * says so.
+         */
+        builder.UseEnvironment("Testing");
+        builder.UseStaticWebAssets();
     }
 
     /// <summary>

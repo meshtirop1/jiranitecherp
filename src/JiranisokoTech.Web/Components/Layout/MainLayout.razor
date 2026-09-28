@@ -1,5 +1,6 @@
 @inherits LayoutComponentBase
 @using JiranisokoTech.Web.Identity
+@inject IWebHostEnvironment Hosting
 
 <div class="page">
     <div class="sidebar">
@@ -7,6 +8,11 @@
     </div>
 
     <main>
+        @if (EnvironmentBanner.For(Hosting.EnvironmentName) is { } which)
+        {
+            <p class="environment-banner" role="note">@which</p>
+        }
+
         <div class="top-row px-4">
             @*
                 The command palette's opener, and the theme switch.
