@@ -277,6 +277,9 @@ app.MapThemeEndpoints();
 // A CV, to somebody allowed to read it.
 app.MapCvEndpoints();
 
+// Everything held about one person, for a subject access request.
+app.MapPrivacyEndpoints();
+
 // And any other attachment, to somebody allowed to read what it is attached to.
 app.MapDocumentEndpoints();
 

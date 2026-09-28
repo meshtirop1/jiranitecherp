@@ -28,6 +28,7 @@ public static class DocumentEndpoints
             DocumentService documents,
             PeopleQueries people,
             IAuthorizationService authorization,
+            JiranisokoTech.Application.Privacy.IAccessLog accessLog,
             HttpContext context,
             CancellationToken cancellationToken) =>
         {
@@ -54,6 +55,15 @@ public static class DocumentEndpoints
                 // The row says there is a file and there is not. A 404 rather
                 // than a 500: the record is fine, the file is gone.
                 return Results.NotFound();
+            }
+
+            // A personnel file, or a signed employment agreement, is recorded when it is opened.
+            // Client contracts and receipts are not: they are the firm's own papers, and logging
+            // every one would bury the reads that matter.
+            if (attachment.Kind is AttachedTo.Employee or AttachedTo.Agreement)
+            {
+                await accessLog.ViewedAsync(
+                    "attachment.opened", "Attachment", attachment.Id, cancellationToken);
             }
 
             /*

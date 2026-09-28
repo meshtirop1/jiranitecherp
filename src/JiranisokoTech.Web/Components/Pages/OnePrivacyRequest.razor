@@ -79,6 +79,19 @@ else
         }
     </dl>
 
+    @if (Request.Ask == PrivacyAsk.Access && Request.SubjectId is not null
+         && Request.SubjectKind is SubjectKind.Employee or SubjectKind.Candidate)
+    {
+        @*
+            The answer to an access request, in one file. A link rather than a form: it
+            changes nothing, and the download is recorded on the audit trail by the endpoint.
+        *@
+        <p>
+            <a class="button" href="/privacy/requests/@Request.Id/export">Download what the firm holds</a>
+            <span class="subtle">Every record about them, as one file. Their documents are listed and downloaded from their record.</span>
+        </p>
+    }
+
     <section class="standing">
         <h2>What was decided, class by class</h2>
 

@@ -27,6 +27,7 @@ public static class CvEndpoints
             Guid applicationId,
             AppDbContext database,
             ICvStore cvs,
+            JiranisokoTech.Application.Privacy.IAccessLog accessLog,
             CancellationToken cancellationToken) =>
         {
             var application = await database.Applications
@@ -46,6 +47,10 @@ public static class CvEndpoints
                 // rather than a 500: the application is fine, the file is gone.
                 return Results.NotFound();
             }
+
+            // A stranger's CV: who opened it is recorded, the question a complaint turns on.
+            await accessLog.ViewedAsync(
+                "job_application.cv_opened", "JobApplication", application.Id, cancellationToken);
 
             /*
              * Always an attachment, never inline.

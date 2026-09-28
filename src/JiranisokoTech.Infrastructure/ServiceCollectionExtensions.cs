@@ -140,6 +140,8 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<UserAdministration>();
         services.AddScoped<IAccountAccess, AccountAccess>();
+        services.AddScoped<JiranisokoTech.Application.Privacy.IAccessLog, Audit.AccessLog>();
+        services.AddScoped<Privacy.SubjectAccessExport>();
         services.AddScoped<UserDirectory>();
 
         services.AddScoped<IApprovalRepository, ApprovalRepository>();

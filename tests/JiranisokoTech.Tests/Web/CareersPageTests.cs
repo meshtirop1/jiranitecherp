@@ -303,6 +303,17 @@ public class CareersPageTests(ApplicationFactory factory) : IClassFixture<Applic
         Assert.Equal(
             "application/octet-stream", download.Content.Headers.ContentType?.MediaType);
         Assert.Equal("attachment", download.Content.Headers.ContentDisposition?.DispositionType);
+
+        // And who opened it is on the trail: a stranger's CV is exactly the read a complaint
+        // asks about. Section 55's access logging.
+        await factory.InScopeAsync(async services =>
+        {
+            var opened = await services.GetRequiredService<AppDbContext>().AuditEntries
+                .SingleAsync(entry => entry.SubjectId == application
+                    && entry.Action == "job_application.cv_opened");
+
+            Assert.Equal("cv-reader@jiranisokotech.co.ke", opened.ActorName);
+        });
     }
 
     private async Task<Guid> OpeningAsync(

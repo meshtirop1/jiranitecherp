@@ -5,6 +5,8 @@
 @using Microsoft.AspNetCore.Authorization
 @inject PeopleService Service
 @inject NavigationManager Navigation
+@inject IAuthorizationService Authorization
+@inject JiranisokoTech.Application.Privacy.IAccessLog AccessLog
 
 @*
     The rest of a staff record: how to reach somebody, who to call in an emergency,
@@ -505,6 +507,34 @@
     }
 
     private bool _filled;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    /// <summary>
+    /// Record that somebody was shown this person's pay and identity numbers.
+    /// </summary>
+    /// <remarks>
+    /// On arriving only, not on every form post back to the page, and only for somebody who
+    /// holds employees.pay — anybody else is not shown the section, so there is nothing to
+    /// record. Salary and national identity number are the two things on a staff record most
+    /// likely to be the subject of a complaint, and until this the trail could say who changed
+    /// them and not who read them.
+    /// </remarks>
+    protected override async Task OnInitializedAsync()
+    {
+        if (Person is null || !FirstLook.ThisTime(Request))
+        {
+            return;
+        }
+
+        var viewer = (await AuthenticationState).User;
+
+        if ((await Authorization.AuthorizeAsync(viewer, PayPolicy)).Succeeded)
+        {
+            await AccessLog.ViewedAsync("employee.pay_viewed", nameof(Employee), Person.Id);
+        }
+    }
 
     [CascadingParameter]
     private HttpContext? Request { get; set; }
