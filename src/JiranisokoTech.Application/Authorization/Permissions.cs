@@ -30,6 +30,18 @@ public static class Permissions
     public const string AuditView = "audit.view";
     public const string SettingsManage = "settings.manage";
 
+    /// <summary>
+    /// The security centre: everybody's sign-ins, changes to access, and where the secrets are.
+    /// </summary>
+    /// <remarks>
+    /// Separate from audit.view, which HR, finance and heads of department hold to answer "who
+    /// changed this record". This answers "is somebody trying to get in", and it shows every
+    /// address that anybody has typed into the sign-in form — including mistyped passwords'
+    /// owners and addresses that match nobody — which is more than a person reading the trail
+    /// for an invoice needs. Held by the owner and administrators only.
+    /// </remarks>
+    public const string SecurityView = "security.view";
+
     // --- people ------------------------------------------------------------
     public const string EmployeesView = "employees.view";
     public const string EmployeesManage = "employees.manage";
@@ -560,7 +572,7 @@ public static class Permissions
     public static IReadOnlyList<string> All { get; } =
     [
         UsersView, UsersInvite, UsersManage, UsersAssignRoles, RolesManage,
-        AuditView, SettingsManage,
+        AuditView, SettingsManage, SecurityView,
 
         EmployeesView, EmployeesViewAll, EmployeesManage, EmployeesPay,
         DepartmentsView, DepartmentsManage,

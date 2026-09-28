@@ -142,8 +142,13 @@ its access log the same way.
 | `db-data` | the database — everything |
 | `documents` | attachments |
 | `cvs` | applicants' CVs |
-| `keys` | the keys that sign cookies and links |
+| `keys` | the keys that sign cookies and links, and encrypt webhook subscription secrets and every account's second factor |
 | `caddy-data` | the certificate and the Let's Encrypt account |
+
+**Losing `keys` turns off everybody's second factor in effect.** The authenticator keys and
+recovery codes are encrypted with it, so without it no code can be checked, and each account
+with two-factor on needs it reset by hand. Back it up — and keep that backup apart from the
+database's, because the two together are what the encryption was keeping apart.
 
 `cache-data` and `mail` can be lost without harm. What backing these up involves is section 88,
 which is not yet done.

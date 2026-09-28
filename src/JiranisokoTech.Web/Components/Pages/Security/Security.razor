@@ -1,0 +1,329 @@
+@page "/security"
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Domain.Audit
+@using JiranisokoTech.Infrastructure.Identity
+@using JiranisokoTech.Web.Identity
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.SecurityView)]
+@inject SecurityCentre Centre
+@inject SecretInventory Secrets
+
+@*
+    Section 28, on one page. Most of what the brief lists already existed somewhere — a person's
+    own sign-ins on their account page, role grants on the trail among invoice edits, API keys
+    under settings — and an administrator asking "is anything wrong" had to know all three
+    places and could still not see anybody else's sign-ins. The order is the order somebody
+    looks in: what needs doing, who is trying to get in, what access changed, where the secrets
+    are.
+*@
+
+<PageTitle>Security — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Security</h1>
+</div>
+
+@*
+    Nothing until it has been read. The page renders once while the reads are still in flight,
+    and on a real database they are — see RenderedBeforeLoadedTests.
+*@
+@if (Overview is not null)
+{
+    <section class="panel">
+        <h2>Needs a look</h2>
+
+        <dl class="facts">
+            <dt>Access review</dt>
+            <dd>
+                @if (Overview.LastReview is { } last)
+                {
+                    <text>Last on @last.ReviewedAt.ToString("d MMMM yyyy") by @last.ReviewerName</text>
+                }
+                else
+                {
+                    <text>Never done</text>
+                }
+                @if (Overview.ReviewDue)
+                {
+                    <span class="pill pill--danger">Due</span>
+                }
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.UsersManage)" Context="reviewer">
+                    · <a href="/security/review">Review access</a>
+                </AuthorizeView>
+            </dd>
+
+            <dt>Refused sign-ins, last 24 hours</dt>
+            <dd>@Overview.RefusedToday</dd>
+
+            <dt>Accounts locked out now</dt>
+            <dd>@Overview.LockedOut</dd>
+
+            <dt>Without a second factor</dt>
+            <dd>
+                @if (Overview.WithoutSecondFactor.Count == 0)
+                {
+                    <text>None</text>
+                }
+                else
+                {
+                    @for (var i = 0; i < Overview.WithoutSecondFactor.Count; i++)
+                    {
+                        var account = Overview.WithoutSecondFactor[i];
+                        @(i > 0 ? ", " : "")<a href="/accounts/@account.Id">@account.DisplayName</a>
+                    }
+                }
+            </dd>
+
+            <dt>Not used in @((int)SecurityCentre.Quiet.TotalDays) days</dt>
+            <dd>
+                @if (Overview.Quiet.Count == 0)
+                {
+                    <text>None</text>
+                }
+                else
+                {
+                    @for (var i = 0; i < Overview.Quiet.Count; i++)
+                    {
+                        var account = Overview.Quiet[i];
+                        @(i > 0 ? ", " : "")<a href="/accounts/@account.Id">@account.DisplayName</a>
+                    }
+                }
+            </dd>
+
+            <dt>Live API keys</dt>
+            <dd>
+                @Overview.LiveKeys@(Overview.KeysNeverUsed > 0 ? $", {Overview.KeysNeverUsed} never used" : "")
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.SettingsManage)" Context="keys">
+                    · <a href="/settings/keys">Manage keys</a>
+                </AuthorizeView>
+            </dd>
+        </dl>
+    </section>
+
+    <h2>Sign-ins</h2>
+
+    @*
+        Everybody's, including attempts against addresses that match no account: a run of those is
+        somebody working through a list, and this is the only place it shows.
+    *@
+    <p class="subtle">The latest @Overview.SignIns.Count, from everybody.</p>
+
+    @if (Overview.SignIns.Count == 0)
+    {
+        <p class="empty">Nobody has signed in yet.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <thead>
+                <tr>
+                    <th scope="col">When</th>
+                    <th scope="col">Address tried</th>
+                    <th scope="col">Result</th>
+                    <th scope="col">From</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var attempt in Overview.SignIns)
+                {
+                    <tr class="@(attempt.Succeeded ? "" : "account__attempt--failed")">
+                        <td>@attempt.At.ToString("d MMM yyyy HH:mm")</td>
+                        <td>
+                            @if (attempt.UserId is { } account)
+                            {
+                                <a href="/accounts/@account">@attempt.Email</a>
+                            }
+                            else
+                            {
+                                @attempt.Email <span class="subtle">no such account</span>
+                            }
+                        </td>
+                        <td>@attempt.Outcome.Say()</td>
+                        @*
+                            The browser's description of itself in a tooltip rather than a column.
+                            As a column it is a paragraph per row, and at phone width it made
+                            each row taller than the screen. The person's own account page still
+                            shows it in full, which is where recognising a device matters.
+                        *@
+                        <td title="@(attempt.UserAgent ?? "Unknown browser")">@(attempt.IpAddress ?? "Unknown")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <h2>Permission changes</h2>
+
+    @if (Overview.PermissionChanges.Count == 0)
+    {
+        <p class="empty">No role has been granted or taken away yet.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <thead>
+                <tr>
+                    <th scope="col">When</th>
+                    <th scope="col">Account</th>
+                    <th scope="col">Change</th>
+                    <th scope="col">By</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in Overview.PermissionChanges)
+                {
+                    <tr>
+                        <td>@entry.OccurredAt.ToString("d MMM yyyy HH:mm")</td>
+                        <td><a href="/accounts/@entry.SubjectId">@Overview.NameOf(entry.SubjectId)</a></td>
+                        <td>@RoleChange(entry)</td>
+                        <td>@(entry.ActorName ?? "The system")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <h2>Other security events</h2>
+
+    <p class="subtle">
+        Accounts withdrawn, restored, locked, unlocked or signed out everywhere, second factors
+        switched on or off, and API keys issued or revoked.
+    </p>
+
+    @if (Overview.Events.Count == 0)
+    {
+        <p class="empty">Nothing yet.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <thead>
+                <tr>
+                    <th scope="col">When</th>
+                    <th scope="col">What</th>
+                    <th scope="col">Changed</th>
+                    <th scope="col">By</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in Overview.Events)
+                {
+                    <tr>
+                        <td>@entry.OccurredAt.ToString("d MMM yyyy HH:mm")</td>
+                        <td>
+                            @if (entry.SubjectType == nameof(ApplicationUser))
+                            {
+                                <a href="/accounts/@entry.SubjectId">@Overview.NameOf(entry.SubjectId)</a>
+                            }
+                            else
+                            {
+                                <text>API key</text>
+                            }
+                            <span class="subtle">@Say(entry.Action)</span>
+                        </td>
+                        @*
+                            What moved, for a change only. For a new account or key the entry
+                            holds every column of the new row, which is a wall of values and
+                            says nothing beyond "opened".
+                        *@
+                        <td>@(entry.Action.EndsWith(".modified", StringComparison.Ordinal)
+                            ? string.Join(", ", entry.Changes().Select(change => $"{change.Key}: {change.Value.From ?? "—"} → {change.Value.To ?? "—"}"))
+                            : "")</td>
+                        <td>@(entry.ActorName ?? "The system")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <h2>Sessions</h2>
+
+    @*
+        Said plainly, because the brief says "device sessions" and a list of them would be a promise
+        this system cannot keep. Sessions are signed cookies; the server keeps no list to show or to
+        end one of. What it can do is end all of an account's at once, and that is what is offered.
+    *@
+    <p>
+        A session is a signed cookie in somebody's browser, and the server keeps no list of them, so
+        there is no row here per device. Every session an account has can be ended at once — by the
+        person from their own account page, or by an administrator from theirs — and they stop
+        working within a minute. The sign-ins above show where each account has been used from.
+    </p>
+
+    <h2>Secrets</h2>
+
+    @*
+        Where each one comes from and whether it is set. Never the value, nor any part of it.
+    *@
+    <table class="grid">
+        <thead>
+            <tr>
+                <th scope="col">Secret</th>
+                <th scope="col">Setting</th>
+                <th scope="col">Where from</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var secret in Secrets.All())
+            {
+                <tr>
+                    <td>@secret.What</td>
+                    <td><code>@secret.Key</code></td>
+                    <td>
+                        @secret.Where
+                        @if (secret.NeedsAttention)
+                        {
+                            <span class="pill pill--danger">@(secret.Temporary ? "Clear it" : "Move it")</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <p class="subtle">What the application keeps itself, in its database:</p>
+
+    <dl class="facts">
+        <dt>Passwords</dt>
+        <dd>Hashed. Nobody can read one back, including an administrator.</dd>
+
+        <dt>API keys</dt>
+        <dd>Hashed. The key is shown once, when it is issued.</dd>
+
+        <dt>Second factors</dt>
+        <dd>Authenticator keys and recovery codes, encrypted with the application's key ring.</dd>
+
+        <dt>Webhook subscriptions</dt>
+        <dd>Signing secrets, encrypted with the same key ring.</dd>
+
+        <dt>Repository webhooks</dt>
+        <dd>Hashed, to check the secret in configuration is the one each repository was connected with.</dd>
+
+        <dt>Offer links</dt>
+        <dd>Hashed. The link is in the candidate's email and nowhere else.</dd>
+    </dl>
+}
+
+@code {
+    private SecurityOverview? Overview { get; set; }
+
+    protected override async Task OnInitializedAsync() =>
+        Overview = await Centre.OverviewAsync();
+
+    private static string Say(string action) => action switch
+    {
+        "application_user.added" => "account opened",
+        "application_user.modified" => "account changed",
+        "account.sessions_ended" => "sessions ended",
+        "api_key.added" => "key issued",
+        "api_key.modified" => "key changed",
+        _ => action,
+    };
+
+    private static string RoleChange(AuditEntry entry)
+    {
+        var role = (entry.After ?? entry.Before)?.GetValueOrDefault("Role")?.Replace('_', ' ') ?? "a role";
+
+        return entry.Action == "role.granted" ? $"Granted {role}" : $"Lost {role}";
+    }
+}

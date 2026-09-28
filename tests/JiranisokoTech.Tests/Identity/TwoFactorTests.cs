@@ -1,6 +1,8 @@
 using JiranisokoTech.Infrastructure.Identity;
+using JiranisokoTech.Infrastructure.Persistence;
 using JiranisokoTech.Web.Identity;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OtpNet;
 
@@ -182,6 +184,106 @@ public class TwoFactorTests(ApplicationFactory factory) : IClassFixture<Applicat
 
             Assert.Equal(TwoFactor.RecoveryCodeCount, again.Count);
             Assert.Empty(again.Intersect(codes));
+        });
+    }
+
+    /// <summary>
+    /// A copy of the database is not a copy of anybody's second factor.
+    /// </summary>
+    /// <remarks>
+    /// Identity writes the authenticator key and the recovery codes to the tokens table as they
+    /// are, so until ProtectedUserStore a leaked dump was every enrolled account's second factor.
+    /// Checked against the row itself, because every method above reads through the store and
+    /// would pass whether or not the row was encrypted.
+    /// </remarks>
+    [Fact]
+    public async Task The_secrets_behind_a_second_factor_are_not_stored_readable()
+    {
+        var user = await AccountAsync("sealed@jiranisokotech.co.ke");
+        var codes = await EnableAsync(user);
+        string key = "";
+
+        await factory.InScopeAsync(async services =>
+        {
+            key = (await services.GetRequiredService<UserManager<ApplicationUser>>()
+                .GetAuthenticatorKeyAsync((await services.GetRequiredService<UserManager<ApplicationUser>>()
+                    .FindByIdAsync(user.ToString()))!))!;
+
+            var rows = await services.GetRequiredService<AppDbContext>().UserTokens
+                .Where(token => token.UserId == user && token.LoginProvider == ProtectedUserStore.InternalProvider)
+                .ToListAsync();
+
+            Assert.Equal(2, rows.Count);
+
+            foreach (var row in rows)
+            {
+                Assert.StartsWith(ProtectedUserStore.Marker, row.Value);
+                Assert.DoesNotContain(key, row.Value);
+                Assert.DoesNotContain(codes[0], row.Value);
+            }
+        });
+
+        // And the codes still work, which is the half that stops this being a way of turning
+        // everybody's second factor off.
+        await factory.InScopeAsync(async services =>
+        {
+            var twoFactor = services.GetRequiredService<TwoFactor>();
+
+            Assert.Equal(TwoFactor.RecoveryCodeCount, await twoFactor.RecoveryCodesLeftAsync(user));
+            Assert.True(await services.GetRequiredService<UserManager<ApplicationUser>>()
+                .VerifyTwoFactorTokenAsync(
+                    (await services.GetRequiredService<UserManager<ApplicationUser>>().FindByIdAsync(user.ToString()))!,
+                    TokenOptions.DefaultAuthenticatorProvider,
+                    CodeFor(key)));
+        });
+    }
+
+    /// <summary>
+    /// Somebody enrolled before the secrets were encrypted keeps working, and is converted.
+    /// </summary>
+    [Fact]
+    public async Task A_secret_stored_before_encryption_still_works_and_is_encrypted_at_startup()
+    {
+        var user = await AccountAsync("before-sealing@jiranisokotech.co.ke");
+        const string legacy = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
+
+        await factory.InScopeAsync(async services =>
+        {
+            var database = services.GetRequiredService<AppDbContext>();
+
+            database.UserTokens.Add(new IdentityUserToken<Guid>
+            {
+                UserId = user,
+                LoginProvider = ProtectedUserStore.InternalProvider,
+                Name = "AuthenticatorKey",
+                Value = legacy,
+            });
+
+            await database.SaveChangesAsync();
+        });
+
+        await factory.InScopeAsync(async services =>
+        {
+            var users = services.GetRequiredService<UserManager<ApplicationUser>>();
+
+            Assert.Equal(legacy, await users.GetAuthenticatorKeyAsync((await users.FindByIdAsync(user.ToString()))!));
+
+            var store = (ProtectedUserStore)services.GetRequiredService<IUserStore<ApplicationUser>>();
+
+            Assert.True(await store.ProtectExistingAsync() >= 1);
+            Assert.Equal(0, await store.ProtectExistingAsync());
+        });
+
+        await factory.InScopeAsync(async services =>
+        {
+            var row = await services.GetRequiredService<AppDbContext>().UserTokens
+                .SingleAsync(token => token.UserId == user && token.Name == "AuthenticatorKey");
+
+            Assert.StartsWith(ProtectedUserStore.Marker, row.Value);
+
+            var users = services.GetRequiredService<UserManager<ApplicationUser>>();
+
+            Assert.Equal(legacy, await users.GetAuthenticatorKeyAsync((await users.FindByIdAsync(user.ToString()))!));
         });
     }
 

@@ -242,6 +242,13 @@ try
         // configured. After that it is a no-op on every start.
         await scope.ServiceProvider.GetRequiredService<OwnerSeeder>().SeedAsync();
 
+        // Second-factor secrets written before they were encrypted. Nothing on every start
+        // after the first. Resolved as the store Identity itself uses, so that the cast fails
+        // loudly here if a later registration ever replaces it.
+        await ((ProtectedUserStore)scope.ServiceProvider
+                .GetRequiredService<Microsoft.AspNetCore.Identity.IUserStore<ApplicationUser>>())
+            .ProtectExistingAsync();
+
         /*
          * The firm's own settings row, which the service would otherwise create on
          * first use. Doing it here removes a race that only exists once: the row
