@@ -371,6 +371,7 @@ public sealed class UserAdministration(
         }
 
         user.IsActive = false;
+        user.WithdrawnAt = clock.Now;
         await Save(user);
 
         // Ends the session they are in now rather than at their next attempt.
@@ -387,6 +388,7 @@ public sealed class UserAdministration(
         }
 
         user.IsActive = true;
+        user.WithdrawnAt = null;
         await Save(user);
     }
 

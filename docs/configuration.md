@@ -107,6 +107,19 @@ value in the host's webhook settings. Blank means deliveries from that host are 
 | `CACHE_CONNECTION` | `Cache:Connection` | `cache:6379` | Redis. Blank runs without a cache: every answer is computed, which is slower and otherwise the same. |
 | `METRICS_TOKEN` | `Metrics:Token` | blank | The token a collector presents at `/metrics`. Blank means the endpoint does not exist at all. |
 
+### Retention
+
+| `.env` | Read as | Default | Meaning |
+|---|---|---|---|
+| `LOG_MAX_SIZE` | each container's log rotation size | `20m` | Application logs are Docker's, not the database's. A log is rotated at this size. |
+| `LOG_MAX_FILES` | how many rotated logs are kept | `10` | With the default size, about 200 MB of history per container. |
+
+Everything else that is removed with age — unsuccessful applicants, documents on leavers'
+staff records, withdrawn accounts and the audit trail — is set by an administrator under
+*How long records are kept* on the settings page, and applied nightly by the
+`retention.sweep` job. Each is kept for ever until somebody sets a period, and each has a
+floor below which it cannot be set.
+
 ### Fixed in the compose file
 
 These are paths on volumes, not choices, and are listed so that whoever backs the host up

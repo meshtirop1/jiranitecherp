@@ -18,7 +18,7 @@ namespace JiranisokoTech.Infrastructure.Identity;
 /// accounts and, later, client logins — and not every employee needs an
 /// account. Modelling them as one row makes both cases awkward forever.
 /// </remarks>
-public sealed class ApplicationUser : IdentityUser<Guid>, IAuditable
+public sealed class ApplicationUser : IdentityUser<Guid>, IAuditable, IForgettable
 {
     public ApplicationUser()
     {
@@ -59,6 +59,16 @@ public sealed class ApplicationUser : IdentityUser<Guid>, IAuditable
     /// employee's work has lost the part people read.
     /// </remarks>
     public bool IsActive { get; set; } = true;
+
+    /// <summary>When access was last withdrawn; null while the account is active.</summary>
+    /// <remarks>
+    /// What the retention policy counts from. An account withdrawn by mistake and restored the
+    /// next morning must not have been eroding in the meantime, so restoring clears it.
+    /// </remarks>
+    public DateTimeOffset? WithdrawnAt { get; set; }
+
+    /// <summary>When the retention policy erased this account's login details, if it has.</summary>
+    public DateTimeOffset? ForgottenAt { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 

@@ -44,6 +44,11 @@ public class RetentionTests
             "Dispatched outbox messages older than the configured retention. Abandoned ones "
             + "are deliberately never swept — they are the ones somebody has to look at.",
 
+        ["Scheduling/Retention.cs"] =
+            "Audit entries older than the retention period an administrator has set, which may "
+            + "not be under seven years and is unset until somebody sets it. The removal is "
+            + "recorded on the trail first, so the trail says what it no longer holds.",
+
         ["Scheduling/Jobs.cs"] =
             "Successful job runs older than ninety days, and failed sign-in attempts older "
             + "than ninety days. Failed job runs and successful sign-ins are both kept: the "
@@ -148,6 +153,11 @@ public class RetentionTests
 
                 foreach (var (what, spellings, why) in NeverSwept)
                 {
+                    if (AllowedBy.TryGetValue(what, out var allowed) && allowed == Relative(file))
+                    {
+                        continue;
+                    }
+
                     if (spellings.Any(spelling => statement.Contains(spelling, StringComparison.Ordinal)))
                     {
                         offenders.Add($"  {Relative(file)} sweeps {what} — {why}");
@@ -161,6 +171,21 @@ public class RetentionTests
             "These are bulk deletes against tables whose value is the rows still in "
             + "them:\n" + string.Join('\n', offenders.Order()));
     }
+
+    /// <summary>
+    /// The one place each protected table may be swept, if there is one.
+    /// </summary>
+    /// <remarks>
+    /// The audit trail used to have none, and section 53 of the brief asks for exactly one:
+    /// administrators configuring how long audit logs are kept. It is allowed in the retention
+    /// sweep and nowhere else, with a floor of seven years and nothing removed until somebody has
+    /// set a period, and the sweep writes what it is about to remove onto the trail before
+    /// removing it. Any other file sweeping the trail still fails this test.
+    /// </remarks>
+    private static readonly Dictionary<string, string> AllowedBy = new(StringComparer.Ordinal)
+    {
+        ["the audit trail"] = "Scheduling/Retention.cs",
+    };
 
     /// <summary>
     /// The statement the delete belongs to, read backwards to the previous semicolon.

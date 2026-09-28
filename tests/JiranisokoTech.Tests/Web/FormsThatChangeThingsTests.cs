@@ -365,6 +365,51 @@ public class FormsThatChangeThingsTests(ApplicationFactory factory)
                 && run.PeriodEnd == new DateOnly(2024, 2, 29)));
     }
 
+    /// <summary>
+    /// Setting a retention period sets it, and clearing it clears it.
+    /// </summary>
+    /// <remarks>
+    /// Clearing is the case that matters. Blank means keep for ever, so the form cannot use
+    /// "the box is empty" to mean "nothing was posted" the way the settings forms above it do —
+    /// that would refill a cleared period with the stored one and report it saved.
+    /// </remarks>
+    [Fact]
+    public async Task Setting_and_clearing_a_retention_period_is_recorded()
+    {
+        var browser = await SignedInAsync("retention@jiranisokotech.co.ke", Roles.Owner);
+
+        await PostAsync(browser, "/settings", "retention", new()
+        {
+            ["Keeping.CandidateMonths"] = "12",
+            ["Keeping.AuditYears"] = "10",
+        });
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var firm = await scope.ServiceProvider.GetRequiredService<AppDbContext>().Settings
+                .AsNoTracking()
+                .SingleAsync();
+
+            Assert.Equal(12, firm.CandidateRetentionMonths);
+            Assert.Equal(10, firm.AuditRetentionYears);
+        }
+
+        await PostAsync(browser, "/settings", "retention", new()
+        {
+            ["Keeping.CandidateMonths"] = string.Empty,
+            ["Keeping.AuditYears"] = "10",
+        });
+
+        using var after = factory.Services.CreateScope();
+
+        var cleared = await after.ServiceProvider.GetRequiredService<AppDbContext>().Settings
+            .AsNoTracking()
+            .SingleAsync();
+
+        Assert.Null(cleared.CandidateRetentionMonths);
+        Assert.Equal(10, cleared.AuditRetentionYears);
+    }
+
     private static async Task PostAsync(
         HttpClient browser, string path, string handler, Dictionary<string, string> values)
     {

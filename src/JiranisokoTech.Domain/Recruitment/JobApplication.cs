@@ -48,7 +48,7 @@ public enum ApplicationStatus
 /// free column is how somebody is marked hired without an offer, or rejected
 /// and then quietly moved on again.
 /// </remarks>
-public sealed class JobApplication : Entity, IAuditable
+public sealed class JobApplication : Entity, IAuditable, IForgettable
 {
     /// <summary>
     /// What may follow what.
@@ -180,6 +180,31 @@ public sealed class JobApplication : Entity, IAuditable
         CvStoredName = storedName;
     }
 
+    /// <summary>When the retention policy cleared what the applicant sent, if it has.</summary>
+    public DateTimeOffset? ForgottenAt { get; private set; }
+
+    /// <summary>
+    /// Clear what the applicant wrote and sent, and say which file to delete.
+    /// </summary>
+    /// <remarks>
+    /// The status and dates stay, because they are the hiring figures and name nobody. The note
+    /// they wrote and the internal reason they were turned down both can, so both go. The CV's
+    /// stored name is handed back rather than deleted here, because the file lives in a store
+    /// this class knows nothing about.
+    /// </remarks>
+    public string? ForgetWhatTheySent(DateTimeOffset at)
+    {
+        var stored = CvStoredName;
+        ForgottenAt = at;
+
+        Note = null;
+        RejectionReason = null;
+        CvFileName = null;
+        CvStoredName = null;
+
+        return stored;
+    }
+
     /// <summary>Still in the running.</summary>
     public bool IsLive => Status
         is ApplicationStatus.Received
@@ -243,7 +268,19 @@ public sealed class JobApplication : Entity, IAuditable
     }
 
     /// <summary>Nothing is withheld from the trail; the reason belongs in it.</summary>
-    public static IReadOnlySet<string> AuditExcludes { get; } = new HashSet<string>();
+    /// <summary>
+    /// What the applicant wrote and sent stays off the trail.
+    /// </summary>
+    /// <remarks>
+    /// For the same reason as the applicant's own details: the note and the CV's file name are
+    /// theirs, the trail keeps what it is given for years, and the retention policy that erases
+    /// them from this row cannot reach a copy on the trail.
+    /// </remarks>
+    public static IReadOnlySet<string> AuditExcludes { get; } = new HashSet<string>
+    {
+        nameof(Note),
+        nameof(CvFileName),
+    };
 
     private static string Say(ApplicationStatus status) => status.ToString().ToLowerInvariant();
 }
@@ -256,7 +293,7 @@ public sealed class JobApplication : Entity, IAuditable
 /// twice is recognisably the same person. The email address is what identifies
 /// them, because it is the only thing they are guaranteed to give.
 /// </remarks>
-public sealed class Candidate : Entity, IAuditable
+public sealed class Candidate : Entity, IAuditable, IForgettable
 {
     private Candidate()
     {
@@ -278,7 +315,7 @@ public sealed class Candidate : Entity, IAuditable
     public string FullName { get; private set; }
 
     /// <summary>Lower-cased, because it is what identifies them.</summary>
-    public string Email { get; private init; }
+    public string Email { get; private set; }
 
     public string? Phone { get; private set; }
 
@@ -342,6 +379,37 @@ public sealed class Candidate : Entity, IAuditable
     /// </remarks>
     public string? Skills { get; private set; }
 
+    /// <summary>When the retention policy erased this applicant, if it has.</summary>
+    public DateTimeOffset? ForgottenAt { get; private set; }
+
+    public bool IsForgotten => ForgottenAt is not null;
+
+    /// <summary>
+    /// Erase what identifies this applicant, keeping that somebody applied.
+    /// </summary>
+    /// <remarks>
+    /// The row stays, so the hiring figures — how many applied, how many were interviewed — still
+    /// add up, and so does anything that points at it. What goes is everything that says who
+    /// they were. The address becomes one that cannot be delivered to and cannot collide: the
+    /// column is unique, and an applicant who comes back later is a new person to this system,
+    /// which is what forgetting them means.
+    /// </remarks>
+    public void Forget(DateTimeOffset at)
+    {
+        FullName = "Former applicant";
+        Email = $"forgotten-{Id:N}@invalid";
+        Phone = null;
+        Portfolio = null;
+        GitHub = null;
+        LinkedIn = null;
+        YearsOfExperience = null;
+        Education = null;
+        Skills = null;
+        ExpectedSalaryMinorUnits = null;
+        ExpectedSalaryCurrency = null;
+        ForgottenAt = at;
+    }
+
     public void Update(string fullName, string? phone)
     {
         FullName = Require(fullName, nameof(fullName));
@@ -399,6 +467,18 @@ public sealed class Candidate : Entity, IAuditable
     /// </remarks>
     public static IReadOnlySet<string> AuditExcludes { get; } = new HashSet<string>
     {
+        /*
+         * Who they are, too. An applicant's name and address were copied onto the trail when
+         * they applied, and the trail is append-only — so erasing them under the retention
+         * policy left both on the trail for as long as the trail itself is kept, which is years.
+         * The row's identifier says which applicant a change was to while the applicant exists;
+         * once they have been forgotten, that is all anybody should be able to say.
+         */
+        nameof(FullName),
+        nameof(Email),
+        nameof(Portfolio),
+        nameof(GitHub),
+        nameof(LinkedIn),
         nameof(Phone),
 
         /*

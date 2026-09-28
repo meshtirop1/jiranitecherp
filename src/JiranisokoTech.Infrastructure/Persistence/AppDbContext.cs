@@ -494,6 +494,17 @@ public class AppDbContext(
             var subject = entry.Entity.GetType().Name;
             var action = $"{ToSnakeCase(subject)}.{entry.State.ToString().ToLowerInvariant()}";
 
+            // The moment of an erasure: which fields changed is kept, what they held is not.
+            // See IForgettable.
+            if (IsBeingForgotten(entry))
+            {
+                action = $"{ToSnakeCase(subject)}.forgotten";
+                before = before?.ToDictionary(pair => pair.Key, _ => (string?)Withheld);
+                after = after?.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Key == nameof(IForgettable.ForgottenAt) ? pair.Value : Withheld);
+            }
+
             recorded.Add(AuditEntry.Record(
                 action,
                 subject,
@@ -552,6 +563,13 @@ public class AppDbContext(
                 after: granted ? held : null);
         }
     }
+
+    private static bool IsBeingForgotten(EntityEntry<IAuditable> entry) =>
+        entry.State == EntityState.Modified
+        && entry.Entity is IForgettable
+        && entry.Property(nameof(IForgettable.ForgottenAt)) is { } forgotten
+        && forgotten.OriginalValue is null
+        && forgotten.CurrentValue is not null;
 
     private static IReadOnlySet<string> ExcludedProperties(EntityEntry<IAuditable> entry)
     {

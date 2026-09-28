@@ -317,6 +317,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRecurringJob, PruneJobHistory>();
         services.AddScoped<IRecurringJob, PruneSignInHistory>();
         services.AddScoped<IRecurringJob, RaiseRecurringExpenses>();
+        services.AddScoped<IRecurringJob, ApplyRetention>();
         services.AddHostedService<Scheduler>();
         services.AddScoped<JobQueries>();
 
