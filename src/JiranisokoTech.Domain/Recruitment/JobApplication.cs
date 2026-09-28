@@ -180,6 +180,25 @@ public sealed class JobApplication : Entity, IAuditable, IForgettable
         CvStoredName = storedName;
     }
 
+    /// <summary>When the applicant agreed to their application being processed.</summary>
+    /// <remarks>
+    /// Null for an application recorded by somebody at the firm — a CV that arrived by email —
+    /// where the basis is the firm's legitimate interest in answering it, not the applicant's
+    /// consent.
+    /// </remarks>
+    public DateTimeOffset? ConsentedAt { get; private set; }
+
+    /// <summary>The sentence they agreed to, as it was worded when they did.</summary>
+    public string? ConsentWording { get; private set; }
+
+    public void Consented(string wording, DateTimeOffset at)
+    {
+        ConsentWording = string.IsNullOrWhiteSpace(wording)
+            ? throw new ArgumentException("Consent to nothing is not consent.", nameof(wording))
+            : wording.Trim();
+        ConsentedAt = at;
+    }
+
     /// <summary>When the retention policy cleared what the applicant sent, if it has.</summary>
     public DateTimeOffset? ForgottenAt { get; private set; }
 

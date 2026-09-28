@@ -108,6 +108,15 @@ else
             <InputTextArea @bind-Value="Input.Note" rows="4" />
         </label>
 
+        @*
+            Required, and checked on the server as well as marked here. The sentence is the one
+            the application stores, so the record says what was agreed. See Consent.
+        *@
+        <label class="check">
+            <InputCheckbox @bind-Value="Input.Consents" />
+            <span>@Consent.Careers</span>
+        </label>
+
         <button type="submit">Send it</button>
     </EditForm>
 }
@@ -148,6 +157,14 @@ else
             return;
         }
 
+        if (!Input.Consents)
+        {
+            Refusal = "We can only consider an application you have agreed to us using. Tick the "
+                + "box above the button to say so.";
+
+            return;
+        }
+
         var file = Request?.Request.Form.Files["cv"];
 
         if (file is { Length: > 0 } && !Cv.Accepts(file.FileName, file.Length, out var why))
@@ -168,7 +185,8 @@ else
                 Input.Phone,
                 Input.Note,
                 contents,
-                file?.FileName);
+                file?.FileName,
+                Consent.Careers);
 
             Name = Input.FullName.Split(' ')[0];
             Applied = true;
@@ -209,5 +227,7 @@ else
 
         [StringLength(4000)]
         public string? Note { get; set; }
+
+        public bool Consents { get; set; }
     }
 }
