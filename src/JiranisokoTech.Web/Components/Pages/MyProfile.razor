@@ -143,6 +143,28 @@ else
         <button type="submit">Save</button>
     </EditForm>
 
+    @*
+        Who sees the above. Its own form, because it is a different decision from what the
+        numbers are, and saving one should not be how somebody changes the other by accident.
+    *@
+    <EditForm Model="Privately" method="post" OnValidSubmit="SavePrivacy" FormName="privacy"
+              class="panel stack">
+        <h2>Who sees how to reach me</h2>
+
+        <label class="check">
+            <InputCheckbox @bind-Value="Privately.Keep" />
+            <span>Keep my personal phone and email to HR</span>
+        </label>
+
+        <p class="subtle">
+            Otherwise department heads and project managers can see them on your staff record.
+            Whoever you name as next of kin stays visible to them either way, because it is there
+            for whoever is with you when something happens.
+        </p>
+
+        <button type="submit">Save</button>
+    </EditForm>
+
     <section class="standing">
         <h2>What I am good at</h2>
 
@@ -253,6 +275,15 @@ else
 
     private DetailsInput _input = new();
 
+    private PrivacyInput _privately = new();
+
+    [SupplyParameterFromForm(FormName = "privacy")]
+    private PrivacyInput Privately
+    {
+        get => _privately;
+        set => _privately = value ?? new PrivacyInput();
+    }
+
     [SupplyParameterFromForm(FormName = "details")]
     private DetailsInput Input
     {
@@ -325,6 +356,13 @@ else
          * the handler, putting the stored values back over the ones just posted — the form
          * reported success and saved nothing. See FirstLook.
          */
+        // Seeded only on arriving, like the details: a checkbox left unticked posts nothing, so
+        // seeding on the POST would put back the choice somebody had just taken away.
+        if (Me is not null && FirstLook.ThisTime(Request))
+        {
+            Privately.Keep = Me.KeepsContactPrivate;
+        }
+
         if (!_filled && Me is not null && FirstLook.ThisTime(Request))
         {
             _filled = true;
@@ -510,5 +548,16 @@ else
         public string? Issuer { get; set; }
 
         public DateOnly? ExpiresOn { get; set; }
+    }
+
+    private async Task SavePrivacy()
+    {
+        await Service.KeepContactPrivateAsync(Me!.Id, Privately.Keep);
+        Navigation.NavigateTo("/my-profile", forceLoad: true);
+    }
+
+    private sealed class PrivacyInput
+    {
+        public bool Keep { get; set; }
     }
 }

@@ -1,4 +1,5 @@
 @using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
 @using JiranisokoTech.Application.Authorization
 @using JiranisokoTech.Application.People
 @using JiranisokoTech.Domain.People
@@ -27,11 +28,21 @@
     <h2>How to reach them</h2>
 
     <dl class="facts">
-        <dt>Phone</dt>
-        <dd>@(Person.Details.Phone ?? "Not recorded")</dd>
+        @if (MayReachDirectly)
+        {
+            <dt>Phone</dt>
+            <dd>@(Person.Details.Phone ?? "Not recorded")</dd>
 
-        <dt>Personal email</dt>
-        <dd>@(Person.Details.PersonalEmail ?? "Not recorded")</dd>
+            <dt>Personal email</dt>
+            <dd>@(Person.Details.PersonalEmail ?? "Not recorded")</dd>
+        }
+        else
+        {
+            @* Their choice, on their own profile. Said rather than left blank, so the gap does
+               not read as a record nobody has filled in. *@
+            <dt>Phone and email</dt>
+            <dd><span class="subtle">Kept to HR at their request</span></dd>
+        }
 
         <dt>Where they work</dt>
         <dd>@(Person.Details.Location?.ToString() ?? "Not recorded")</dd>
@@ -523,18 +534,34 @@
     /// </remarks>
     protected override async Task OnInitializedAsync()
     {
-        if (Person is null || !FirstLook.ThisTime(Request))
+        if (Person is null)
         {
             return;
         }
 
         var viewer = (await AuthenticationState).User;
 
-        if ((await Authorization.AuthorizeAsync(viewer, PayPolicy)).Succeeded)
+        MayReachDirectly = !Person.KeepsContactPrivate
+            || (await Authorization.AuthorizeAsync(viewer, ManagePolicy)).Succeeded
+            || (Guid.TryParse(viewer.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+                && account == Person.AccountId);
+
+        if (FirstLook.ThisTime(Request)
+            && (await Authorization.AuthorizeAsync(viewer, PayPolicy)).Succeeded)
         {
             await AccessLog.ViewedAsync("employee.pay_viewed", nameof(Employee), Person.Id);
         }
     }
+
+    /// <summary>
+    /// Whether this viewer is shown the personal phone and email.
+    /// </summary>
+    /// <remarks>
+    /// Yes unless the person has asked for them to be kept to HR — and then still yes for HR,
+    /// who hold employees.manage and are who the request keeps them for, and for the person
+    /// themselves. See <see cref="Employee.KeepsContactPrivate"/>.
+    /// </remarks>
+    private bool MayReachDirectly { get; set; } = true;
 
     [CascadingParameter]
     private HttpContext? Request { get; set; }

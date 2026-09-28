@@ -393,6 +393,16 @@ public sealed class PeopleService(
         await people.SaveAsync(cancellationToken);
     }
 
+    /// <summary>Say whether somebody's personal phone and email are kept to HR.</summary>
+    public async Task KeepContactPrivateAsync(
+        Guid employeeId, bool keep, CancellationToken cancellationToken = default)
+    {
+        var employee = await RequiredEmployee(employeeId, cancellationToken);
+
+        employee.KeepContactPrivate(keep);
+        await people.SaveAsync(cancellationToken);
+    }
+
     /// <summary>Record how to reach somebody, and where they are.</summary>
     public async Task RecordDetailsAsync(
         Guid employeeId, PersonalDetails details, CancellationToken cancellationToken = default)

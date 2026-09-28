@@ -92,6 +92,46 @@ public class SubjectAccessTests(ApplicationFactory factory) : IClassFixture<Appl
         });
     }
 
+    /// <summary>
+    /// Somebody can keep their personal number to HR, and a department head is then not shown it.
+    /// </summary>
+    /// <remarks>
+    /// Section 55's privacy settings. Through the real profile form, then the real staff record
+    /// read as two different people, because the rule is about who is looking.
+    /// </remarks>
+    [Fact]
+    public async Task Keeping_contact_details_to_HR_hides_them_from_other_managers()
+    {
+        const string email = "private-person@jiranisokotech.co.ke";
+        var person = await SignedInAsync(email, Roles.Developer);
+        var (employee, _) = await AnEmployeeAndARequestAsync(PrivacyAsk.Access);
+
+        await factory.InScopeAsync(async services =>
+        {
+            var users = services.GetRequiredService<UserManager<ApplicationUser>>();
+            await services.GetRequiredService<PeopleService>()
+                .LinkAccountAsync(employee, (await users.FindByEmailAsync(email))!.Id);
+        });
+
+        var profile = await person.GetAsync("/my-profile");
+        await person.PostAsync("/my-profile", new FormUrlEncodedContent(HtmlForm.Fill(
+            await profile.Content.ReadAsStringAsync(),
+            new Dictionary<string, string> { ["_handler"] = "privacy", ["Privately.Keep"] = "true" })));
+
+        var head = await SignedInAsync("a-department-head@jiranisokotech.co.ke", Roles.DepartmentHead);
+        var asHead = await (await head.GetAsync($"/people/{employee}")).Content.ReadAsStringAsync();
+
+        // The digits only: a page writes the plus sign as "&#x2B;", so asserting the whole
+        // number is absent passes whatever the page shows.
+        Assert.DoesNotContain("722 000 111", asHead);
+        Assert.Contains("Kept to HR at their request", asHead);
+
+        var hr = await SignedInAsync("an-hr-officer@jiranisokotech.co.ke", Roles.HumanResources);
+        var asHr = await (await hr.GetAsync($"/people/{employee}")).Content.ReadAsStringAsync();
+
+        Assert.Contains("722 000 111", asHr);
+    }
+
     private async Task<(Guid Employee, Guid Request)> AnEmployeeAndARequestAsync(PrivacyAsk ask)
     {
         Guid employee = default;
@@ -129,7 +169,9 @@ public class SubjectAccessTests(ApplicationFactory factory) : IClassFixture<Appl
         return (employee, request);
     }
 
-    private async Task<HttpClient> SignedInAsync(string email)
+    private Task<HttpClient> SignedInAsync(string email) => SignedInAsync(email, Roles.Owner);
+
+    private async Task<HttpClient> SignedInAsync(string email, string role)
     {
         using (var scope = factory.Services.CreateScope())
         {
@@ -142,9 +184,9 @@ public class SubjectAccessTests(ApplicationFactory factory) : IClassFixture<Appl
 
             var stored = await users.FindByEmailAsync(email);
 
-            if (!await users.IsInRoleAsync(stored!, Roles.Owner))
+            if (!await users.IsInRoleAsync(stored!, role))
             {
-                await users.AddToRoleAsync(stored!, Roles.Owner);
+                await users.AddToRoleAsync(stored!, role);
             }
         }
 
