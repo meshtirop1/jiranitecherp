@@ -1,5 +1,7 @@
 @page "/error"
 @using System.Diagnostics
+@using JiranisokoTech.Application.Observability
+@using Microsoft.AspNetCore.Diagnostics
 @using Microsoft.AspNetCore.Authorization
 @layout BareLayout
 @attribute [AllowAnonymous]
@@ -39,6 +41,21 @@
 
     private string? RequestId { get; set; }
 
-    protected override void OnInitialized() =>
-        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+    /// <remarks>
+    /// The trace id, and only that — the same 32 characters every log line from this request
+    /// carries in its TraceId field, so a reference somebody reads out on the phone finds the
+    /// exception in one search. It used to be the whole W3C header, trace and span and flags,
+    /// which matches nothing a person would think to search for.
+    /// </remarks>
+    protected override void OnInitialized()
+    {
+        RequestId = Activity.Current?.TraceId.ToHexString() ?? HttpContext?.TraceIdentifier;
+
+        // Counted only when an exception brought the request here, not when somebody opens
+        // /error by typing it.
+        if (HttpContext?.Features.Get<IExceptionHandlerFeature>() is not null)
+        {
+            Telemetry.ErrorsUnhandled.Add(1);
+        }
+    }
 }

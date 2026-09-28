@@ -336,6 +336,10 @@ public static class ServiceCollectionExtensions
          */
         services.AddSingleton<MetricsReader>();
         services.AddHostedService(provider => provider.GetRequiredService<MetricsReader>());
+
+        // Registered with the metrics, and before the loops that start spans: a listener added
+        // after a span began does not reach back and create it.
+        services.AddHostedService<TraceListener>();
         services.AddScoped<SearchQueries>();
         services.AddScoped<AuditQueries>();
 

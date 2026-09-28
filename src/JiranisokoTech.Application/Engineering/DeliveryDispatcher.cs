@@ -43,6 +43,12 @@ public sealed class DeliveryDispatcher(
     private async Task HandleAsync(
         WebhookDelivery delivery, CancellationToken cancellationToken)
     {
+        // One span per delivery, so every log line written while handling it carries the same
+        // trace id — the thread that ties "a push arrived" to whatever it went on to change.
+        using var span = Telemetry.Source.StartActivity("webhook delivery");
+        span?.SetTag("provider", delivery.Provider.ToString());
+        span?.SetTag("event", delivery.Event);
+
         try
         {
             var adapter = adapters.FirstOrDefault(one => one.Provider == delivery.Provider)

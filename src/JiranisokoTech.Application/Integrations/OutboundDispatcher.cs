@@ -76,6 +76,9 @@ public sealed class OutboundDispatcher(
     private async Task SendAsync(
         OutboundDelivery delivery, CancellationToken cancellationToken)
     {
+        using var span = Telemetry.Source.StartActivity("outbound webhook");
+        span?.SetTag("event", delivery.Event);
+
         var subscription = await integrations.FindAsync(delivery.SubscriptionId, cancellationToken);
 
         if (subscription is null || !subscription.IsActive)
