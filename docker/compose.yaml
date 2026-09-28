@@ -132,6 +132,36 @@ services:
       start_period: 30s
       retries: 5
 
+  # The reverse proxy, which terminates TLS and obtains its own certificate. Only started
+  # with --profile proxy, because a host that already runs nginx or a load balancer in
+  # front of its containers must not have a second thing trying to bind 80 and 443.
+  # See docker/Caddyfile and docs/deployment.md.
+  proxy:
+    image: caddy:2-alpine
+    profiles: ["proxy"]
+    restart: unless-stopped
+    environment:
+      ERP_DOMAIN: ${ERP_DOMAIN:-erp.jiranisokotech.co.ke}
+      # Never blank. Caddy refuses to start on an email option with nothing after it, which
+      # was found by running it, so an unset value falls back to the firm's own mailbox.
+      ACME_EMAIL: ${ACME_EMAIL:-delivery@jiranisokotech.co.ke}
+    ports:
+      - "80:80"
+      - "443:443"
+      # HTTP/3 rides on UDP 443. Without this line browsers try it, fail, and fall back,
+      # which works and wastes a round trip on every first visit.
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The certificates and the ACME account. On a volume, because Let's Encrypt limits how
+      # many certificates one name may be issued a week, and a proxy that loses its
+      # certificate on every restart can lock the domain out of HTTPS for days.
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+
   cache:
     image: redis:8-alpine
     restart: unless-stopped
@@ -146,7 +176,19 @@ services:
       timeout: 3s
       retries: 5
 
+# A fixed range for the containers' own network, so that the one address range the
+# application should believe X-Forwarded-For from can be written down in advance: with the
+# bundled proxy, PROXY_NETWORK is this range. Chosen well away from Docker's own default
+# pools; change APP_SUBNET only if it collides with a network the host already has.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${APP_SUBNET:-172.30.80.0/24}
+
 volumes:
+  caddy-data:
+  caddy-config:
   db-data:
   cache-data:
   keys:

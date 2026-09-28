@@ -59,7 +59,9 @@ PostgreSQL.
 | `APP_ENVIRONMENT` | `ASPNETCORE_ENVIRONMENT` | `Production` | Which copy this is. See above. |
 | `ERP_DOMAIN` | used to build `MAIL_BASE_ADDRESS` | `erp.jiranisokotech.co.ke` | The name the application answers to. |
 | `WEB_PORT` | the published port | `8080` | The port on the host, bound to localhost only; the reverse proxy is what the internet reaches. |
-| `PROXY_NETWORK` | `Proxy:TrustedNetworks:0` | blank | The network the reverse proxy connects from. Only from there is `X-Forwarded-For` believed. Blank means the address of whatever connected, which behind a proxy is the proxy. |
+| `PROXY_NETWORK` | `Proxy:TrustedNetworks:0` | blank | The network the reverse proxy connects from. Only from there is `X-Forwarded-For` believed. Blank means the address of whatever connected, which behind a proxy is the proxy. With the bundled proxy, set it to `APP_SUBNET`. |
+| `APP_SUBNET` | the compose network's range | `172.30.80.0/24` | The containers' own network. Fixed so that `PROXY_NETWORK` can be known in advance. |
+| `ACME_EMAIL` | Caddy's account email | `delivery@jiranisokotech.co.ke` | Where Let's Encrypt warns about the certificate, when the bundled proxy is used. Never empty: Caddy will not start with an empty email. |
 
 ### The first account
 

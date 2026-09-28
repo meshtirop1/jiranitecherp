@@ -1,0 +1,41 @@
+# The reverse proxy, for a host that does not already have one.
+#
+# Started only when asked for:
+#     docker compose -f docker/compose.yaml --profile proxy up -d
+#
+# Caddy rather than nginx because it obtains and renews the certificate itself.
+# A certificate that somebody has to remember to renew is an outage on a date
+# ninety days out; this one renews thirty days before expiry with nothing to do.
+# It needs ports 80 and 443 reachable from the internet and ERP_DOMAIN pointing
+# at this host before it first starts, or the certificate request fails.
+
+{
+	# Where Let's Encrypt writes about expiring certificates and problems with
+	# the account. It must not be empty — Caddy refuses to start on an email
+	# option with no argument — so compose.yaml falls back to the firm's own
+	# mailbox when ACME_EMAIL is not set.
+	email {$ACME_EMAIL}
+}
+
+{$ERP_DOMAIN} {
+	# Everything goes to the application. Caddy sets X-Forwarded-For and
+	# X-Forwarded-Proto itself; the application believes them only from
+	# PROXY_NETWORK, which is why that has to be set when this proxy is used —
+	# see docs/deployment.md.
+	reverse_proxy web:8080
+
+	# Compressed on the way out. The pages are server-rendered HTML and the
+	# largest thing sent is the stylesheet, both of which shrink by two thirds.
+	encode zstd gzip
+
+	# The application sets every security header itself, including HSTS, so
+	# nothing is added here: two places setting the same header is how they
+	# come to disagree. Caddy's own Server header is removed because it says
+	# what software is answering, which helps nobody but somebody looking.
+	header -Server
+
+	log {
+		output stdout
+		format json
+	}
+}
