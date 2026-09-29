@@ -1,0 +1,57 @@
+# The suite, twice over: the usual run on SQLite, and the tests marked [PostgresFact] against
+# a real PostgreSQL, which the image build cannot provide and which found two faults SQLite
+# hid — a page that crashed only when its query genuinely awaited, and every commit from a
+# developer outside UTC being unwritable. See tests/.../Postgres/PostgresApplicationFactory.cs.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tests
+          POSTGRES_PASSWORD: tests
+          POSTGRES_DB: tests
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tests"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_POSTGRES: Host=localhost;Port=5432;Username=tests;Password=tests;Database=tests
+      DOTNET_NOLOGO: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Without --no-incremental a build reports only what it recompiled, and a warning in a
+      # project it considers unchanged goes unseen. CLAUDE.md has the history.
+      - run: dotnet build JiranisokoTech.slnx --no-incremental -warnaserror
+
+      - run: dotnet test JiranisokoTech.slnx --no-build
+
+  # The image runs the suite too, against the source as .dockerignore trims it — without
+  # docker/ or docs/. Tests that read those files once broke this build while every checkout
+  # run stayed green, and compose went on serving the previous image. Building it here is
+  # the only check that sees the source the way the image does.
+  image:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: docker build --file docker/Dockerfile --tag jiranisokotech-erp:ci .

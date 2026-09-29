@@ -24,6 +24,7 @@ public sealed class UserDirectory(AppDbContext database, IClock clock)
                 user.LastSignedInAt,
                 user.InvitedAt,
                 user.LockoutEnd,
+                user.TwoFactorEnabled,
             })
             .ToListAsync(cancellationToken);
 
@@ -68,7 +69,8 @@ public sealed class UserDirectory(AppDbContext database, IClock clock)
             account.InvitedAt,
             account.LockoutEnd > now,
             byUser.GetValueOrDefault(account.Id) ?? [],
-            linked.GetValueOrDefault(account.Id))).ToList();
+            linked.GetValueOrDefault(account.Id),
+            account.TwoFactorEnabled)).ToList();
     }
 
     public async Task<AccountRow?> FindAsync(
@@ -87,7 +89,8 @@ public sealed record AccountRow(
     DateTimeOffset? InvitedAt,
     bool IsLockedOut,
     IReadOnlyList<string> Roles,
-    string? EmployeeName)
+    string? EmployeeName,
+    bool UsesSecondFactor = false)
 {
     /// <summary>
     /// What an administrator needs to know at a glance, in one phrase.

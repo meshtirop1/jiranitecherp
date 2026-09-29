@@ -140,7 +140,10 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<UserAdministration>();
         services.AddScoped<IAccountAccess, AccountAccess>();
+        services.AddScoped<JiranisokoTech.Application.Privacy.IAccessLog, Audit.AccessLog>();
+        services.AddScoped<Privacy.SubjectAccessExport>();
         services.AddScoped<UserDirectory>();
+        services.AddScoped<SecurityCentre>();
 
         services.AddScoped<IApprovalRepository, ApprovalRepository>();
         services.AddScoped<ApprovalService>();
@@ -317,6 +320,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRecurringJob, PruneJobHistory>();
         services.AddScoped<IRecurringJob, PruneSignInHistory>();
         services.AddScoped<IRecurringJob, RaiseRecurringExpenses>();
+        services.AddScoped<IRecurringJob, ApplyRetention>();
         services.AddHostedService<Scheduler>();
         services.AddScoped<JobQueries>();
 
@@ -336,6 +340,10 @@ public static class ServiceCollectionExtensions
          */
         services.AddSingleton<MetricsReader>();
         services.AddHostedService(provider => provider.GetRequiredService<MetricsReader>());
+
+        // Registered with the metrics, and before the loops that start spans: a listener added
+        // after a span began does not reach back and create it.
+        services.AddHostedService<TraceListener>();
         services.AddScoped<SearchQueries>();
         services.AddScoped<AuditQueries>();
 

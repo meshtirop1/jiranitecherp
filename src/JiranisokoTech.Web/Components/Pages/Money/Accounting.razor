@@ -165,9 +165,11 @@
     <AuthorizeView Policy="@ManagePolicy" Context="mayOpen">
         <EditForm Model="Opening" method="post" OnValidSubmit="Open" FormName="open"
                   class="inline">
-            <InputText @bind-Value="Opening.Code" placeholder="4200" />
-            <InputText @bind-Value="Opening.Name" placeholder="Software subscriptions" />
-            <InputSelect @bind-Value="Opening.Kind">
+            @* A placeholder is not a name: it disappears as soon as anybody types, and a
+               screen reader may not read it at all. *@
+            <InputText @bind-Value="Opening.Code" placeholder="4200" aria-label="Account code" />
+            <InputText @bind-Value="Opening.Name" placeholder="Software subscriptions" aria-label="Account name" />
+            <InputSelect @bind-Value="Opening.Kind" aria-label="Kind of account">
                 <option value="@AccountKind.Expense">Expense</option>
                 <option value="@AccountKind.Income">Income</option>
             </InputSelect>

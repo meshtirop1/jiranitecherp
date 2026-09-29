@@ -28,7 +28,10 @@ public sealed class PeopleService(
         string? description = null,
         CancellationToken cancellationToken = default)
     {
-        var handle = Slug.From(slug ?? name);
+        // Blank as well as null. A browser posts an empty box as "", which "??" lets
+        // through, and a slug of nothing is refused — so leaving this optional field empty
+        // on the form refused the whole form. See SlugFallbackTests.
+        var handle = Slug.From(string.IsNullOrWhiteSpace(slug) ? name : slug);
 
         if (await people.SlugTakenAsync(handle.Value, null, cancellationToken))
         {
@@ -390,6 +393,16 @@ public sealed class PeopleService(
         employee.SetJobTitle(jobTitle);
         employee.SetWeeklyCapacity(weeklyCapacityHours);
 
+        await people.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>Say whether somebody's personal phone and email are kept to HR.</summary>
+    public async Task KeepContactPrivateAsync(
+        Guid employeeId, bool keep, CancellationToken cancellationToken = default)
+    {
+        var employee = await RequiredEmployee(employeeId, cancellationToken);
+
+        employee.KeepContactPrivate(keep);
         await people.SaveAsync(cancellationToken);
     }
 

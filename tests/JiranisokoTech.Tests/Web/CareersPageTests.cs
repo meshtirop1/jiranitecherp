@@ -115,6 +115,7 @@ public class CareersPageTests(ApplicationFactory factory) : IClassFixture<Applic
             {
                 ["Input.FullName"] = "Amina Hassan",
                 ["Input.Email"] = "amina@example.com",
+                ["Input.Consents"] = "true",
                 ["Input.Phone"] = "0700 000 000",
                 ["Input.Note"] = "I have done routing work before.",
             });
@@ -167,6 +168,7 @@ public class CareersPageTests(ApplicationFactory factory) : IClassFixture<Applic
                 {
                     ["Input.FullName"] = "Joseph Kimani",
                     ["Input.Email"] = "joseph@example.com",
+                ["Input.Consents"] = "true",
                 });
 
             var applied = await browser.PostAsync(
@@ -200,6 +202,7 @@ public class CareersPageTests(ApplicationFactory factory) : IClassFixture<Applic
             {
                 ["Input.FullName"] = "Grace Wanjiku",
                 ["Input.Email"] = "grace@example.com",
+                ["Input.Consents"] = "true",
             });
 
         using var form = new MultipartFormDataContent();
@@ -265,6 +268,7 @@ public class CareersPageTests(ApplicationFactory factory) : IClassFixture<Applic
             {
                 ["Input.FullName"] = "Peter Omondi",
                 ["Input.Email"] = "peter@example.com",
+                ["Input.Consents"] = "true",
             });
 
         using var form = new MultipartFormDataContent();
@@ -303,6 +307,17 @@ public class CareersPageTests(ApplicationFactory factory) : IClassFixture<Applic
         Assert.Equal(
             "application/octet-stream", download.Content.Headers.ContentType?.MediaType);
         Assert.Equal("attachment", download.Content.Headers.ContentDisposition?.DispositionType);
+
+        // And who opened it is on the trail: a stranger's CV is exactly the read a complaint
+        // asks about. Section 55's access logging.
+        await factory.InScopeAsync(async services =>
+        {
+            var opened = await services.GetRequiredService<AppDbContext>().AuditEntries
+                .SingleAsync(entry => entry.SubjectId == application
+                    && entry.Action == "job_application.cv_opened");
+
+            Assert.Equal("cv-reader@jiranisokotech.co.ke", opened.ActorName);
+        });
     }
 
     private async Task<Guid> OpeningAsync(

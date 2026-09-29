@@ -494,6 +494,17 @@ public class AppDbContext(
             var subject = entry.Entity.GetType().Name;
             var action = $"{ToSnakeCase(subject)}.{entry.State.ToString().ToLowerInvariant()}";
 
+            // The moment of an erasure: which fields changed is kept, what they held is not.
+            // See IForgettable.
+            if (IsBeingForgotten(entry))
+            {
+                action = $"{ToSnakeCase(subject)}.forgotten";
+                before = before?.ToDictionary(pair => pair.Key, _ => (string?)Withheld);
+                after = after?.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Key == nameof(IForgettable.ForgottenAt) ? pair.Value : Withheld);
+            }
+
             recorded.Add(AuditEntry.Record(
                 action,
                 subject,
@@ -552,6 +563,13 @@ public class AppDbContext(
                 after: granted ? held : null);
         }
     }
+
+    private static bool IsBeingForgotten(EntityEntry<IAuditable> entry) =>
+        entry.State == EntityState.Modified
+        && entry.Entity is IForgettable
+        && entry.Property(nameof(IForgettable.ForgottenAt)) is { } forgotten
+        && forgotten.OriginalValue is null
+        && forgotten.CurrentValue is not null;
 
     private static IReadOnlySet<string> ExcludedProperties(EntityEntry<IAuditable> entry)
     {
@@ -809,6 +827,84 @@ public class AppDbContext(
         {
             StoreTimestampsAsSortableText(modelBuilder);
         }
+        else
+        {
+            WriteTimestampsInUtc(modelBuilder);
+        }
+    }
+
+    /// <summary>
+    /// Every timestamp written to PostgreSQL in UTC, whatever offset it arrived with.
+    /// </summary>
+    /// <remarks>
+    /// <b>Every push from a developer in Nairobi failed on production, and no test could see
+    /// it.</b> GitHub reports a commit's time in its author's own offset — "+03:00" here — and
+    /// Npgsql refuses to write a DateTimeOffset whose offset is not zero to a timestamptz
+    /// column. So recording the commits of any push made in Kenya threw, the delivery was
+    /// retried and dead-lettered, and the work never learned it had commits. The suite runs
+    /// on SQLite, whose mapping below already converts to UTC on the way to text, so the one
+    /// provider the tests used was the one provider that hid it. Found by the delivery
+    /// workflow test the first time it ran against PostgreSQL.
+    ///
+    /// Converted here rather than where each payload is read, because the rule is about the
+    /// column and not about GitHub: a date typed into a form, an API caller's timestamp or
+    /// the next provider's payload would each have been the same fault waiting.
+    /// Complex types are walked as well as ordinary properties, for the reason the audit
+    /// capture had to learn — their members are not in <c>GetProperties()</c>.
+    /// </remarks>
+    private static void WriteTimestampsInUtc(ModelBuilder modelBuilder)
+    {
+        var utc = new ValueConverter<DateTimeOffset, DateTimeOffset>(
+            value => value.ToUniversalTime(),
+            value => value);
+
+        var nullableUtc = new ValueConverter<DateTimeOffset?, DateTimeOffset?>(
+            value => value == null ? null : value.Value.ToUniversalTime(),
+            value => value);
+
+        foreach (var property in AllProperties(modelBuilder))
+        {
+            if (property.ClrType == typeof(DateTimeOffset))
+            {
+                property.SetValueConverter(utc);
+            }
+            else if (property.ClrType == typeof(DateTimeOffset?))
+            {
+                property.SetValueConverter(nullableUtc);
+            }
+        }
+    }
+
+    private static IEnumerable<IMutableProperty> AllProperties(ModelBuilder modelBuilder)
+    {
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties())
+            {
+                yield return property;
+            }
+
+            foreach (var property in ComplexMembers(entityType.GetComplexProperties()))
+            {
+                yield return property;
+            }
+        }
+    }
+
+    private static IEnumerable<IMutableProperty> ComplexMembers(IEnumerable<IMutableComplexProperty> complex)
+    {
+        foreach (var one in complex)
+        {
+            foreach (var property in one.ComplexType.GetProperties())
+            {
+                yield return property;
+            }
+
+            foreach (var nested in ComplexMembers(one.ComplexType.GetComplexProperties()))
+            {
+                yield return nested;
+            }
+        }
     }
 
     /// <summary>
@@ -875,18 +971,15 @@ public class AppDbContext(
                 ? null
                 : DateTimeOffset.Parse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind));
 
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        foreach (var property in AllProperties(modelBuilder))
         {
-            foreach (var property in entityType.GetProperties())
+            if (property.ClrType == typeof(DateTimeOffset))
             {
-                if (property.ClrType == typeof(DateTimeOffset))
-                {
-                    property.SetValueConverter(toText);
-                }
-                else if (property.ClrType == typeof(DateTimeOffset?))
-                {
-                    property.SetValueConverter(toNullableText);
-                }
+                property.SetValueConverter(toText);
+            }
+            else if (property.ClrType == typeof(DateTimeOffset?))
+            {
+                property.SetValueConverter(toNullableText);
             }
         }
     }

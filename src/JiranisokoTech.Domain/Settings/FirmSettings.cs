@@ -263,6 +263,78 @@ public sealed class FirmSettings : Entity, IAuditable
         PaymentTermDays = days;
     }
 
+    // --- retention -----------------------------------------------------------
+
+    /// <summary>
+    /// Months after an applicant's last application closed before their details are erased.
+    /// </summary>
+    /// <remarks>
+    /// Section 53. Null — the default — keeps everything, so nothing is erased until somebody
+    /// with the right to decide has decided. The Data Protection Act does not name a period; it
+    /// asks that personal data is kept no longer than it is needed, and an unsuccessful
+    /// applicant's CV is needed for as long as the firm might reasonably reconsider them or
+    /// answer a complaint about the decision. That judgement is the firm's, so it is a setting.
+    /// </remarks>
+    public int? CandidateRetentionMonths { get; private set; }
+
+    /// <summary>Years after somebody left before the documents on their staff record go.</summary>
+    public int? LeaverDocumentRetentionYears { get; private set; }
+
+    /// <summary>Months after an account was withdrawn before its login details are erased.</summary>
+    public int? WithdrawnAccountRetentionMonths { get; private set; }
+
+    /// <summary>Years the audit trail is kept.</summary>
+    public int? AuditRetentionYears { get; private set; }
+
+    /// <summary>The shortest period each can be set to, and why it is not shorter.</summary>
+    /// <remarks>
+    /// Floors rather than free numbers, because each of these deletes something that cannot be
+    /// put back, and a zero typed by mistake would empty a table overnight.
+    ///
+    /// Leavers' documents: five years, the period the Employment Act requires employment records
+    /// to be kept. The audit trail: seven, because it is the evidence behind every financial
+    /// record, and the Tax Procedures Act asks for five years of those — two more is the margin
+    /// between "the law" and "the question a tax officer asks about the year before". Applicants
+    /// and withdrawn accounts: a month, which is long enough to undo a mistake.
+    /// </remarks>
+    public const int FewestCandidateMonths = 1;
+
+    public const int FewestLeaverDocumentYears = 5;
+
+    public const int FewestWithdrawnAccountMonths = 1;
+
+    public const int FewestAuditYears = 7;
+
+    /// <summary>
+    /// Say how long each kind of record is kept; null for any of them keeps it.
+    /// </summary>
+    public void RetainFor(
+        int? candidateMonths,
+        int? leaverDocumentYears,
+        int? withdrawnAccountMonths,
+        int? auditYears)
+    {
+        CandidateRetentionMonths = AtLeast(
+            candidateMonths, FewestCandidateMonths, "Applicants' details", "month");
+        LeaverDocumentRetentionYears = AtLeast(
+            leaverDocumentYears, FewestLeaverDocumentYears, "Leavers' documents", "year");
+        WithdrawnAccountRetentionMonths = AtLeast(
+            withdrawnAccountMonths, FewestWithdrawnAccountMonths, "Withdrawn accounts", "month");
+        AuditRetentionYears = AtLeast(
+            auditYears, FewestAuditYears, "The audit trail", "year");
+    }
+
+    /// <remarks>
+    /// InvalidOperationException rather than ArgumentOutOfRangeException, whose message has
+    /// "(Parameter 'value') Actual value was 3." appended to it — which is what the settings page
+    /// showed the first time a period under its floor was refused.
+    /// </remarks>
+    private static int? AtLeast(int? value, int fewest, string what, string unit) =>
+        value is { } chosen && chosen < fewest
+            ? throw new InvalidOperationException(
+                $"{what} must be kept for at least {fewest} {unit}{(fewest == 1 ? "" : "s")}.")
+            : value;
+
     /// <summary>
     /// Nothing here is hidden from the trail.
     /// </summary>

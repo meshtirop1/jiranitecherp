@@ -29,7 +29,8 @@
 <p>
     Roles are additive: somebody may hold several, and what they can do is the
     union. <strong>Interviewer</strong> is meant to be worn alongside another
-    role rather than on its own.
+    role rather than on its own, and <strong>Auditor</strong> can do nothing for
+    themselves — it is for somebody from outside, or worn beside a staff role.
 </p>
 
 <p class="subtle">
@@ -101,6 +102,17 @@
         Roles.ProjectManager => "Manager",
         Roles.Developer => "Developer",
         Roles.Interviewer => "Interviewer",
+        Roles.FinanceManager => "Finance",
+        Roles.Accountant => "Accountant",
+        Roles.Auditor => "Auditor",
+        Roles.Recruiter => "Recruiter",
+        Roles.EngineeringManager => "Eng. manager",
+        Roles.TechLead => "Tech lead",
+        Roles.QaEngineer => "QA",
+        Roles.DevOpsEngineer => "DevOps",
+        Roles.Designer => "Designer",
+        Roles.Sales => "Sales",
+        Roles.Support => "Support",
         _ => role,
     };
 }

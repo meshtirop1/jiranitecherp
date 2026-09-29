@@ -26,6 +26,10 @@ public sealed class SignInRecordConfiguration : IEntityTypeConfiguration<SignInR
         builder.HasIndex(record => new { record.UserId, record.At });
         builder.HasIndex(record => new { record.IpAddress, record.At });
 
+        // And the third, the security centre's: everybody's, newest first. Neither index above
+        // can serve it, since both lead with a column that reading does not filter on.
+        builder.HasIndex(record => record.At);
+
         // No foreign key to the user, deliberately. A record can name an
         // address that matches no account at all, and those are the rows worth
         // keeping when somebody is working through a list.

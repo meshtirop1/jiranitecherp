@@ -133,7 +133,8 @@ public sealed class RecruitmentService(
     {
         await RequiredRequisition(requisitionId, cancellationToken);
 
-        var handle = Slug.From(slug ?? title);
+        // Blank as well as null — see SlugFallbackTests.
+        var handle = Slug.From(string.IsNullOrWhiteSpace(slug) ? title : slug);
 
         if (await recruitment.PostingSlugTakenAsync(handle.Value, cancellationToken))
         {
@@ -262,6 +263,7 @@ public sealed class RecruitmentService(
         string? note = null,
         Stream? cv = null,
         string? cvFileName = null,
+        string? consent = null,
         CancellationToken cancellationToken = default)
     {
         var posting = await RequiredPosting(postingId, cancellationToken);
@@ -288,6 +290,11 @@ public sealed class RecruitmentService(
         }
 
         var application = JobApplication.Receive(postingId, candidate.Id, clock.Now, note);
+
+        if (consent is not null)
+        {
+            application.Consented(consent, clock.Now);
+        }
 
         /*
          * The file is written before the row that points at it.

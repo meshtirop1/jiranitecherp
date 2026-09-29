@@ -1,6 +1,7 @@
 using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Application.Authorization;
 using JiranisokoTech.Application.Mail;
+using JiranisokoTech.Domain.Audit;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -29,6 +30,7 @@ public sealed class UserAdministration(
     Persistence.AppDbContext database,
     IMailer mailer,
     IClock clock,
+    ICurrentUser currentUser,
     ILogger<UserAdministration> logger)
 {
     /// <summary>
@@ -371,6 +373,7 @@ public sealed class UserAdministration(
         }
 
         user.IsActive = false;
+        user.WithdrawnAt = clock.Now;
         await Save(user);
 
         // Ends the session they are in now rather than at their next attempt.
@@ -387,6 +390,7 @@ public sealed class UserAdministration(
         }
 
         user.IsActive = true;
+        user.WithdrawnAt = null;
         await Save(user);
     }
 
@@ -404,6 +408,60 @@ public sealed class UserAdministration(
 
         await users.SetLockoutEndDateAsync(user, null);
         await users.ResetAccessFailedCountAsync(user);
+    }
+
+    /// <summary>
+    /// Turn off somebody's second factor for them, so they can sign in with their password and
+    /// enrol again.
+    /// </summary>
+    /// <remarks>
+    /// For a lost phone with the recovery codes lost with it, and for the day the key ring the
+    /// secrets are encrypted with is lost — both leave somebody unable to sign in with nothing
+    /// they can do about it themselves. The key is thrown away rather than kept, as it is when
+    /// they turn it off themselves, so the old entry on the lost phone never works again. The
+    /// change to <c>TwoFactorEnabled</c> is on the trail, with who made it, which is the thing
+    /// anybody investigating the account afterwards will look for first.
+    /// </remarks>
+    public async Task ClearSecondFactorAsync(Guid userId)
+    {
+        var user = await Required(userId);
+
+        if (!await users.GetTwoFactorEnabledAsync(user))
+        {
+            throw new InvalidOperationException("They do not have a second factor turned on.");
+        }
+
+        await users.SetTwoFactorEnabledAsync(user, false);
+        await users.ResetAuthenticatorKeyAsync(user);
+    }
+
+    /// <summary>
+    /// End every session an account has, without withdrawing it.
+    /// </summary>
+    /// <remarks>
+    /// For the account that shows a sign-in nobody recognises: the person keeps their access and
+    /// whoever else was in loses it, within the validation interval. Until this only the person
+    /// themselves could do it, from their own account page — which is no help when they are on
+    /// leave, or when it is their session that has been taken.
+    ///
+    /// Written to the trail by hand. The only thing that moves is the security stamp, which the
+    /// trail excludes because it is a token, so the capture would otherwise record nothing and
+    /// the one act most worth finding afterwards would have left no mark.
+    /// </remarks>
+    public async Task EndSessionsAsync(Guid userId)
+    {
+        var user = await Required(userId);
+
+        database.AuditEntries.Add(AuditEntry.Record(
+            "account.sessions_ended",
+            nameof(ApplicationUser),
+            user.Id,
+            clock.Now,
+            currentUser.Id,
+            currentUser.Name));
+
+        // Saves the entry with the stamp, in one transaction.
+        await users.UpdateSecurityStampAsync(user);
     }
 
     public async Task<IList<string>> RolesOfAsync(Guid userId) =>

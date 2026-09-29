@@ -60,6 +60,9 @@ else
 
         <dt>Last signed in</dt>
         <dd>@(Row.LastSignedInAt?.ToString("d MMMM yyyy") ?? "Never")</dd>
+
+        <dt>Second factor</dt>
+        <dd>@(Row.UsesSecondFactor ? "On" : "Off")</dd>
     </dl>
 
     <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.UsersAssignRoles)"
@@ -98,6 +101,23 @@ else
                 <form method="post" @formname="unlock" @onsubmit="Unlock">
                     <AntiforgeryToken />
                     <button type="submit">Let them back in</button>
+                </form>
+            }
+
+            @*
+                For a sign-in on this account that nobody recognises: whoever else is in loses
+                their session, and the person keeps their access.
+            *@
+            <form method="post" @formname="end-sessions" @onsubmit="EndSessions">
+                <AntiforgeryToken />
+                <button type="submit">End their sessions</button>
+            </form>
+
+            @if (Row.UsesSecondFactor)
+            {
+                <form method="post" @formname="second-factor" @onsubmit="ClearSecondFactor">
+                    <AntiforgeryToken />
+                    <button type="submit" class="danger">Turn off their second factor</button>
                 </form>
             }
 
@@ -200,9 +220,22 @@ else
         () => held
             ? Administration.RevokeAsync(Id, role)
             : Administration.GrantAsync(Id, role),
-        held ? $"{Say(role)} taken away." : $"{Say(role)} granted.");
+        held ? $"{Sentence(Say(role))} taken away." : $"{Sentence(Say(role))} granted.");
+
+    // The role names are lower case because they are identifiers, and a confirmation that
+    // opens "hr granted." reads as a typo.
+    private static string Sentence(string words) =>
+        words.Length == 0 ? words : char.ToUpperInvariant(words[0]) + words[1..];
 
     private Task Unlock() => Run(() => Administration.UnlockAsync(Id), "They can sign in again.");
+
+    private Task EndSessions() => Run(
+        () => Administration.EndSessionsAsync(Id),
+        "Every session on this account ends within a minute.");
+
+    private Task ClearSecondFactor() => Run(
+        () => Administration.ClearSecondFactorAsync(Id),
+        "Second factor turned off. They can sign in with their password and set it up again.");
 
     private Task Restore() => Run(() => Administration.ReactivateAsync(Id), "Access restored.");
 

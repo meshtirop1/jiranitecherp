@@ -58,6 +58,19 @@ public sealed class PayslipConfiguration : IEntityTypeConfiguration<Payslip>
 
         builder.HasKey(slip => slip.Id);
 
+        /*
+         * The payslip makes its own identifier, and EF has to be told so. By convention a Guid
+         * key is one EF expects to generate, and a new entity it finds already carrying one is
+         * assumed to exist — so a payslip added to a run that was already saved went out as an
+         * UPDATE, touched nothing, and failed as a concurrency conflict. That is precisely the
+         * redraft this aggregate is built around: somebody corrects a salary and drafts the
+         * period again. The first draft worked only because the whole run was new.
+         *
+         * Every other child collection in this model is owned, where EF tracks the relationship
+         * itself; this is the one ordinary one-to-many, and so the one place this can happen.
+         */
+        builder.Property(slip => slip.Id).ValueGeneratedNever();
+
         builder.Property(slip => slip.Currency).HasMaxLength(3).IsRequired();
         builder.Property(slip => slip.GrossMinorUnits).IsRequired();
 

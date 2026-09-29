@@ -158,6 +158,11 @@ public sealed class OutboxDispatcher(
 
     private async Task<bool> SettleAsync(Guid id, CancellationToken cancellationToken)
     {
+        // A span per message, so that everything its handlers log shares one trace id and a
+        // failed event can be followed through every handler it reached.
+        using var span = Application.Observability.Telemetry.Source.StartActivity("outbox message");
+        span?.SetTag("message", id);
+
         // Read after claiming, so what is handled is what the claim protects.
         // AsTracking because this row is about to be written back.
         var message = await database.Outbox

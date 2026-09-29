@@ -173,4 +173,17 @@ public static class Telemetry
         "jiranisoko.signins",
         unit: "attempts",
         description: "Sign-in attempts, by what came of them.");
+
+    /// <summary>
+    /// Requests that ended in the error page.
+    /// </summary>
+    /// <remarks>
+    /// Section 45's error tracking, on the terms this deployment has. Each one is also logged at
+    /// Error with its exception and trace id; this is the number that says whether today is
+    /// different from yesterday, which a log cannot say without somebody counting it.
+    /// </remarks>
+    public static Counter<long> ErrorsUnhandled { get; } = Meter.CreateCounter<long>(
+        "jiranisoko.errors.unhandled",
+        unit: "requests",
+        description: "Requests that failed with an exception nothing handled.");
 }

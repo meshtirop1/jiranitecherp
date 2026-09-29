@@ -1612,7 +1612,6 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("JiranisokoTech.Domain.Payroll.Payslip", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<string>("Currency")
@@ -1756,6 +1755,9 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                     b.Property<string>("JobTitle")
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)");
+
+                    b.Property<bool>("KeepsContactPrivate")
+                        .HasColumnType("boolean");
 
                     b.Property<DateOnly?>("LeftOn")
                         .HasColumnType("date");
@@ -2368,6 +2370,9 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("FirstSeenAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset?>("ForgottenAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("FullName")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -2451,6 +2456,12 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("CandidateId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ConsentWording")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("ConsentedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("CvFileName")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
@@ -2460,6 +2471,9 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(100)");
 
                     b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("ForgottenAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Note")
@@ -2783,6 +2797,12 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
 
+                    b.Property<int?>("AuditRetentionYears")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("CandidateRetentionMonths")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Country")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -2801,6 +2821,9 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(8)
                         .HasColumnType("character varying(8)");
+
+                    b.Property<int?>("LeaverDocumentRetentionYears")
+                        .HasColumnType("integer");
 
                     b.Property<string>("LegalName")
                         .IsRequired()
@@ -2841,6 +2864,9 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                     b.Property<string>("Website")
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
+
+                    b.Property<int?>("WithdrawnAccountRetentionMonths")
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -3285,6 +3311,34 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                     b.ToTable("work_item_links", (string)null);
                 });
 
+            modelBuilder.Entity("JiranisokoTech.Infrastructure.Identity.AccessReview", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTimeOffset>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ReviewerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ReviewerName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReviewedAt");
+
+                    b.ToTable("access_reviews", (string)null);
+                });
+
             modelBuilder.Entity("JiranisokoTech.Infrastructure.Identity.ApplicationRole", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3342,6 +3396,9 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                     b.Property<bool>("EmailConfirmed")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTimeOffset?>("ForgottenAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset?>("InvitedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -3390,6 +3447,9 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                     b.Property<string>("UserName")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset?>("WithdrawnAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
@@ -3467,6 +3527,8 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("At");
 
                     b.HasIndex("IpAddress", "At");
 
@@ -5258,6 +5320,51 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                         .HasForeignKey("BlockerId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("JiranisokoTech.Infrastructure.Identity.AccessReview", b =>
+                {
+                    b.OwnsMany("JiranisokoTech.Infrastructure.Identity.AccessReviewLine", "Lines", b1 =>
+                        {
+                            b1.Property<Guid>("Id")
+                                .HasColumnType("uuid");
+
+                            b1.Property<Guid>("AccessReviewId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<Guid>("AccountId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<string>("Email")
+                                .IsRequired()
+                                .HasMaxLength(255)
+                                .HasColumnType("character varying(255)");
+
+                            b1.Property<bool>("Kept")
+                                .HasColumnType("boolean");
+
+                            b1.Property<DateTimeOffset?>("LastSignedInAt")
+                                .HasColumnType("timestamp with time zone");
+
+                            b1.Property<string>("Roles")
+                                .IsRequired()
+                                .HasMaxLength(500)
+                                .HasColumnType("character varying(500)");
+
+                            b1.Property<bool>("UsesSecondFactor")
+                                .HasColumnType("boolean");
+
+                            b1.HasKey("Id");
+
+                            b1.HasIndex("AccessReviewId");
+
+                            b1.ToTable("access_review_lines", (string)null);
+
+                            b1.WithOwner()
+                                .HasForeignKey("AccessReviewId");
+                        });
+
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>

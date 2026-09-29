@@ -136,4 +136,25 @@ public sealed class SettingsService(ISettingsRepository settings)
 
         await settings.SaveAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// Say how long each kind of record is kept before the nightly sweep removes it.
+    /// </summary>
+    /// <remarks>
+    /// Null for any of them keeps it for ever, which is where every installation starts. The
+    /// floors are the domain's, and are refused there with a sentence saying why.
+    /// </remarks>
+    public async Task RetainForAsync(
+        int? candidateMonths,
+        int? leaverDocumentYears,
+        int? withdrawnAccountMonths,
+        int? auditYears,
+        CancellationToken cancellationToken = default)
+    {
+        var current = await CurrentAsync(cancellationToken);
+
+        current.RetainFor(candidateMonths, leaverDocumentYears, withdrawnAccountMonths, auditYears);
+
+        await settings.SaveAsync(cancellationToken);
+    }
 }

@@ -13,6 +13,29 @@ namespace JiranisokoTech.Tests.Domain;
 /// </remarks>
 public class WorkItemTests
 {
+    /// <summary>
+    /// A kind or priority the enum does not have is refused, not stored.
+    /// </summary>
+    /// <remarks>
+    /// A form posted without its selects binds both as zero. The raise page saved that, and the
+    /// work item could then not be opened by anybody — every page that names the kind throws
+    /// for a value it has no word for. Found by the delivery workflow test.
+    /// </remarks>
+    [Fact]
+    public void Work_of_no_known_kind_or_priority_is_refused()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            WorkItem.Raise(1, "Something", Guid.CreateVersion7(), kind: default));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            WorkItem.Raise(1, "Something", Guid.CreateVersion7(), priority: default));
+
+        var item = WorkItem.Raise(1, "Something", Guid.CreateVersion7());
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => item.Prioritise((Priority)9));
+        Assert.Throws<ArgumentOutOfRangeException>(() => item.IsA((WorkItemKind)9, null));
+    }
+
     private static readonly DateTimeOffset Now = new(2026, 10, 5, 9, 0, 0, TimeSpan.Zero);
 
     private static WorkItem Raised(string title = "Ship the delivery note printer") =>

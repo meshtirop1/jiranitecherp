@@ -291,6 +291,21 @@ public sealed class Employee : Entity, IAuditable
     public void Record(PersonalDetails details) => Details = details;
 
     /// <summary>
+    /// Whether their personal phone and email are kept to HR.
+    /// </summary>
+    /// <remarks>
+    /// Section 55's privacy settings, and the person's own choice. A staff record is open to
+    /// every department head and project manager in the firm, not only to the person's own —
+    /// which is right for their job and their team, and more than somebody may want for their
+    /// personal number. Off by default, so every record reads as it did before this existed,
+    /// and each person decides for themselves. Next of kin is not governed by this: it is there
+    /// to be found by whoever is with somebody when something happens.
+    /// </remarks>
+    public bool KeepsContactPrivate { get; private set; }
+
+    public void KeepContactPrivate(bool keep) => KeepsContactPrivate = keep;
+
+    /// <summary>
     /// Empty the personal data around the name, at the subject's request.
     /// </summary>
     /// <remarks>

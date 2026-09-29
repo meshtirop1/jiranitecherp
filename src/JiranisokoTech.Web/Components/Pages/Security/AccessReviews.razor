@@ -1,0 +1,199 @@
+@page "/security/review"
+@using JiranisokoTech.Application.Abstractions
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Infrastructure.Identity
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.UsersManage)]
+@inject SecurityCentre Centre
+@inject IClock Clock
+
+@*
+    One form over every account that can still sign in. The reviewer ticks the ones that should
+    not, writes what they checked against, and the whole thing is kept as it stood — who had
+    which roles, who had a second factor, who had not signed in for months — whether or not
+    anything was withdrawn. A review that finds nothing is still evidence that somebody looked.
+
+    users.manage rather than security.view, because pressing it withdraws accounts and that is
+    the permission the account page asks for the same act.
+
+    The ticks are plain checkboxes sharing one name and read from the posted form, because the
+    list is as long as the staff and a model with one field per account cannot be declared.
+*@
+
+<PageTitle>Access review — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/security">Security</a></nav>
+
+<div class="page-head">
+    <h1>Access review</h1>
+</div>
+
+@if (Refused.Count > 0)
+{
+    <div class="refusal" role="alert">
+        <p>Recorded, but these were not withdrawn:</p>
+        <ul>
+            @foreach (var refusal in Refused)
+            {
+                <li>@refusal</li>
+            }
+        </ul>
+    </div>
+}
+
+@if (Done is not null)
+{
+    <p class="done" role="status">@Done</p>
+}
+
+<p>
+    Every account that can sign in, with what it can do. Tick any that should no longer have
+    access and they are withdrawn when you record the review. Accounts not used in
+    @((int)SecurityCentre.Quiet.TotalDays) days are marked.
+</p>
+
+<EditForm Model="Review" method="post" OnSubmit="Record" FormName="access-review" class="stack">
+    <table class="grid">
+        <thead>
+            <tr>
+                <th scope="col">Withdraw</th>
+                <th scope="col">Account</th>
+                <th scope="col">Roles</th>
+                <th scope="col">Second factor</th>
+                <th scope="col">Last signed in</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var account in Accounts)
+            {
+                <tr>
+                    <td>
+                        <input type="checkbox" name="withdraw" value="@account.Id"
+                               aria-label="Withdraw @account.DisplayName" />
+                    </td>
+                    <td>
+                        <a href="/accounts/@account.Id">@account.DisplayName</a>
+                        <span class="subtle">@account.Email</span>
+                    </td>
+                    <td>@(account.Roles.Count == 0 ? "None" : string.Join(", ", account.Roles.Select(role => role.Replace('_', ' '))))</td>
+                    <td>@(account.UsesSecondFactor ? "On" : "Off")</td>
+                    <td>
+                        @(account.LastSignedInAt?.ToString("d MMM yyyy") ?? "Never")
+                        @if (SecurityCentre.IsQuiet(account, Clock.Now))
+                        {
+                            <span class="pill pill--wait">Quiet</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <label>
+        <span>What you checked against</span>
+        <InputTextArea @bind-Value="Review.Note" rows="3" />
+    </label>
+
+    <div class="actions">
+        <button type="submit">Record the review</button>
+    </div>
+</EditForm>
+
+<h2>Earlier reviews</h2>
+
+@if (Earlier.Count == 0)
+{
+    <p class="empty">None yet.</p>
+}
+else
+{
+    @foreach (var review in Earlier)
+    {
+        <details class="panel">
+            <summary>
+                @review.ReviewedAt.ToString("d MMMM yyyy") by @review.ReviewerName —
+                @review.Lines.Count accounts, @review.Withdrawn withdrawn
+            </summary>
+
+            @if (review.Note is not null)
+            {
+                <p>@review.Note</p>
+            }
+
+            <table class="grid">
+                <thead>
+                    <tr>
+                        <th scope="col">Account</th>
+                        <th scope="col">Roles</th>
+                        <th scope="col">Second factor</th>
+                        <th scope="col">Last signed in</th>
+                        <th scope="col">Decision</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in review.Lines.OrderBy(line => line.Email))
+                    {
+                        <tr>
+                            <td>@line.Email</td>
+                            <td>@(line.Roles.Length == 0 ? "None" : line.Roles.Replace('_', ' '))</td>
+                            <td>@(line.UsesSecondFactor ? "On" : "Off")</td>
+                            <td>@(line.LastSignedInAt?.ToString("d MMM yyyy") ?? "Never")</td>
+                            <td>@(line.Kept ? "Kept" : "Withdrawn")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </details>
+    }
+}
+
+@code {
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    private ReviewInput _review = new();
+
+    [SupplyParameterFromForm(FormName = "access-review")]
+    private ReviewInput Review
+    {
+        get => _review;
+        set => _review = value ?? new ReviewInput();
+    }
+
+    private List<AccountRow> Accounts { get; set; } = [];
+
+    private List<AccessReview> Earlier { get; set; } = [];
+
+    private IReadOnlyList<string> Refused { get; set; } = [];
+
+    private string? Done { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Accounts = await Centre.ToReviewAsync();
+        Earlier = await Centre.ReviewsAsync();
+    }
+
+    private async Task Record()
+    {
+        var chosen = (Request?.Request.Form["withdraw"] ?? default)
+            .Select(value => Guid.TryParse(value, out var id) ? id : Guid.Empty)
+            .Where(id => id != Guid.Empty)
+            .ToHashSet();
+
+        var (review, refused) = await Centre.RecordReviewAsync(chosen, Review.Note);
+
+        Refused = refused;
+        Done = $"Review recorded: {review.Lines.Count} accounts, {review.Withdrawn} withdrawn.";
+        Review = new ReviewInput();
+
+        await LoadAsync();
+    }
+
+    private sealed class ReviewInput
+    {
+        public string? Note { get; set; }
+    }
+}

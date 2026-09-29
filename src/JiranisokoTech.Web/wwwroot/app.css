@@ -1816,3 +1816,17 @@ code.key {
 .narrow {
     max-width: 16rem;
 }
+
+/*
+ * Which copy of the application this is, on every copy that is not production. Warning colours
+ * rather than danger: nothing is wrong, but doing real work here would be. See EnvironmentBanner.
+ */
+.environment-banner {
+    margin: 0;
+    padding: 0.4rem 1.5rem;
+    background: var(--warn-ground);
+    color: var(--warn-ink);
+    border-bottom: 1px solid var(--warn);
+    font-size: 0.875rem;
+    font-weight: 600;
+}

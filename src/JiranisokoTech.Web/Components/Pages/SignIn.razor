@@ -206,7 +206,7 @@
     private sealed class SignInInput
     {
         [Required(ErrorMessage = "Your email address is needed.")]
-        [EmailAddress(ErrorMessage = "That does not look like an email address.")]
+        [EmailOrBlank]
         public string Email { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Your password is needed.")]

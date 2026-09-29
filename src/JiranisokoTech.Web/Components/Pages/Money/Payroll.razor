@@ -168,6 +168,9 @@
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
 
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
     private DraftInput _input = new();
 
     [SupplyParameterFromForm(FormName = "draft")]
@@ -201,8 +204,17 @@
         // The month just gone, because that is the one somebody is here to run.
         var first = new DateOnly(today.Year, today.Month, 1).AddMonths(-1);
 
-        _input.From = first.ToDateTime(TimeOnly.MinValue);
-        _input.To = first.AddMonths(1).AddDays(-1).ToDateTime(TimeOnly.MinValue);
+        /*
+         * Only when somebody arrives. This used to run on every request, and under static
+         * rendering that includes the POST: the dates just typed were replaced by last month's
+         * before the handler read them. So only the month just gone could ever be drafted, and
+         * asking for any other drafted that one and said "Drafted". See FirstLook.
+         */
+        if (FirstLook.ThisTime(Request))
+        {
+            _input.From = first.ToDateTime(TimeOnly.MinValue);
+            _input.To = first.AddMonths(1).AddDays(-1).ToDateTime(TimeOnly.MinValue);
+        }
 
         await LoadAsync();
     }

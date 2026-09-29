@@ -93,8 +93,8 @@ public sealed class WorkItem : Entity, IAuditable
         Title = Require(title, nameof(title));
         RaisedById = raisedById;
         ProjectId = projectId;
-        Priority = priority;
-        Kind = kind;
+        Priority = Known(priority);
+        Kind = Known(kind);
         Status = WorkItemStatus.Todo;
 
         Raise(new WorkItemRaised(Id, Title, projectId, raisedById));
@@ -398,7 +398,7 @@ public sealed class WorkItem : Entity, IAuditable
     public void Describe(string? detail) =>
         Detail = string.IsNullOrWhiteSpace(detail) ? null : detail.Trim();
 
-    public void Prioritise(Priority priority) => Priority = priority;
+    public void Prioritise(Priority priority) => Priority = Known(priority);
 
     public void MoveToProject(Guid? projectId) => ProjectId = projectId;
 
@@ -443,7 +443,7 @@ public sealed class WorkItem : Entity, IAuditable
                 + "first, or make it something smaller.");
         }
 
-        Kind = kind;
+        Kind = Known(kind);
     }
 
     /// <summary>
@@ -590,6 +590,26 @@ public sealed class WorkItem : Entity, IAuditable
         _ => throw new ArgumentOutOfRangeException(
             nameof(kind), kind, "Nothing has decided what this kind of work is called."),
     };
+
+    /// <summary>
+    /// A kind or priority this enum actually has.
+    /// </summary>
+    /// <remarks>
+    /// <b>An undefined one was accepted, stored, and then took down every page that showed the
+    /// work.</b> A form posted without its selects binds both as zero, which neither enum has.
+    /// The raise page saved that without a word, and from then on the work item page, the board
+    /// and everything else that names the kind threw — see <see cref="Name"/>, which refuses
+    /// rather than guess. Nobody could open the item to correct it, so it was not a bad value
+    /// but a lost piece of work. Found by the delivery workflow test, which posts the form the
+    /// way a script would. Refused here, at the one place every route into the row passes,
+    /// rather than on each form.
+    /// </remarks>
+    private static T Known<T>(T value) where T : struct, Enum =>
+        Enum.IsDefined(value)
+            ? value
+            : throw new ArgumentOutOfRangeException(
+                typeof(T).Name.ToLowerInvariant(), value,
+                $"Choose the {(typeof(T) == typeof(Priority) ? "priority" : "kind of work")} from the list.");
 
     private DoneWhen RequiredLine(Guid lineId) =>
         _doneWhen.FirstOrDefault(one => one.Id == lineId)

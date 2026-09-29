@@ -145,3 +145,21 @@ public enum SignInOutcome
     /// </remarks>
     TooManyAttempts = 7,
 }
+
+/// <summary>An outcome as a person reads it.</summary>
+/// <remarks>
+/// Shared because two pages show sign-in history — somebody's own and the security centre's —
+/// and two copies of the same switch drift until one of them calls a lockout "Refused".
+/// </remarks>
+public static class SignInOutcomeWords
+{
+    public static string Say(this SignInOutcome outcome) => outcome switch
+    {
+        SignInOutcome.Succeeded => "Signed in",
+        SignInOutcome.LockedOut => "Refused — account locked",
+        SignInOutcome.Deactivated => "Refused — account withdrawn",
+        SignInOutcome.SecondFactorRequired => "Password accepted, second step owed",
+        SignInOutcome.RecoveryCodeUsed => "Signed in with a recovery code",
+        _ => "Refused",
+    };
+}

@@ -210,6 +210,218 @@ public class FormsThatChangeThingsTests(ApplicationFactory factory)
         return (browser, project.Id, client.Id);
     }
 
+    /// <summary>
+    /// Recording somebody's salary on their staff record records it.
+    /// </summary>
+    /// <remarks>
+    /// Found by trying to run a payroll in the running application: the terms form answered
+    /// with the success redirect and the salary column stayed empty. The staff record seeded
+    /// its forms behind a <c>_filled</c> flag, which is false again on every POST, so the
+    /// stored terms overwrote the posted ones before the handler read them. Payroll skips
+    /// anybody with no salary recorded, so this left the pay run empty with no fault shown
+    /// anywhere.
+    /// </remarks>
+    [Fact]
+    public async Task Recording_a_salary_on_the_staff_record_records_it()
+    {
+        var browser = await SignedInAsync("salaries@jiranisokotech.co.ke", Roles.Administrator);
+
+        Guid person;
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var people = scope.ServiceProvider.GetRequiredService<PeopleService>();
+
+            person = (await people.HireAsync(
+                "Salaried " + Guid.CreateVersion7().ToString("N")[^8..],
+                DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-30))).Id;
+        }
+
+        await PostAsync(browser, $"/people/{person}", "terms", new()
+        {
+            ["Pay.Salary"] = "150000",
+            ["Pay.Currency"] = "KES",
+        });
+
+        using var after = factory.Services.CreateScope();
+
+        var stored = await after.ServiceProvider.GetRequiredService<AppDbContext>().Employees
+            .AsNoTracking()
+            .SingleAsync(one => one.Id == person);
+
+        Assert.Equal(150_000_00, stored.Terms.SalaryMinorUnits);
+    }
+
+    /// <summary>
+    /// Changing your own phone number on your profile changes it.
+    /// </summary>
+    /// <remarks>
+    /// The same seeding fault as the staff record, on the page somebody edits themselves — and
+    /// behind it a second one. With the seeding fixed this still failed, silently: the personal
+    /// email box was empty, a browser posts an empty box as an empty string, and
+    /// <c>[EmailAddress]</c> calls an empty string invalid. The form showed no message and saved
+    /// nothing, so anybody without a personal email on file could not record a phone number.
+    /// The personal email is deliberately left empty here, because that is the case that failed.
+    /// </remarks>
+    [Fact]
+    public async Task Changing_your_own_phone_number_changes_it()
+    {
+        const string email = "profile-phone@jiranisokotech.co.ke";
+
+        var browser = await SignedInAsync(email, Roles.Developer);
+
+        Guid person;
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var people = scope.ServiceProvider.GetRequiredService<PeopleService>();
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+
+            person = (await people.HireAsync(
+                "Profiled " + Guid.CreateVersion7().ToString("N")[^8..],
+                DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-30))).Id;
+
+            await people.StartAsync(person);
+            await people.LinkAccountAsync(person, (await users.FindByEmailAsync(email))!.Id);
+        }
+
+        await PostAsync(browser, "/my-profile", "details", new()
+        {
+            ["Input.Phone"] = "+254 700 000 123",
+        });
+
+        using var after = factory.Services.CreateScope();
+
+        var stored = await after.ServiceProvider.GetRequiredService<AppDbContext>().Employees
+            .AsNoTracking()
+            .SingleAsync(one => one.Id == person);
+
+        Assert.Equal("+254 700 000 123", stored.Details.Phone);
+    }
+
+    /// <summary>
+    /// Recording what a candidate expects to be paid records it.
+    /// </summary>
+    /// <remarks>The same seeding fault again, on the candidate page.</remarks>
+    [Fact]
+    public async Task Recording_a_candidates_salary_expectation_records_it()
+    {
+        var browser = await SignedInAsync("candidates@jiranisokotech.co.ke", Roles.Administrator);
+
+        var candidate = JiranisokoTech.Domain.Recruitment.Candidate.Of(
+            "Grace Wanjiku",
+            $"grace-{Guid.CreateVersion7().ToString("N")[^8..]}@example.com",
+            null,
+            DateTimeOffset.UtcNow);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            database.Candidates.Add(candidate);
+            await database.SaveChangesAsync();
+        }
+
+        await PostAsync(browser, $"/hiring/candidates/{candidate.Id}", "expectation", new()
+        {
+            ["Expectation.Amount"] = "180000",
+            ["Expectation.Currency"] = "KES",
+        });
+
+        using var after = factory.Services.CreateScope();
+
+        var stored = await after.ServiceProvider.GetRequiredService<AppDbContext>().Candidates
+            .AsNoTracking()
+            .SingleAsync(one => one.Id == candidate.Id);
+
+        Assert.Equal(180_000_00, stored.ExpectedSalaryMinorUnits);
+    }
+
+    /// <summary>
+    /// Drafting pay for a period drafts that period.
+    /// </summary>
+    /// <remarks>
+    /// The payroll page set its dates to last month on every request, the POST included, so the
+    /// dates somebody typed were replaced before the handler read them: only the month just
+    /// gone could ever be drafted, and asking for another drafted that one and said "Drafted".
+    /// February 2024 because it is certainly not last month, and a leap-year February because
+    /// its last day is the one a default would get wrong.
+    /// </remarks>
+    [Fact]
+    public async Task Drafting_pay_for_a_period_drafts_that_period()
+    {
+        var browser = await SignedInAsync("payroll-periods@jiranisokotech.co.ke", Roles.Administrator);
+
+        await PostAsync(browser, "/payroll", "draft", new()
+        {
+            ["Input.From"] = "2024-02-01",
+            ["Input.To"] = "2024-02-29",
+        });
+
+        using var scope = factory.Services.CreateScope();
+
+        Assert.True(await scope.ServiceProvider.GetRequiredService<AppDbContext>().PayRuns
+            .AnyAsync(run => run.PeriodStart == new DateOnly(2024, 2, 1)
+                && run.PeriodEnd == new DateOnly(2024, 2, 29)));
+    }
+
+    /// <summary>
+    /// Setting a retention period sets it, and clearing it clears it.
+    /// </summary>
+    /// <remarks>
+    /// Clearing is the case that matters. Blank means keep for ever, so the form cannot use
+    /// "the box is empty" to mean "nothing was posted" the way the settings forms above it do —
+    /// that would refill a cleared period with the stored one and report it saved.
+    /// </remarks>
+    [Fact]
+    public async Task Setting_and_clearing_a_retention_period_is_recorded()
+    {
+        var browser = await SignedInAsync("retention@jiranisokotech.co.ke", Roles.Owner);
+
+        await PostAsync(browser, "/settings", "retention", new()
+        {
+            ["Keeping.CandidateMonths"] = "12",
+            ["Keeping.AuditYears"] = "10",
+        });
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var firm = await scope.ServiceProvider.GetRequiredService<AppDbContext>().Settings
+                .AsNoTracking()
+                .SingleAsync();
+
+            Assert.Equal(12, firm.CandidateRetentionMonths);
+            Assert.Equal(10, firm.AuditRetentionYears);
+        }
+
+        await PostAsync(browser, "/settings", "retention", new()
+        {
+            ["Keeping.CandidateMonths"] = string.Empty,
+            ["Keeping.AuditYears"] = "10",
+        });
+
+        using var after = factory.Services.CreateScope();
+
+        var cleared = await after.ServiceProvider.GetRequiredService<AppDbContext>().Settings
+            .AsNoTracking()
+            .SingleAsync();
+
+        Assert.Null(cleared.CandidateRetentionMonths);
+        Assert.Equal(10, cleared.AuditRetentionYears);
+    }
+
+    private static async Task PostAsync(
+        HttpClient browser, string path, string handler, Dictionary<string, string> values)
+    {
+        var page = await browser.GetAsync(path);
+
+        values["_handler"] = handler;
+
+        var fields = HtmlForm.Fill(await page.Content.ReadAsStringAsync(), values);
+
+        await browser.PostAsync(path, new FormUrlEncodedContent(fields));
+    }
+
     /// <summary>A work item held by one person, and somebody else to give it to.</summary>
     private async Task<(HttpClient Browser, Guid Item, Guid Brian)>
         AWorkItemAssignedToSomebody()

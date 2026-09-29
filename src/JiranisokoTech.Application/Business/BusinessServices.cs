@@ -165,7 +165,10 @@ public sealed class ClientService(IBusinessRepository business)
         string? contactEmail = null,
         CancellationToken cancellationToken = default)
     {
-        var handle = Slug.From(code ?? name);
+        // Blank as well as null. A browser posts an empty box as "", which "??" lets
+        // through, and a slug of nothing is refused — so leaving this optional field empty
+        // on the form refused the whole form. See SlugFallbackTests.
+        var handle = Slug.From(string.IsNullOrWhiteSpace(code) ? name : code);
 
         if (await business.ClientCodeTakenAsync(handle.Value, cancellationToken))
         {

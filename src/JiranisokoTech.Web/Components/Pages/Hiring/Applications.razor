@@ -109,16 +109,37 @@ else
                     </td>
                     <td class="actions">
                         <AuthorizeView Policy="@MovePolicy" Context="mayMove">
-                            @foreach (var next in Next(row.Status))
+                            @foreach (var next in Next(row.Status).Where(next => next != ApplicationStatus.Rejected))
                             {
                                 <form method="post" @formname="@($"move-{row.Id}-{next}")"
                                       @onsubmit="() => Move(row.Id, next)">
                                     <AntiforgeryToken />
-                                    <button type="submit"
-                                            class="@(next == ApplicationStatus.Rejected ? "danger" : "button button--quiet")">
+                                    <button type="submit" class="button button--quiet">
                                         @Spaced(next)
                                     </button>
                                 </form>
+                            }
+
+                            @*
+                                Rejecting asks why, because the application refuses a rejection
+                                with no reason. It used to be a bare button like the moves above,
+                                which posted nothing, so it was refused every time it was pressed
+                                and nobody could turn an applicant down from this page at all — and
+                                an application that never closes is one the retention sweep never
+                                erases. The model is bound without a form name: this form is one
+                                per row, and a name-bound model would never see what was typed in
+                                it. See PerRowFormTests.
+                            *@
+                            @if (Next(row.Status).Contains(ApplicationStatus.Rejected))
+                            {
+                                <EditForm Model="Rejecting" method="post"
+                                          FormName="@($"reject-{row.Id}")"
+                                          OnValidSubmit="() => Reject(row.Id)" class="inline">
+                                    <DataAnnotationsValidator />
+                                    <InputText @bind-Value="Rejecting.Reason" placeholder="Why not" />
+                                    <button type="submit" class="danger">Reject</button>
+                                    <ValidationMessage For="() => Rejecting.Reason" />
+                                </EditForm>
                             }
                         </AuthorizeView>
 
@@ -244,6 +265,25 @@ else
 
     private Task Move(Guid id, ApplicationStatus status) =>
         TryAsync(() => Service.MoveApplicationAsync(id, status));
+
+    private Task Reject(Guid id) =>
+        TryAsync(() => Service.MoveApplicationAsync(id, ApplicationStatus.Rejected, Rejecting.Reason));
+
+    private RejectInput _rejecting = new();
+
+    [SupplyParameterFromForm]
+    private RejectInput Rejecting
+    {
+        get => _rejecting;
+        set => _rejecting = value ?? new RejectInput();
+    }
+
+    private sealed class RejectInput
+    {
+        [Required(ErrorMessage = "Say why they were not taken forward.")]
+        [StringLength(2000)]
+        public string Reason { get; set; } = string.Empty;
+    }
 
     private Task Hire(Guid id) => TryAsync(() => Service.HireAsync(id));
 

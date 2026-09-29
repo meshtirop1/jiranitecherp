@@ -217,28 +217,61 @@ if (app.Environment.IsDevelopment())
  * grants it to nobody and the feature refuses its own users by name. Doing it
  * here means the database cannot be out of step with the code that reads it.
  */
-using (var scope = app.Services.CreateScope())
+/*
+ * Startup's work against the database, inside one catch.
+ *
+ * Without it a database that cannot be reached killed the process with the runtime's own
+ * report of an unhandled exception: twenty lines of plain text on standard error, in the middle
+ * of a JSON log, which a collector reads as twenty unrelated lines and nobody is alerted by.
+ * Found by starting a published copy while PostgreSQL was down. Now it is one Critical record
+ * saying why, flushed before exiting with a failure code — which is also what tells Docker to
+ * restart the container and try again.
+ */
+try
 {
-    var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    using (var scope = app.Services.CreateScope())
+    {
+        var database = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-    await database.PrepareAsync(
-        scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Database"));
+        await database.PrepareAsync(
+            scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Database"));
 
-    await scope.ServiceProvider.GetRequiredService<RoleSeeder>().SeedAsync();
+        await scope.ServiceProvider.GetRequiredService<RoleSeeder>().SeedAsync();
 
-    // And the first account, if this installation has none and one is
-    // configured. After that it is a no-op on every start.
-    await scope.ServiceProvider.GetRequiredService<OwnerSeeder>().SeedAsync();
+        // And the first account, if this installation has none and one is
+        // configured. After that it is a no-op on every start.
+        await scope.ServiceProvider.GetRequiredService<OwnerSeeder>().SeedAsync();
 
-    /*
-     * The firm's own settings row, which the service would otherwise create on
-     * first use. Doing it here removes a race that only exists once: the row
-     * has a fixed primary key, so two requests arriving together on a fresh
-     * database would both find nothing, both insert, and the second would fail
-     * on the key. Narrow, but the window is the first minute of a new
-     * installation, which is exactly when two people are likely to be looking.
-     */
-    await scope.ServiceProvider.GetRequiredService<SettingsService>().CurrentAsync();
+        // Second-factor secrets written before they were encrypted. Nothing on every start
+        // after the first. Resolved as the store Identity itself uses, so that the cast fails
+        // loudly here if a later registration ever replaces it.
+        await ((ProtectedUserStore)scope.ServiceProvider
+                .GetRequiredService<Microsoft.AspNetCore.Identity.IUserStore<ApplicationUser>>())
+            .ProtectExistingAsync();
+
+        /*
+         * The firm's own settings row, which the service would otherwise create on
+         * first use. Doing it here removes a race that only exists once: the row
+         * has a fixed primary key, so two requests arriving together on a fresh
+         * database would both find nothing, both insert, and the second would fail
+         * on the key. Narrow, but the window is the first minute of a new
+         * installation, which is exactly when two people are likely to be looking.
+         */
+        await scope.ServiceProvider.GetRequiredService<SettingsService>().CurrentAsync();
+    }
+}
+catch (Exception exception)
+{
+    app.Logger.LogCritical(
+        exception,
+        "The application could not start: {Reason}",
+        exception.GetBaseException().Message);
+
+    // Disposing the host flushes the console logger, whose queue would otherwise be lost with
+    // the process — taking the one line that explains the exit with it.
+    await app.DisposeAsync();
+
+    return 1;
 }
 
 // Ending a session. A POST, so it cannot be triggered by a link.
@@ -250,6 +283,9 @@ app.MapThemeEndpoints();
 
 // A CV, to somebody allowed to read it.
 app.MapCvEndpoints();
+
+// Everything held about one person, for a subject access request.
+app.MapPrivacyEndpoints();
 
 // And any other attachment, to somebody allowed to read what it is attached to.
 app.MapDocumentEndpoints();
@@ -295,6 +331,8 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.Run();
+
+return 0;
 
 /// <summary>
 /// Named so the test project can drive the real application through

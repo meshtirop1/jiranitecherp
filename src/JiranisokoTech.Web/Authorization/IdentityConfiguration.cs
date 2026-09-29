@@ -49,6 +49,10 @@ public static class IdentityConfiguration
             })
             .AddEntityFrameworkStores<AppDbContext>()
 
+            // Replaces the store just registered, so that the second-factor secrets are
+            // encrypted before they are written. See ProtectedUserStore for why.
+            .AddUserStore<ProtectedUserStore>()
+
             /*
              * Our own sign-in manager, registered here rather than left to the
              * default. It carries two rules — a deactivated account cannot sign
@@ -75,6 +79,9 @@ public static class IdentityConfiguration
          */
         services.AddScoped<SignInThrottle>();
         services.AddScoped<TwoFactor>();
+
+        // Which secrets are set and where from, for the security centre. Never their values.
+        services.AddSingleton<SecretInventory>();
 
         /*
          * How long a session may go on believing what it was told, and the one

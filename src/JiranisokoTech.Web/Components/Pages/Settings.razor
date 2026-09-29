@@ -201,6 +201,52 @@ else
         <button type="submit">Save</button>
     </EditForm>
 
+    @*
+        Section 53. Blank keeps a kind of record for ever, which is where every installation
+        starts, and the sweep that acts on these runs nightly as retention.sweep on the
+        machinery screen. The floors are stated beside each box rather than discovered by
+        being refused, because each of these deletes something that cannot be put back.
+    *@
+    <EditForm Model="Keeping" method="post" OnValidSubmit="SaveKeeping" FormName="retention"
+              class="panel stack">
+        <DataAnnotationsValidator />
+
+        <h2>How long records are kept</h2>
+
+        <p class="subtle">
+            Blank keeps them. Anything set here is removed by a nightly sweep and cannot be
+            brought back, so the shortest each can be is stated beside it.
+        </p>
+
+        <div class="fields">
+            <label>
+                <span>Unsuccessful applicants, months after their last application closed</span>
+                <InputNumber @bind-Value="Keeping.CandidateMonths" min="@FirmSettings.FewestCandidateMonths" />
+                <span class="subtle">Name, contact details, CV and what they wrote are erased; that somebody applied is kept. At least @FirmSettings.FewestCandidateMonths.</span>
+            </label>
+
+            <label>
+                <span>Documents on leavers' staff records, years after they left</span>
+                <InputNumber @bind-Value="Keeping.LeaverDocumentYears" min="@FirmSettings.FewestLeaverDocumentYears" />
+                <span class="subtle">At least @FirmSettings.FewestLeaverDocumentYears, the period employment records must be kept.</span>
+            </label>
+
+            <label>
+                <span>Withdrawn accounts, months after they were withdrawn</span>
+                <InputNumber @bind-Value="Keeping.WithdrawnAccountMonths" min="@FirmSettings.FewestWithdrawnAccountMonths" />
+                <span class="subtle">The login's address and name are erased; what the account did stays on the trail. At least @FirmSettings.FewestWithdrawnAccountMonths.</span>
+            </label>
+
+            <label>
+                <span>The audit trail, years</span>
+                <InputNumber @bind-Value="Keeping.AuditYears" min="@FirmSettings.FewestAuditYears" />
+                <span class="subtle">At least @FirmSettings.FewestAuditYears. Each removal is itself recorded on the trail.</span>
+            </label>
+        </div>
+
+        <button type="submit">Save</button>
+    </EditForm>
+
     <p><a href="/settings/keys">API keys</a> — what other systems may read from this one.</p>
 
     <p>
@@ -250,6 +296,18 @@ else
         set => _billing = value ?? new BillingInput();
     }
 
+    private KeepingInput _keeping = new();
+
+    [SupplyParameterFromForm(FormName = "retention")]
+    private KeepingInput Keeping
+    {
+        get => _keeping;
+        set => _keeping = value ?? new KeepingInput();
+    }
+
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
     private FirmSettings? Firm { get; set; }
 
     private bool AnyInvoices { get; set; }
@@ -295,6 +353,20 @@ else
                 : null;
         }
 
+        /*
+         * FirstLook rather than an emptiness test like the forms above. Blank is a real answer
+         * here — keep for ever — so "the box is empty" cannot mean "nothing was posted": clearing
+         * a period would be refilled with the stored one before the handler read it, and the
+         * page would say saved while keeping the old value.
+         */
+        if (FirstLook.ThisTime(Request))
+        {
+            Keeping.CandidateMonths = Firm.CandidateRetentionMonths;
+            Keeping.LeaverDocumentYears = Firm.LeaverDocumentRetentionYears;
+            Keeping.WithdrawnAccountMonths = Firm.WithdrawnAccountRetentionMonths;
+            Keeping.AuditYears = Firm.AuditRetentionYears;
+        }
+
         AnyInvoices = await Service.HasInvoicedAsync();
     }
 
@@ -317,6 +389,12 @@ else
                 ? (long)decimal.Round(whole * 100m, 0, MidpointRounding.AwayFromZero)
                 : null);
     });
+
+    private Task SaveKeeping() => TryAsync(() => Service.RetainForAsync(
+        Keeping.CandidateMonths,
+        Keeping.LeaverDocumentYears,
+        Keeping.WithdrawnAccountMonths,
+        Keeping.AuditYears));
 
     private async Task TryAsync(Func<Task> act)
     {
@@ -382,7 +460,7 @@ else
         [StringLength(40)]
         public string? Telephone { get; set; }
 
-        [EmailAddress(ErrorMessage = "That does not look like an email address.")]
+        [EmailOrBlank]
         [StringLength(320)]
         public string? Email { get; set; }
 
@@ -439,5 +517,16 @@ else
 
         [Range(0, 365, ErrorMessage = "From zero days to a year.")]
         public int PaymentTermDays { get; set; } = 30;
+    }
+
+    private sealed class KeepingInput
+    {
+        public int? CandidateMonths { get; set; }
+
+        public int? LeaverDocumentYears { get; set; }
+
+        public int? WithdrawnAccountMonths { get; set; }
+
+        public int? AuditYears { get; set; }
     }
 }

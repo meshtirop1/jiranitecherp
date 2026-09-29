@@ -146,7 +146,7 @@ else
                 {
                     <tr class="@(attempt.Succeeded ? "" : "account__attempt--failed")">
                         <td>@TimeZoneInfo.ConvertTime(attempt.At, Zone).ToString("d MMM yyyy, HH:mm")</td>
-                        <td>@Describe(attempt.Outcome)</td>
+                        <td>@attempt.Outcome.Say()</td>
                         <td>@(attempt.IpAddress ?? "Unknown")</td>
                         @* The browser's own description of itself: useful for
                            recognising a device, and never to be trusted for
@@ -281,14 +281,4 @@ else
             return TimeZoneInfo.Utc;
         }
     }
-
-    private static string Describe(SignInOutcome outcome) => outcome switch
-    {
-        SignInOutcome.Succeeded => "Signed in",
-        SignInOutcome.LockedOut => "Refused — account locked",
-        SignInOutcome.Deactivated => "Refused — account withdrawn",
-        SignInOutcome.SecondFactorRequired => "Password accepted, second step owed",
-        SignInOutcome.RecoveryCodeUsed => "Signed in with a recovery code",
-        _ => "Refused",
-    };
 }

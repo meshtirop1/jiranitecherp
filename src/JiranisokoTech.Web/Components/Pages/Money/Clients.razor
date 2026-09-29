@@ -168,7 +168,7 @@ else
         [StringLength(200)]
         public string? ContactName { get; set; }
 
-        [EmailAddress(ErrorMessage = "That does not look like an email address.")]
+        [EmailOrBlank]
         [StringLength(320)]
         public string? ContactEmail { get; set; }
     }

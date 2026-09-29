@@ -79,13 +79,25 @@ public sealed class ProjectMoneyQueries(AppDbContext database)
              * has no total column — the total is the lines, which is what stops a header
              * figure and its detail from ever disagreeing. The cost of that decision is
              * paid here, in one join.
+             *
+             * The two-argument SelectMany, and the difference matters. Written as
+             * invoice.Lines.Select(line => new { invoice.ProjectId, ... }), the inner lambda
+             * reaches back to the invoice, which EF can only express as a lateral join —
+             * APPLY — and SQLite has none. PostgreSQL ran it, so production was fine, but the
+             * test database could not, which is why this screen, the one that answers whether
+             * a project made money, had no test at all. With the invoice passed in as the
+             * second argument, it is an ordinary inner join on both. A scalar subquery per
+             * invoice was tried first and rejected: at 40,000 invoices it took PostgreSQL
+             * from 1.2 seconds to 10.
              */
-            .SelectMany(invoice => invoice.Lines.Select(line => new
-            {
-                invoice.ProjectId,
-                invoice.Currency,
-                Amount = line.UnitMinorUnits * line.Quantity,
-            }))
+            .SelectMany(
+                invoice => invoice.Lines,
+                (invoice, line) => new
+                {
+                    invoice.ProjectId,
+                    invoice.Currency,
+                    Amount = line.UnitMinorUnits * line.Quantity,
+                })
             .GroupBy(row => new { row.ProjectId, row.Currency })
             .Select(group => new
             {
