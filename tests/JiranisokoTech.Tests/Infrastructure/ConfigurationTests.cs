@@ -18,7 +18,7 @@ namespace JiranisokoTech.Tests.Infrastructure;
 /// </remarks>
 public partial class ConfigurationTests
 {
-    [Fact]
+    [RepositoryFact]
     public void Every_variable_the_compose_file_reads_is_in_the_example_and_the_docs()
     {
         var root = Root();
@@ -46,7 +46,7 @@ public partial class ConfigurationTests
     /// <summary>
     /// Every code host the application understands can be given its secret in a container.
     /// </summary>
-    [Fact]
+    [RepositoryFact]
     public void Every_code_host_has_its_secret_passed_through()
     {
         var compose = File.ReadAllText(Path.Combine(Root(), "docker", "compose.yaml"));

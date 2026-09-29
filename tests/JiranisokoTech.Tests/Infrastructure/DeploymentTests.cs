@@ -26,7 +26,7 @@ public class DeploymentTests
     /// A host that already runs nginx in front of its containers has 80 and 443 taken. A proxy
     /// that started by default would fail to bind them and take the whole <c>up</c> with it.
     /// </remarks>
-    [Fact]
+    [RepositoryFact]
     public void The_proxy_is_behind_a_profile()
     {
         var proxy = Service("proxy");
@@ -43,7 +43,7 @@ public class DeploymentTests
     /// it, and compose passes an unset variable as an empty string. The comment beside it said
     /// blank was fine.
     /// </remarks>
-    [Fact]
+    [RepositoryFact]
     public void The_proxy_is_never_given_an_empty_email() =>
         Assert.Matches(@"ACME_EMAIL: \$\{ACME_EMAIL:-[^}\s]+@[^}\s]+\}", Service("proxy"));
 
@@ -54,7 +54,7 @@ public class DeploymentTests
     /// The application sets all of them. Two places setting the same header is how they come to
     /// disagree, and a browser given two content security policies enforces both.
     /// </remarks>
-    [Fact]
+    [RepositoryFact]
     public void The_proxy_adds_no_security_headers()
     {
         var caddy = File.ReadAllText(Path.Combine(Root, "docker", "Caddyfile"));
@@ -70,14 +70,14 @@ public class DeploymentTests
     }
 
     /// <summary>The certificates survive the proxy being recreated.</summary>
-    [Fact]
+    [RepositoryFact]
     public void The_certificates_are_on_a_volume() =>
         Assert.Contains("caddy-data:/data", Service("proxy"));
 
     /// <summary>
     /// The application and the database are not published to the internet.
     /// </summary>
-    [Fact]
+    [RepositoryFact]
     public void Only_the_proxy_listens_beyond_this_host()
     {
         Assert.Contains("\"127.0.0.1:${WEB_PORT:-8080}:8080\"", Service("web"));

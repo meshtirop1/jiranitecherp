@@ -15,7 +15,7 @@ namespace JiranisokoTech.Tests.Infrastructure;
 /// </remarks>
 public partial class DocumentationTests
 {
-    [Fact]
+    [RepositoryFact]
     public void Every_relative_link_in_the_documents_resolves()
     {
         var root = Root();
@@ -47,7 +47,7 @@ public partial class DocumentationTests
         Assert.True(broken.Count == 0, "Links to nothing:\n  " + string.Join("\n  ", broken));
     }
 
-    [Fact]
+    [RepositoryFact]
     public void The_architecture_document_covers_every_heading_section_2_asks_for()
     {
         var architecture = File.ReadAllText(Path.Combine(Root(), "docs", "architecture.md"));
