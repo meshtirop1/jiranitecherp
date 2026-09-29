@@ -473,7 +473,39 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDomainEventHandler<PullRequestMerged>,
             PublishToSubscribers<PullRequestMerged>>();
 
+        AddAutomation(services);
+
         return services;
+    }
+
+    /// <summary>
+    /// The automation engine. Section 31, and sections 64 to 66 as the rules it ships with.
+    /// </summary>
+    /// <remarks>
+    /// The matcher is generic and registered once for each event in <c>Triggers.All</c>, the
+    /// same way the outgoing webhooks are — so the list of what a rule may start from is one
+    /// file, and an event added to the domain somewhere else cannot quietly begin firing rules.
+    /// </remarks>
+    private static void AddAutomation(IServiceCollection services)
+    {
+        services.AddScoped<Application.Automation.IAutomationRepository,
+            Automation.AutomationRepository>();
+        services.AddScoped<Application.Automation.AutomationService>();
+        services.AddScoped<Automation.AutomationQueries>();
+        services.AddScoped<Automation.ActionPerformer>();
+
+        foreach (var trigger in Application.Automation.Triggers.All)
+        {
+            services.AddScoped(
+                typeof(IDomainEventHandler<>).MakeGenericType(trigger.Event),
+                typeof(Automation.MatchRules<>).MakeGenericType(trigger.Event));
+        }
+
+        services.AddScoped<IDomainEventHandler<Domain.Automation.AutomationRunDue>,
+            Automation.CarryOutAutomation>();
+
+        services.AddScoped<IRecurringJob, Automation.ReleaseDelayedAutomation>();
+        services.AddScoped<IRecurringJob, Automation.AnnounceOverdueInvoices>();
     }
 
     /// <summary>

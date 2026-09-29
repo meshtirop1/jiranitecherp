@@ -271,6 +271,40 @@ public static class Letters
         return Compose(toAddress, toName, subject, text, link);
     }
 
+    /// <summary>
+    /// A letter one of the firm's automation rules was written to send.
+    /// </summary>
+    /// <remarks>
+    /// The last line names the rule. Somebody receiving a message nobody in particular wrote
+    /// should be able to tell who to ask to stop it, and "an automation rule called Welcome a
+    /// new client" is an answer; a letter signed only by the firm is not.
+    /// </remarks>
+    public static EmailMessage FromARule(
+        string toAddress, string toName, string subject, string body, string? link, string rule)
+    {
+        var text = link is { Length: > 0 }
+            ? $"""
+                Hello {toName},
+
+                {body}
+
+                {link}
+
+                Sent by the automation rule "{rule}".
+                {Signature}
+                """
+            : $"""
+                Hello {toName},
+
+                {body}
+
+                Sent by the automation rule "{rule}".
+                {Signature}
+                """;
+
+        return Compose(toAddress, toName, subject, text, link);
+    }
+
     /// <summary>Somebody is waiting on this person to decide something.</summary>
     public static EmailMessage AwaitingDecision(
         string toAddress,

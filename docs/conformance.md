@@ -14,16 +14,16 @@ the evidence for each and the gaps named. The section-by-section status is in
 |---|---|---|---|
 | ◐ | 1 | Everything is connected | Work links to projects, commits, pull requests, builds, deployments, time and invoices; a hire becomes a staff record, onboarding and payroll; an incident names the service. The end-to-end tests walk three chains across modules. Not yet connected: a knowledge base and help desk (sections 25, 26), which do not exist. |
 | ✅ | 2 | Avoid duplicate data entry | A branch named for a task links its commits without anybody typing the link; a hire is made from the accepted offer; invoice lines come from approved hours. |
-| ◐ | 3 | Automate repetitive administrative work | Git activity, reminders, renewals, retention and outbound webhooks run on their own. There is no rule engine anybody can configure (section 31). |
+| ◐ | 3 | Automate repetitive administrative work | Git activity, reminders, renewals, retention and outbound webhooks run on their own, and WHEN / IF / THEN rules on /automation can raise work, notify and add checklist lines (section 31; [automation](automation.md)). Rules cannot yet deploy, approve or pay, or combine conditions with OR. |
 | ✅ | 4 | Developers work in their tools and the ERP follows | Pushes, pull requests, reviews, builds and deployments arrive by signed webhook from four hosts; a merge moves the work to review. |
 | ✅ | 5 | Every important action generates an event | Domain events are written through a transactional outbox and dispatched with retry and dead-lettering; subscribers can receive them by webhook. |
 | ✅ | 6 | Every important change is auditable | Every change is written in the same transaction, including role grants and complex-type members; sensitive reads are recorded too. See section 29 in the checklist. |
-| ✅ | 7 | Permissions are granular | 87 permissions of the form `area.action`, eighteen roles, reach for department, project, team and own-record scope, separations held by tests. See [architecture](architecture.md#authorization-strategy). |
+| ✅ | 7 | Permissions are granular | 92 permissions of the form `area.action`, eighteen roles, reach for department, project, team and own-record scope, separations held by tests. See [architecture](architecture.md#authorization-strategy). |
 | ☐ | 8 | Multi-company | **Out of scope by agreement.** One firm; `FirmSettings` is one row. |
 | ✅ | 9 | Future modules without rewrites | Layered, with the layering now checked by `LayeringTests`; a module is a domain folder, a service and pages, and the outbox, audit and permission machinery apply to it without change. |
 | ◐ | 10 | AI throughout | An assistant that looks things up as the signed-in person, project readings labelled as inference, and recruitment drafts (sections 36, 37; [ai](ai.md)). Off until an API key is set. Not yet in most modules, and not yet exercised against the live API with a working key. |
 | ◐ | 11 | Every module exposes an API | `/api/v1` covers clients, invoices and payments, projects, work, job openings and feature flags, with scoped keys. HR, payroll, recruitment's internal side, assets, incidents, procurement and contracts have none. |
-| ◐ | 12 | Every module supports automation | Every module raises events and outbound webhooks can carry them; no module can yet be driven by configurable rules. |
+| ◐ | 12 | Every module supports automation | Every module raises events, and the rules engine can act on 27 of them; rules can raise work, notify, email staff, add checklist lines and call a webhook subscription. What a rule can do is limited to those actions. |
 | ✅ | 13 | Responsive | Fluid layout; every table carries its own horizontal scroll so the page never widens. Checked at 375 pixels on the pages changed in this work. |
 | ◐ | 14 | Desktop, tablet and mobile | As above; there is no automated check across widths, only the checks made by hand. |
 | ✅ | 15 | Fast and professional | Every read path measured against a million rows — see [performance](performance.md). |
@@ -60,7 +60,7 @@ per domain, with the same name in each layer.
 | Documents | `Documents` | ✅ |
 | Knowledge | — | ☐ section 25 |
 | Notifications | `Notices`, `Mail` | ✅ |
-| Automation | `Scheduling`, `Messaging`, `Integrations` (outbound webhooks) | ◐ no rule engine |
+| Automation | `Automation`, `Scheduling`, `Messaging`, `Integrations` (outbound webhooks) | ◐ rules engine built; no deploy, approve or pay actions |
 | AI | `Ai` in Application and Infrastructure | ◐ assistant, project reading, recruitment drafts; see [ai](ai.md) |
 | Reporting | `Reporting` | ✅ |
 | Audit | `Audit` | ✅ |
@@ -83,7 +83,7 @@ What each item means here, and whether the system holds to it everywhere or only
 | ✅ | Notifications | In-app notices and mail, through the outbox so a failed send is retried. |
 | ✅ | Audit logging | See principle 6. |
 | ✅ | Tests | 1,400 and more, including three end-to-end workflows and a PostgreSQL run in CI. |
-| ◐ | Documentation | Architecture, configuration, deployment, git integration, testing, security, performance, privacy and this file. Of section 85's list, `development`, `database`, `api`, `automation` and `ai` are not written; `setup` is configuration and the README, and `authentication` and `authorization` are in security. |
+| ◐ | Documentation | Architecture, configuration, deployment, git integration, testing, security, automation, AI, backups, disaster recovery, performance, privacy and this file. Of section 85's list, `development`, `database` and `api` are not written; `setup` is configuration and the README, and `authentication` and `authorization` are in security. |
 | ◐ | Accessibility | Every visible form control on every page with a fixed address has a name a screen reader can announce, checked by the page sweep; the first run of that check found the tax-band table, the chart of accounts and the navigation toggle unnamed. Pages behind an identifier, colour contrast and keyboard order are not checked by anything. |
 | ✅ | Mobile responsiveness | See principle 13. |
 

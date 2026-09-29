@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using JiranisokoTech.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace JiranisokoTech.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260929024613_AutomationRules")]
+    partial class AutomationRules
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3421,67 +3424,6 @@ namespace JiranisokoTech.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("work_item_links", (string)null);
-                });
-
-            modelBuilder.Entity("JiranisokoTech.Infrastructure.Ai.AiExchange", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("AccountId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AskedBy")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<DateTimeOffset>("At")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Feature")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("InputTokens")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Lookups")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<long>("Milliseconds")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Model")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<int>("Outcome")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("OutputTokens")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Problem")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("Question")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<Guid?>("SubjectId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("At");
-
-                    b.HasIndex("AccountId", "At");
-
-                    b.ToTable("ai_exchanges", (string)null);
                 });
 
             modelBuilder.Entity("JiranisokoTech.Infrastructure.Identity.AccessReview", b =>

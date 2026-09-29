@@ -43,7 +43,7 @@ secret in configuration, and a delivery already seen is acknowledged and not pro
 
 ## What people can do
 
-Permissions, not roles, are what the code checks: 87 of them, each named `area.action`. A role
+Permissions, not roles, are what the code checks: 92 of them, each named `area.action`. A role
 is a bundle of permissions in `Application/Authorization/Permissions.cs`, synced into the
 database on every start. There are eighteen roles — see [architecture](architecture.md#authorization-strategy)
 for the list and why two of the brief's names are absent.
@@ -58,6 +58,12 @@ for the list and why two of the brief's names are absent.
   approving and paying a claim, drafting and sending an invoice, agreeing a contract and
   invoicing against it, ordering goods and receiving them, running the payroll and paying it,
   deciding an erasure and carrying it out. `PermissionTests` fails the build if one does.
+- **Rules and models act on behalf of people, and are permissioned as such.** Writing an
+  automation rule is `automation.manage`, held by the owner and administrators only: a rule
+  acts as the firm — it raises work anywhere, tells any role and notifies webhook subscribers —
+  so writing one is an administrative act whatever it looks like. The AI assistant looks things
+  up as the signed-in person and can see nothing they could not open; its permissions decide
+  whose data may be sent to the provider at all. See [automation](automation.md) and [ai](ai.md).
 - **No permission without a door.** `EnforcementTests` fails the build for a permission that is
   granted and checked nowhere.
 

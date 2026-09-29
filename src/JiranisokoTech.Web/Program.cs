@@ -262,6 +262,12 @@ try
          * installation, which is exactly when two people are likely to be looking.
          */
         await scope.ServiceProvider.GetRequiredService<SettingsService>().CurrentAsync();
+
+        // The automations sections 64 to 66 describe, switched off, if they are not already
+        // there. Once written they belong to the firm; a later start never overwrites them.
+        await scope.ServiceProvider
+            .GetRequiredService<JiranisokoTech.Application.Automation.AutomationService>()
+            .SeedTemplatesAsync();
     }
 }
 catch (Exception exception)

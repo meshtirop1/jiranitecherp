@@ -1,0 +1,740 @@
+@page "/automation/{Id:guid}"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Automation
+@using JiranisokoTech.Domain.Automation
+@using JiranisokoTech.Infrastructure.Automation
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.AutomationView)]
+@inject AutomationService Engine
+@inject AutomationQueries Queries
+@inject NavigationManager Navigation
+
+@if (Rule is null || Trigger is null)
+{
+    <PageTitle>Rule not found — Jiranisoko Delivery</PageTitle>
+
+    <h1>No such rule</h1>
+    <p>Nothing here has that identifier. <a href="/automation">Back to the rules</a>.</p>
+}
+else
+{
+    <PageTitle>@Rule.Name — Jiranisoko Delivery</PageTitle>
+
+    <nav class="crumbs"><a href="/automation">Automation</a></nav>
+
+    <div class="page-head">
+        <h1>@Rule.Name</h1>
+        @if (Rule.IsOn)
+        {
+            <span class="pill pill--done">On</span>
+        }
+        else
+        {
+            <span class="pill pill--quiet">Off</span>
+        }
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Rule.Description is { } why)
+    {
+        <p class="instructions">@why</p>
+    }
+
+    <dl class="facts">
+        <dt>When</dt>
+        <dd>
+            @Trigger.Label@(Rule.DelayMinutes > 0 ? $", then wait {Rules.Delay(Rule.DelayMinutes)}" : "")
+        </dd>
+
+        <dt>If</dt>
+        <dd>
+            @if (Rule.Conditions.Count == 0)
+            {
+                <span class="subtle">Always — there are no conditions.</span>
+            }
+            else
+            {
+                <ul class="plain">
+                    @foreach (var condition in Rule.Conditions)
+                    {
+                        <li>
+                            @Conditions.Describe(Trigger, condition)
+                            <AuthorizeView Policy="@Managing" Context="mayDrop">
+                                <EditForm Model="Nothing" method="post"
+                                          FormName="@($"drop-condition-{condition.Id}")"
+                                          OnValidSubmit="() => DropCondition(condition.Id)" class="inline">
+                                    <button type="submit" class="button--quiet">Remove</button>
+                                </EditForm>
+                            </AuthorizeView>
+                        </li>
+                    }
+                </ul>
+            }
+        </dd>
+
+        <dt>Then</dt>
+        <dd>
+            @if (Rule.Actions.Count == 0)
+            {
+                <span class="subtle">Nothing yet. A rule has to do something before it can be switched on.</span>
+            }
+            else
+            {
+                <ol>
+                    @foreach (var action in Rule.Actions)
+                    {
+                        <li>
+                            @Wording.Describe(Trigger, action)@(action.Kind == AutomationActionKind.Webhook ? $" — {SubscriptionName(action.SubscriptionId)}" : "")
+                            @if (Who.Parse(action.Who) is (WhoKind.Person, var person))
+                            {
+                                <span class="subtle">(@PersonName(person))</span>
+                            }
+                            <AuthorizeView Policy="@Managing" Context="mayDrop">
+                                <EditForm Model="Nothing" method="post"
+                                          FormName="@($"drop-action-{action.Id}")"
+                                          OnValidSubmit="() => DropAction(action.Id)" class="inline">
+                                    <button type="submit" class="button--quiet">Remove</button>
+                                </EditForm>
+                            </AuthorizeView>
+                        </li>
+                    }
+                </ol>
+            }
+        </dd>
+
+        <dt>Where it came from</dt>
+        <dd>
+            @(Rule.IsTemplate ? "Shipped with the application." : "Written here.")
+            Written @Rule.CreatedAt.ToString("d MMM yyyy")@(Rule.SwitchedOnAt is { } on ? $", last switched on {on:d MMM yyyy}" : "").
+        </dd>
+    </dl>
+
+    <AuthorizeView Policy="@Managing" Context="mayManage">
+        <div class="actions">
+            @if (Rule.IsOn)
+            {
+                <EditForm Model="Nothing" method="post" FormName="switch-off"
+                          OnValidSubmit="SwitchOff" class="inline">
+                    <button type="submit" class="danger">Switch it off</button>
+                </EditForm>
+            }
+            else
+            {
+                <EditForm Model="Nothing" method="post" FormName="switch-on"
+                          OnValidSubmit="SwitchOn" class="inline">
+                    <button type="submit">Switch it on</button>
+                </EditForm>
+            }
+
+            @if (!Rule.IsTemplate && Runs.Count == 0)
+            {
+                <EditForm Model="Nothing" method="post" FormName="delete"
+                          OnValidSubmit="Delete" class="inline">
+                    <button type="submit" class="danger">Delete it</button>
+                </EditForm>
+            }
+        </div>
+
+        <p class="subtle">
+            Text can carry what the event says: @string.Join(", ", Trigger.Fields.Select(one => "{" + one.Name + "}")),
+            and {@Wording.RuleName} for this rule's name.
+        </p>
+
+        <EditForm Model="Condition" method="post" OnValidSubmit="AddCondition" FormName="condition" class="panel stack">
+            <DataAnnotationsValidator />
+
+            <h2>Add a condition</h2>
+
+            <label>
+                <span>What the event says about</span>
+                <InputSelect @bind-Value="Condition.Field">
+                    <option value="">Choose…</option>
+                    @foreach (var field in Trigger.Testable)
+                    {
+                        <option value="@field.Name">@field.Label</option>
+                    }
+                </InputSelect>
+                <ValidationMessage For="() => Condition.Field" />
+            </label>
+
+            <label>
+                <span>Compared how</span>
+                <InputSelect @bind-Value="Condition.Operator">
+                    @foreach (var comparison in Enum.GetValues<ConditionOperator>())
+                    {
+                        <option value="@comparison">@Conditions.Said(comparison)</option>
+                    }
+                </InputSelect>
+            </label>
+
+            <label>
+                <span>With</span>
+                <InputText @bind-Value="Condition.Value" />
+                <span class="subtle">
+                    A number, a date written 2026-10-01, yes or no, or one of the names below.
+                    Nothing for "is filled in" and "is empty".
+                </span>
+            </label>
+
+            @foreach (var field in Trigger.Testable.Where(one => one.Choices.Count > 0))
+            {
+                <p class="subtle">@field.Label is one of: @string.Join(", ", field.Choices).</p>
+            }
+
+            <button type="submit">Add it</button>
+        </EditForm>
+
+        <EditForm Model="Work" method="post" OnValidSubmit="AddWork" FormName="work" class="panel stack">
+            <DataAnnotationsValidator />
+
+            <h2>Then raise a piece of work</h2>
+
+            <label>
+                <span>Title</span>
+                <InputText @bind-Value="Work.Title" placeholder="Follow up on {Name}" />
+                <ValidationMessage For="() => Work.Title" />
+            </label>
+
+            <label>
+                <span>Detail <span class="subtle">(optional)</span></span>
+                <InputTextArea @bind-Value="Work.Detail" rows="3" />
+            </label>
+
+            <label>
+                <span>For</span>
+                <InputSelect @bind-Value="Work.Who">
+                    <option value="">Nobody yet</option>
+                    @foreach (var (value, said) in Who.Choices(Trigger, roles: false))
+                    {
+                        <option value="@value">@said</option>
+                    }
+                    @foreach (var (personId, name) in People)
+                    {
+                        <option value="person:@personId">@name</option>
+                    }
+                </InputSelect>
+            </label>
+
+            <label>
+                <span>On</span>
+                <InputSelect @bind-Value="Work.Where">
+                    <option value="">No project</option>
+                    @if (Trigger.Project is { } project)
+                    {
+                        <option value="field:@project">The project it names</option>
+                    }
+                    @foreach (var (projectId, name) in Projects)
+                    {
+                        <option value="project:@projectId">@name</option>
+                    }
+                </InputSelect>
+            </label>
+
+            <label>
+                <span>Due, in days from when it is raised <span class="subtle">(optional)</span></span>
+                <InputNumber @bind-Value="Work.Days" min="0" max="365" />
+                <ValidationMessage For="() => Work.Days" />
+            </label>
+
+            <button type="submit">Add it</button>
+        </EditForm>
+
+        <EditForm Model="Notice" method="post" OnValidSubmit="AddNotice" FormName="notify" class="panel stack">
+            <DataAnnotationsValidator />
+
+            <h2>Then tell people</h2>
+
+            <p class="subtle">
+                A notice in their notice centre, emailed to them unless they have turned rule
+                emails off.
+            </p>
+
+            <label>
+                <span>What to tell them</span>
+                <InputText @bind-Value="Notice.Text" />
+                <ValidationMessage For="() => Notice.Text" />
+            </label>
+
+            <label>
+                <span>Who</span>
+                <InputSelect @bind-Value="Notice.Who">
+                    <option value="">Choose…</option>
+                    @foreach (var (value, said) in Who.Choices(Trigger, roles: true))
+                    {
+                        <option value="@value">@said</option>
+                    }
+                    @foreach (var (personId, name) in People)
+                    {
+                        <option value="person:@personId">@name</option>
+                    }
+                </InputSelect>
+                <ValidationMessage For="() => Notice.Who" />
+            </label>
+
+            <button type="submit">Add it</button>
+        </EditForm>
+
+        <EditForm Model="Mail" method="post" OnValidSubmit="AddMail" FormName="email" class="panel stack">
+            <DataAnnotationsValidator />
+
+            <h2>Then email people who work here</h2>
+
+            <p class="subtle">
+                To the address they sign in with, whatever their notice preferences. There is no
+                way to write to an address outside the firm.
+            </p>
+
+            <label>
+                <span>Subject</span>
+                <InputText @bind-Value="Mail.Subject" />
+                <ValidationMessage For="() => Mail.Subject" />
+            </label>
+
+            <label>
+                <span>What it says</span>
+                <InputTextArea @bind-Value="Mail.Body" rows="4" />
+                <ValidationMessage For="() => Mail.Body" />
+            </label>
+
+            <label>
+                <span>Who</span>
+                <InputSelect @bind-Value="Mail.Who">
+                    <option value="">Choose…</option>
+                    @foreach (var (value, said) in Who.Choices(Trigger, roles: true))
+                    {
+                        <option value="@value">@said</option>
+                    }
+                    @foreach (var (personId, name) in People)
+                    {
+                        <option value="person:@personId">@name</option>
+                    }
+                </InputSelect>
+                <ValidationMessage For="() => Mail.Who" />
+            </label>
+
+            <button type="submit">Add it</button>
+        </EditForm>
+
+        @if (Trigger.People.Count > 0)
+        {
+            <EditForm Model="Checklist" method="post" OnValidSubmit="AddChecklist" FormName="checklist" class="panel stack">
+                <DataAnnotationsValidator />
+
+                <h2>Then add to their joining checklist</h2>
+
+                <label>
+                    <span>Lines, one to a line</span>
+                    <InputTextArea @bind-Value="Checklist.Lines" rows="4" />
+                    <ValidationMessage For="() => Checklist.Lines" />
+                </label>
+
+                <label>
+                    <span>Whose</span>
+                    <InputSelect @bind-Value="Checklist.Who">
+                        @foreach (var field in Trigger.People)
+                        {
+                            <option value="field:@field">The @(Trigger.Field(field)?.Label.ToLowerInvariant()) it names</option>
+                        }
+                    </InputSelect>
+                </label>
+
+                <button type="submit">Add it</button>
+            </EditForm>
+        }
+
+        @if (Subscriptions.Count > 0)
+        {
+            <EditForm Model="Hook" method="post" OnValidSubmit="AddHook" FormName="webhook" class="panel stack">
+                <DataAnnotationsValidator />
+
+                <h2>Then notify an outgoing webhook</h2>
+
+                <label>
+                    <span>Which subscription</span>
+                    <InputSelect @bind-Value="Hook.SubscriptionId">
+                        <option value="">Choose…</option>
+                        @foreach (var (subscriptionId, name) in Subscriptions)
+                        {
+                            <option value="@subscriptionId">@name</option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="() => Hook.SubscriptionId" />
+                </label>
+
+                <button type="submit">Add it</button>
+            </EditForm>
+        }
+
+        <EditForm Model="Details" method="post" OnValidSubmit="SaveDetails" FormName="details" class="panel stack">
+            <DataAnnotationsValidator />
+
+            <h2>Name and delay</h2>
+
+            <label>
+                <span>What it is for</span>
+                <InputText @bind-Value="Details.Name" />
+                <ValidationMessage For="() => Details.Name" />
+            </label>
+
+            <label>
+                <span>Why it exists <span class="subtle">(optional)</span></span>
+                <InputTextArea @bind-Value="Details.Description" rows="2" />
+            </label>
+
+            <label>
+                <span>Wait this many minutes after the event before acting</span>
+                <InputNumber @bind-Value="Details.DelayMinutes" min="0" max="@AutomationRule.MostDelayMinutes" />
+                <ValidationMessage For="() => Details.DelayMinutes" />
+                <span class="subtle">Nothing means at once; 1440 is a day. Waiting runs are started every five minutes.</span>
+            </label>
+
+            <button type="submit">Save</button>
+        </EditForm>
+    </AuthorizeView>
+
+    <h2>What it has done</h2>
+
+    <p class="subtle">The newest @AutomationQueries.MostRuns runs.</p>
+
+    @if (Runs.Count == 0)
+    {
+        <p class="empty">It has not fired.</p>
+    }
+    else
+    {
+        <table class="grid">
+            <caption class="visually-hidden">This rule's runs</caption>
+            <thead>
+                <tr>
+                    <th scope="col">When</th>
+                    <th scope="col">On</th>
+                    <th scope="col">State</th>
+                    <th scope="col">What happened</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var run in Runs)
+                {
+                    <tr>
+                        <td>@run.MatchedAt.ToString("d MMM HH:mm")</td>
+                        <td class="subtle">@run.Summary</td>
+                        <td>
+                            <span class="pill @Words.PillFor(run.Status)">@Words.For(run.Status)</span>
+                            @if (run.Attempts > 0)
+                            {
+                                <span class="subtle">@run.Attempts failed attempt(s)</span>
+                            }
+                        </td>
+                        <td>
+                            @if (run.Steps.Count > 0)
+                            {
+                                <ul class="plain">
+                                    @foreach (var step in run.Steps)
+                                    {
+                                        <li>
+                                            @step.Describing:
+                                            <span class="@(step.Refused ? "stale" : "subtle")">@(step.Outcome ?? "not yet")</span>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                            @if (run.Error is { Length: > 0 } error)
+                            {
+                                <span class="subtle">@error</span>
+                            }
+                            @if (run.Status == AutomationRunStatus.Waiting && run.DueAt is { } due)
+                            {
+                                <span class="subtle">Due @due.ToString("d MMM HH:mm")</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private const string Managing = PermissionClaim.PolicyPrefix + Permissions.AutomationManage;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    private DetailsInput _details = new();
+    private ConditionInput _condition = new();
+    private WorkInput _work = new();
+    private NoticeInput _notice = new();
+    private MailInput _mail = new();
+    private ChecklistInput _checklist = new();
+    private HookInput _hook = new();
+
+    [SupplyParameterFromForm(FormName = "details")]
+    private DetailsInput Details
+    {
+        get => _details;
+        set => _details = value ?? new DetailsInput();
+    }
+
+    [SupplyParameterFromForm(FormName = "condition")]
+    private ConditionInput Condition
+    {
+        get => _condition;
+        set => _condition = value ?? new ConditionInput();
+    }
+
+    [SupplyParameterFromForm(FormName = "work")]
+    private WorkInput Work
+    {
+        get => _work;
+        set => _work = value ?? new WorkInput();
+    }
+
+    [SupplyParameterFromForm(FormName = "notify")]
+    private NoticeInput Notice
+    {
+        get => _notice;
+        set => _notice = value ?? new NoticeInput();
+    }
+
+    [SupplyParameterFromForm(FormName = "email")]
+    private MailInput Mail
+    {
+        get => _mail;
+        set => _mail = value ?? new MailInput();
+    }
+
+    [SupplyParameterFromForm(FormName = "checklist")]
+    private ChecklistInput Checklist
+    {
+        get => _checklist;
+        set => _checklist = value ?? new ChecklistInput();
+    }
+
+    [SupplyParameterFromForm(FormName = "webhook")]
+    private HookInput Hook
+    {
+        get => _hook;
+        set => _hook = value ?? new HookInput();
+    }
+
+    /// <summary>A model for the forms that carry no fields.</summary>
+    private object Nothing { get; } = new();
+
+    private AutomationRule? Rule { get; set; }
+
+    private Trigger? Trigger { get; set; }
+
+    private List<AutomationRun> Runs { get; set; } = [];
+
+    private List<(Guid Id, string Name)> People { get; set; } = [];
+
+    private List<(Guid Id, string Name)> Projects { get; set; } = [];
+
+    private List<(Guid Id, string Name)> Subscriptions { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+
+        // Only before a form has been posted, or a refused change would be shown with the
+        // stored values in place of the ones somebody typed. See FirstLook.
+        if (Rule is not null && FirstLook.ThisTime(Request))
+        {
+            Details.Name = Rule.Name;
+            Details.Description = Rule.Description;
+            Details.DelayMinutes = Rule.DelayMinutes;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        Rule = await Queries.RuleAsync(Id);
+        Trigger = Rule is null ? null : Triggers.Find(Rule.Trigger);
+
+        if (Rule is null)
+        {
+            return;
+        }
+
+        Runs = await Queries.RunsAsync(Id);
+        People = await Queries.PeopleAsync();
+        Projects = await Queries.ProjectsAsync();
+        Subscriptions = await Queries.SubscriptionsAsync();
+
+        // The checklist form has one sensible default — the person the event is about — and a
+        // select with nothing chosen posts nothing.
+        if (Trigger is { People.Count: > 0 } && string.IsNullOrEmpty(Checklist.Who))
+        {
+            Checklist.Who = $"field:{Trigger.People[0]}";
+        }
+    }
+
+    private Task SaveDetails() =>
+        Act(() => Engine.DescribeAsync(Id, Details.Name, Details.Description, Details.DelayMinutes));
+
+    private Task AddCondition() =>
+        Act(() => Engine.WhenAsync(Id, Condition.Field, Condition.Operator, Condition.Value));
+
+    private Task DropCondition(Guid conditionId) =>
+        Act(() => Engine.DropConditionAsync(Id, conditionId));
+
+    private Task AddWork() =>
+        Act(() => Engine.RaiseWorkAsync(Id, Work.Title, Work.Detail, Work.Who, Work.Where, Work.Days));
+
+    private Task AddNotice() => Act(() => Engine.NotifyAsync(Id, Notice.Text, Notice.Who));
+
+    private Task AddMail() => Act(() => Engine.EmailAsync(Id, Mail.Subject, Mail.Body, Mail.Who));
+
+    private Task AddChecklist() => Act(() => Engine.ChecklistAsync(Id, Checklist.Lines, Checklist.Who));
+
+    private Task AddHook() => Act(() => Engine.WebhookAsync(
+        Id, Guid.TryParse(Hook.SubscriptionId, out var chosen) ? chosen : Guid.Empty));
+
+    private Task DropAction(Guid actionId) => Act(() => Engine.DropActionAsync(Id, actionId));
+
+    private Task SwitchOn() => Act(() => Engine.SwitchOnAsync(Id));
+
+    private Task SwitchOff() => Act(() => Engine.SwitchOffAsync(Id));
+
+    private async Task Delete()
+    {
+        Refusal = null;
+
+        try
+        {
+            await Engine.DeleteAsync(Id);
+            Navigation.NavigateTo("/automation", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private async Task Act(Func<Task> what)
+    {
+        Refusal = null;
+
+        try
+        {
+            await what();
+            Navigation.NavigateTo($"/automation/{Id}", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private string PersonName(string id) =>
+        Guid.TryParse(id, out var person) && People.FirstOrDefault(one => one.Id == person) is { Name: { } name }
+            ? name
+            : "somebody who has left";
+
+    private string SubscriptionName(Guid? id) =>
+        Subscriptions.FirstOrDefault(one => one.Id == id) is { Name: { } name }
+            ? name
+            : "a subscription that no longer exists";
+
+    private sealed class DetailsInput
+    {
+        [Required(ErrorMessage = "Say what the rule is for.")]
+        [StringLength(200)]
+        public string Name { get; set; } = string.Empty;
+
+        [StringLength(2000)]
+        public string? Description { get; set; }
+
+        [Range(0, AutomationRule.MostDelayMinutes,
+            ErrorMessage = "Between nothing and thirty days (43200 minutes).")]
+        public int DelayMinutes { get; set; }
+    }
+
+    private sealed class ConditionInput
+    {
+        [Required(ErrorMessage = "Choose what to test.")]
+        public string Field { get; set; } = string.Empty;
+
+        public ConditionOperator Operator { get; set; } = ConditionOperator.Is;
+
+        [StringLength(500)]
+        public string? Value { get; set; }
+    }
+
+    private sealed class WorkInput
+    {
+        [Required(ErrorMessage = "Give the work a title.")]
+        [StringLength(300)]
+        public string Title { get; set; } = string.Empty;
+
+        [StringLength(4000)]
+        public string? Detail { get; set; }
+
+        public string? Who { get; set; }
+
+        public string? Where { get; set; }
+
+        [Range(0, 365, ErrorMessage = "Between today and a year from now.")]
+        public int? Days { get; set; }
+    }
+
+    private sealed class NoticeInput
+    {
+        [Required(ErrorMessage = "Say what the notice should tell them.")]
+        [StringLength(300)]
+        public string Text { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Choose who to tell.")]
+        public string Who { get; set; } = string.Empty;
+    }
+
+    private sealed class MailInput
+    {
+        [Required(ErrorMessage = "Give the email a subject.")]
+        [StringLength(300)]
+        public string Subject { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Say something in the email.")]
+        [StringLength(4000)]
+        public string Body { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Choose who to email.")]
+        public string Who { get; set; } = string.Empty;
+    }
+
+    private sealed class ChecklistInput
+    {
+        [Required(ErrorMessage = "Write at least one line.")]
+        [StringLength(4000)]
+        public string Lines { get; set; } = string.Empty;
+
+        public string Who { get; set; } = string.Empty;
+    }
+
+    /// <remarks>
+    /// Text rather than a nullable identifier, and it matters: a select left on its empty
+    /// "Choose" option posts an empty string, and the form binder refuses an empty string for
+    /// a nullable Guid as invalid rather than reading it as nothing, which refuses the whole
+    /// form with no message beside the box. The hire page's "Reports to" select does exactly
+    /// that today.
+    /// </remarks>
+    private sealed class HookInput
+    {
+        [Required(ErrorMessage = "Choose a subscription.")]
+        public string SubscriptionId { get; set; } = string.Empty;
+    }
+}

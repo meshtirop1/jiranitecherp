@@ -386,6 +386,18 @@
                     </div>
                 </AuthorizeView>
 
+                @*
+                    Beside the settings, because a rule is part of how the firm is set up — but
+                    behind its own read permission, so the people whose work the rules raise can
+                    see why it appeared.
+                *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.AutomationView)"
+                               Context="automation">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="automation">Automation</NavLink>
+                    </div>
+                </AuthorizeView>
+
                 <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.SettingsManage)"
                                Context="settings">
                     <div class="nav-item px-3">

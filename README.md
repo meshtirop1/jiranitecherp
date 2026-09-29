@@ -29,6 +29,7 @@ kept flattering.
 | [docs/git-integration.md](docs/git-integration.md) | connecting code hosts |
 | [docs/security.md](docs/security.md) | signing in, roles and permissions, the security centre, secrets |
 | [docs/testing.md](docs/testing.md) | running the suite, the PostgreSQL run, the workflow and guard tests |
+| [docs/automation.md](docs/automation.md) | the WHEN / IF / THEN rules, the ones shipped, and their limits |
 | [docs/performance.md](docs/performance.md) | what was measured at volume |
 | [docs/conformance.md](docs/conformance.md) | the brief's principles, module structure and definition of done, rule by rule |
 | [docs/privacy.md](docs/privacy.md) | what is held about people, why, for how long, and their rights |

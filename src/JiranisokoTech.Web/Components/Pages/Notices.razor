@@ -248,6 +248,7 @@ else
         NoticeKind.WorkGiven => "Work",
         NoticeKind.WorkTaken => "Work",
         NoticeKind.RequestSettled => "Decision",
+        NoticeKind.Automation => "Rule",
         _ => "Incident",
     };
 
@@ -256,6 +257,7 @@ else
         NoticeKind.WorkGiven => "You are given a piece of work",
         NoticeKind.WorkTaken => "A piece of work leaves your list",
         NoticeKind.RequestSettled => "Something you asked for is decided",
+        NoticeKind.Automation => "One of the firm's automation rules tells you something",
         _ => "Something you own is broken",
     };
 

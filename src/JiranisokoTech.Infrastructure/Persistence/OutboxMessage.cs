@@ -38,12 +38,14 @@ public sealed class OutboxMessage
         Payload = string.Empty;
     }
 
-    public OutboxMessage(string type, string payload, DateTimeOffset occurredAt)
+    public OutboxMessage(
+        string type, string payload, DateTimeOffset occurredAt, string? causation = null)
     {
         Id = Guid.CreateVersion7();
         Type = type;
         Payload = payload;
         OccurredAt = occurredAt;
+        Causation = causation;
     }
 
     public Guid Id { get; private init; }
@@ -63,6 +65,19 @@ public sealed class OutboxMessage
     public string Payload { get; private init; }
 
     public DateTimeOffset OccurredAt { get; private init; }
+
+    /// <summary>
+    /// The automation rules whose actions led to this event, as comma-separated ids, oldest
+    /// first. Null for everything a person, a host or a job caused.
+    /// </summary>
+    /// <remarks>
+    /// This is how the automation engine refuses a loop. A rule that raises a piece of work
+    /// whenever a piece of work is raised would otherwise fire on its own work item, and on
+    /// that one's, until the board filled. Stamped when the event is written, from whatever the
+    /// dispatcher or a rule's run was handling at the time — see <c>Automation.Causation</c> —
+    /// so a chain is carried through the fixed handlers in between as well as through rules.
+    /// </remarks>
+    public string? Causation { get; private init; }
 
     public DateTimeOffset? DispatchedAt { get; private set; }
 
