@@ -16,8 +16,24 @@ public class DeploymentTests
 {
     private static readonly string Root = FindRoot();
 
+    /// <summary>
+    /// The compose file, with its line endings evened out.
+    /// </summary>
+    /// <remarks>
+    /// Read through <see cref="Unix"/>, and that is not tidiness. Every assertion below is
+    /// about what the file says; none is about how its lines end. But a Windows clone checks
+    /// this file out with CRLF, and the anchored patterns here are written for a bare line
+    /// feed. So all six of the compose assertions failed on the maintainer's own machine and
+    /// passed in CI, which is the worst possible arrangement: a red suite nobody can
+    /// reproduce teaches everybody to run the tests and ignore the colour.
+    ///
+    /// Not fixed by forcing the file to LF in <c>.gitattributes</c>, the way the shell scripts
+    /// are. Those have to reach a Linux container with LF or sh fails on the first line; the
+    /// compose file is parsed by the Docker CLI, which does not care, so forcing it would
+    /// change every checkout to satisfy a regular expression.
+    /// </remarks>
     private static readonly string Compose =
-        File.ReadAllText(Path.Combine(Root, "docker", "compose.yaml"));
+        Unix(File.ReadAllText(Path.Combine(Root, "docker", "compose.yaml")));
 
     /// <summary>
     /// The bundled proxy starts only when asked for.
@@ -168,6 +184,10 @@ public class DeploymentTests
 
         return match.Groups["body"].Value;
     }
+
+    /// <summary>The same text, with every line ending an LF.</summary>
+    private static string Unix(string text) =>
+        text.Replace("\r\n", "\n").Replace("\r", "\n");
 
     private static string FindRoot()
     {
