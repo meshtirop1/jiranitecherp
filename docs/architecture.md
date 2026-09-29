@@ -88,10 +88,15 @@ ASP.NET Core Identity over the same database, with its own tables.
   The first owner is created once from configuration on an empty database.
 - **Passwords**: twelve characters minimum, no composition rules; Identity's PBKDF2 hashing.
 - **Lockout**: five failures, fifteen minutes. Every attempt is recorded with its address.
-- **Two-step sign-in**: authenticator codes and one-time recovery codes. Offered, not yet
-  required of anybody.
+- **Two-step sign-in**: authenticator codes and eight one-time recovery codes. Offered, not
+  yet required of anybody. Both secrets are **encrypted with the key ring** before they reach
+  the database (`ProtectedUserStore`) — Identity's default stores them as they are, which made
+  a database dump a working second factor for everybody. An administrator can turn somebody's
+  second factor off, for a phone lost with its recovery codes.
 - **Sessions**: an HttpOnly, Secure, SameSite cookie, eight hours sliding. The security stamp
-  is checked every minute, so withdrawing somebody's access ends the session they are in.
+  is checked every minute, so withdrawing somebody's access ends the session they are in, and
+  an administrator can end every session an account has without withdrawing it. There is no
+  per-device list: the server keeps none, and the security page says so.
 - **Machines** authenticate to `/api/v1` with API keys, stored hashed and shown once.
 - **Git hosts** authenticate each webhook delivery with the host's own signature or token.
 
@@ -195,7 +200,8 @@ keyword matching. When it is built, three constraints from the brief shape it:
 
 Docker Compose on one host: the application, PostgreSQL, Redis, and optionally Caddy in front
 terminating TLS with a certificate it obtains and renews itself. The image build runs the test
-suite, so an image whose tests fail is never produced. Production and staging write JSON logs;
+suite, so an image whose tests fail is never produced, and CI builds that image on every push.
+Production and staging write JSON logs;
 `/health` and `/ready` answer different questions. Full detail in
 [deployment.md](deployment.md) and every setting in [configuration.md](configuration.md).
 
@@ -203,8 +209,9 @@ Backups and disaster recovery (sections 88–89) are not done.
 
 ## Testing strategy
 
-About 1,360 tests, run by `dotnet test` with nothing else installed, and inside the image
-build.
+About 1,400 tests, run by `dotnet test` with nothing else installed, inside the image build,
+and in CI on every push. The full account — what runs where, and the guard tests by name —
+is [testing.md](testing.md).
 
 - **Domain and service tests** over an in-memory SQLite database, for rules and workflows.
 - **Page tests** through `WebApplicationFactory`, running the real application in the Testing
@@ -212,11 +219,18 @@ build.
   real forms**, then asserting on the stored rows rather than on what the page said. Several
   faults here reported success on screen while saving nothing, so the screen is exactly what
   cannot be trusted.
-- **Guard tests** that read the source and fail the build for a shape that has gone wrong
-  before: a permission checked nowhere, a CSS class that does not exist, a per-row form that
-  cannot bind, seeding that overwrites a post, a component out of scope, a variable missing
-  from the documentation.
+- **End-to-end workflows**: the brief's delivery, recruitment and finance chains, each walked
+  in one test as the people who do each step, through the pages and the signed webhook
+  endpoint.
+- **PostgreSQL**: those workflows and a sweep that opens every page run again against a real
+  server when `TEST_POSTGRES` is set, with the migrations applied as production applies them.
+  CI provides the server. SQLite hid two production faults that this found.
+- **Guard tests** that read the source or the compiled assemblies and fail the build for a
+  shape that has gone wrong before: a permission checked nowhere, a CSS class that does not
+  exist, a per-row form that cannot bind, seeding that overwrites a post, a component out of
+  scope, a variable missing from the documentation, a layer depending outwards, a form control
+  with no name.
 - **Scale**, measured separately with `tools/JiranisokoTech.ScaleCheck` against PostgreSQL.
 
-Gaps, in the checklist: the suite runs on SQLite rather than PostgreSQL, and no test drives
-the brief's end-to-end workflows in a browser (section 46).
+Gaps: no test drives a real browser, so what only a browser can show — layout at a given
+width, colour contrast, keyboard order — is still checked by hand.

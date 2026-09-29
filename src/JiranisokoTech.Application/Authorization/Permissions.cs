@@ -38,7 +38,8 @@ public static class Permissions
     /// changed this record". This answers "is somebody trying to get in", and it shows every
     /// address that anybody has typed into the sign-in form — including mistyped passwords'
     /// owners and addresses that match nobody — which is more than a person reading the trail
-    /// for an invoice needs. Held by the owner and administrators only.
+    /// for an invoice needs. Held by the owner and administrators, and by the auditor role,
+    /// because the access reviews kept here are among the first things an audit asks for.
     /// </remarks>
     public const string SecurityView = "security.view";
 
