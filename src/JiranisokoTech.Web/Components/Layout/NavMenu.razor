@@ -22,6 +22,17 @@
                     </NavLink>
                 </div>
 
+                @*
+                    Section 63, directly under Home because the two answer the neighbouring
+                    questions — what is waiting on me, and how is the firm. No permission on
+                    the link: every figure on that page is gated by the permission guarding the
+                    screen it came off, so a reader who may see none of them is told so in
+                    words rather than being refused a page that would have been empty anyway.
+                *@
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="overview">How the firm is</NavLink>
+                </div>
+
                 <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.UsersView)"
                                Context="accounts">
                     <div class="nav-item px-3">

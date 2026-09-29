@@ -286,6 +286,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<BusinessQueries>();
         services.AddScoped<ReportingQueries>();
         services.AddScoped<ProjectMoneyQueries>();
+
+        /*
+         * Section 63. The company overview, which asks nothing new of the database: every
+         * figure on it is read from the tables an existing screen reads, and the two that are
+         * already decided elsewhere — what over budget means, what a total across currencies
+         * means — are asked of the class that decides them rather than worked out again.
+         */
+        services.AddScoped<OverviewQueries>();
         services.AddScoped<WaitingQueries>();
         services.AddScoped<IExchangeRateRepository, ExchangeRateRepository>();
         services.AddScoped<ExchangeRateService>();

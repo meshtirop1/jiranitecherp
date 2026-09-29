@@ -1,0 +1,121 @@
+@page "/overview"
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Infrastructure.Reporting
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject OverviewQueries Figures
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    Section 63. How the firm is, for whoever may be told.
+
+    A page of its own rather than a section of the home page, and the argument is worth having
+    because Home makes the opposite one. Home refuses a wall of tiles, and it is right to: it is
+    the page somebody opens every morning to find out what to do, and a count nobody can reduce
+    is a line that teaches them to skim. This answers a different question, asked weekly rather
+    than daily and by whoever is accountable rather than by everybody: not "what should I do
+    now" but "how is the firm".
+
+    Every panel is gated by the permission that guards the screen its figures came off, and a
+    panel somebody may not see is never queried — see OverviewQueries. The route itself takes
+    only a sign-in, because the figures decide: a developer who opens this sees delivery and
+    nothing about money, which is the correct answer rather than a refusal.
+*@
+
+<PageTitle>How the firm is — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>How the firm is</h1>
+    <p class="subtle">@Today.ToString("dddd d MMMM yyyy")</p>
+</div>
+
+<p class="instructions">
+    Only what you may see. Each figure links to the screen it came off, which is the screen
+    that can tell you which ones — this page says how many and nothing more, so that the two
+    cannot come to disagree.
+</p>
+
+@if (Panels.Count == 0)
+{
+    <p class="empty">
+        Nothing on this page is something your account may read. That is not an error: the
+        overview is assembled from the screens you can open, and yours are elsewhere —
+        <a href="/">what is waiting on you</a> is the page to start from.
+    </p>
+}
+else
+{
+    @foreach (var panel in Panels)
+    {
+        <section class="standing">
+            <h2>@panel.Heading</h2>
+
+            <table class="grid">
+                <caption class="visually-hidden">@panel.Heading</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">What</th>
+                        <th scope="col">Reading</th>
+                        <th scope="col"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var figure in panel.Figures)
+                    {
+                        <tr>
+                            <td>
+                                @figure.What
+                                @if (figure.Worrying)
+                                {
+                                    @*
+                                        Words beside the colour, never colour alone. One man in
+                                        twelve cannot tell the red from the green, and a page
+                                        whose only warning is a shade is a page that warns some
+                                        of its readers and not the others.
+                                    *@
+                                    <span class="pill pill--danger">look at this</span>
+                                }
+                            </td>
+                            <td>
+                                <strong class="@(figure.Worrying ? "stale" : null)">
+                                    @figure.Reading
+                                </strong>
+                                @if (figure.Detail is { Length: > 0 } detail)
+                                {
+                                    <span class="subtle">@detail</span>
+                                }
+                            </td>
+                            <td><a href="@figure.Where">Open</a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private List<Panel> Panels { get; set; } = [];
+
+    private DateOnly Today => Clock.Today;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationState;
+
+        /*
+         * Read off the signed-in principal rather than looked up, which is what the search box
+         * already does and for the same reason: these are the claims every authorization check
+         * on every other page reads, so this page cannot show a figure a screen would refuse.
+         */
+        var permissions = state.User
+            .FindAll(PermissionClaim.Type)
+            .Select(claim => claim.Value)
+            .ToHashSet();
+
+        Panels = await Figures.ForAsync(permissions, Today);
+    }
+}
