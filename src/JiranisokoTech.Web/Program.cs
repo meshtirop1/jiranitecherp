@@ -187,6 +187,8 @@ app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();
+// Before anything reads the form: an empty choice in a select means "none". See BlankChoices.
+app.UseBlankChoices();
 app.UseAntiforgery();
 
 /*

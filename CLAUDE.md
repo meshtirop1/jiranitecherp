@@ -168,6 +168,14 @@ Each of these cost real time. They are written down so they cost it once.
   run came out empty with nothing on any page saying why. `FirstLookTests` now
   fails the build for a first-pass guard on a static page that does not also ask
   `FirstLook`.
+- **A "none" option in a select refused the whole form, silently.** The browser posts
+  `<option value="">` as an empty string, Blazor's form mapping cannot read "" as a `Guid?`,
+  and the valid-submit handler never runs — with no message, because nothing had a
+  `ValidationMessage` for a select. Thirteen fields on ten pages, the first hire among them.
+  `BlankChoices` removes an empty value for any field bound to a nullable value type before the
+  form is read, found by reflection so new pages are covered. No page test saw it because
+  `HtmlForm.Fill` reads inputs, not selects: **a test that posts a form with a select must post
+  the select's value itself**, including "" for none.
 - **`[EmailAddress]` makes an optional field required, silently.** It lets null
   through and refuses `""`, and a browser posts an empty text box as `""`. So
   leaving the personal email empty on your profile refused the whole form —
