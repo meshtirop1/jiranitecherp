@@ -568,6 +568,42 @@ public static class Permissions
     public const string ApprovalsDecide = "approvals.decide";
     public const string ReportsView = "reports.view";
 
+    // --- the language model ------------------------------------------------
+
+    /// <summary>
+    /// Ask the assistant a question about the firm's records.
+    /// </summary>
+    /// <remarks>
+    /// Its own permission although the assistant can see nothing the person could not open
+    /// themselves, because what it does with what it sees is new: the records it looks up are
+    /// sent to a provider outside the firm to be read. That is a decision about somebody's data
+    /// leaving the building, and it is taken role by role rather than handed to everybody who
+    /// can sign in. See docs/ai.md.
+    /// </remarks>
+    public const string AiAsk = "ai.ask";
+
+    /// <summary>
+    /// Ask for a model's reading of a project — its risks, what is blocking it, how it stands.
+    /// </summary>
+    /// <remarks>
+    /// Separate from asking, because a reading sends the whole of a project's recorded state at
+    /// once — work, pull requests, builds, hours, and the money when the person may see it —
+    /// where a question sends only what the model thought to look up.
+    /// </remarks>
+    public const string AiAnalyse = "ai.analyse";
+
+    /// <summary>
+    /// Have a model summarise a CV, suggest interview questions and draft letters to a candidate.
+    /// </summary>
+    /// <remarks>
+    /// The narrowest of the three, and deliberately not implied by either: this is the one that
+    /// sends a stranger's CV to a third party, and the applicant agreed to the firm reading it,
+    /// not to anybody else doing so. Held by the people who already read CVs for a living.
+    /// Nothing it produces decides anything — section 7 keeps hiring decisions with people —
+    /// and nothing it drafts is sent.
+    /// </remarks>
+    public const string AiRecruit = "ai.recruit";
+
     /// <summary>Every declared permission, in declaration order.</summary>
     public static IReadOnlyList<string> All { get; } =
     [
@@ -619,6 +655,8 @@ public static class Permissions
         PlatformView, PlatformManage, FlagsSet,
 
         ApprovalsDecide, ReportsView,
+
+        AiAsk, AiAnalyse, AiRecruit,
     ];
 }
 
@@ -762,6 +800,14 @@ public static class Roles
                 Permissions.TimeViewAll,
 
                 Permissions.AuditView, Permissions.ReportsView,
+
+                /*
+                 * The assistant, and the recruitment aids. HR reads CVs already and runs the
+                 * hiring chain; a summary it has asked for is a faster first reading of a document
+                 * it could open anyway. The CV leaving the firm to be read is the part that needed
+                 * deciding, and docs/ai.md says what goes.
+                 */
+                Permissions.AiAsk, Permissions.AiRecruit,
             ],
 
             [DepartmentHead] =
@@ -871,6 +917,10 @@ public static class Roles
                 Permissions.ExpensesViewAll, Permissions.ExpensesApprove,
 
                 Permissions.AuditView, Permissions.ReportsView,
+
+                // Asks about what they answer for, and asks for a reading of a project in their
+                // reach. Neither widens what they see: every lookup is made as them.
+                Permissions.AiAsk, Permissions.AiAnalyse,
             ],
 
             [ProjectManager] =
@@ -940,6 +990,10 @@ public static class Roles
                 Permissions.ContractsView,
 
                 Permissions.AuditView, Permissions.ReportsView,
+
+                // The person a project's health is most often asked of, and so the one who most
+                // needs a first reading of it to check against what they know.
+                Permissions.AiAsk, Permissions.AiAnalyse,
             ],
 
             [Developer] =
@@ -1008,6 +1062,10 @@ public static class Roles
                 Permissions.PayrollView, Permissions.PayrollPay,
                 Permissions.ApprovalsDecide,
                 Permissions.AuditView, Permissions.ReportsView,
+
+                // Asks about unpaid invoices and what clients owe, which is the finance half of
+                // section 36's examples. Not a project reading: that is delivery's question.
+                Permissions.AiAsk,
             ],
 
             /*
@@ -1060,6 +1118,11 @@ public static class Roles
                 Permissions.InterviewsSchedule, Permissions.InterviewsView,
                 Permissions.ScorecardsSubmit,
                 Permissions.ReportsView,
+
+                // The CV summary, the interview questions and the letter drafts, for the person
+                // who reads the CVs. Not the assistant: a recruiter's questions are about
+                // candidates, and those are answered on the candidate's own pages.
+                Permissions.AiRecruit,
             ],
 
             /*
@@ -1089,6 +1152,8 @@ public static class Roles
                 Permissions.TimeViewAll, Permissions.TimeApprove,
                 Permissions.LeaveViewAll, Permissions.LeaveApprove,
                 Permissions.ReportsView,
+                // Delivery's head: asks, and reads its projects, as its own reach allows.
+                Permissions.AiAsk, Permissions.AiAnalyse,
             ],
 
             /*
@@ -1108,6 +1173,10 @@ public static class Roles
                 Permissions.PlatformView, Permissions.FlagsSet,
                 Permissions.CandidatesView, Permissions.InterviewsView,
                 Permissions.ScorecardsSubmit,
+
+                // A lead asks about the projects they are on; the reach decides which those are,
+                // exactly as it does for their search box.
+                Permissions.AiAsk, Permissions.AiAnalyse,
             ],
 
             /*

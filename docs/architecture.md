@@ -45,7 +45,6 @@ layers:
 
 - **Automation** (section 31): a rule store and an evaluator subscribing to the same outbox
   the fixed handlers use today, so that a rule is data rather than a class.
-- **AI** (sections 36–37): see *AI architecture* below.
 - **Support and knowledge** (sections 25–26): ordinary modules on the existing pattern.
 - **A CLI** (section 50): a client of the public API, holding no rules of its own — the API
   already goes through the same services the pages do, which is the whole of what makes that
@@ -77,7 +76,8 @@ The same folder names run through all four projects, so a feature can be followe
 domain rules to its page: People, Recruitment, Work, Engineering, Platform, Assets, Clients
 and Business, Contracts, Money and Accounting, Payroll, Procurement, Vendors, Incidents,
 Documents, Notices, Approvals, Audit, Integrations, Privacy, Settings. Section 79 lists
-Automation, AI, Support and Knowledge as well; they do not exist yet.
+Automation, Support and Knowledge as well; they do not exist yet. AI exists as `Ai` in Application,
+Infrastructure and the pages.
 
 ## Authentication strategy
 
@@ -180,16 +180,41 @@ scheduler takes no lock, so one web container should run; see
 
 ## AI architecture
 
-**Not built.** There is no model client, no embedding store and no assistant; search is
-keyword matching. When it is built, three constraints from the brief shape it:
+Sections 36 and 37, and section 7's recruiter aids. Full detail — what is sent, who may use it,
+what is not built — in [ai.md](ai.md).
 
-1. **It answers through the same permission checks as the pages** (section 36). The
-   assistant calls application services on behalf of the signed-in user, never the database,
-   so it cannot see what that person could not open.
-2. **It separates fact, calculation and inference** (section 37), by carrying which of the
-   three each statement is rather than by wording.
-3. **It proposes and a person decides** on anything destructive, and never on hiring
-   (section 7).
+```
+Application/Ai     IAiModel, Asker           the interface and who is asking; no HTTP, no storage
+Infrastructure/Ai  AnthropicModel            the Messages API over IHttpClientFactory
+                   AssistantTools            the lookups, each made as the asker
+                   Assistant                 the ask / look up / answer loop
+                   ProjectFacts              a project's records and calculated figures, as the asker
+                   ProjectReading            a model's reading laid over those facts
+                   RecruitingAid, CvReader   CV summary, interview questions, letter drafts
+                   AiLedger, AiExchange      the usage log and the daily limit counted from it
+Web/Components/Pages/Ai                      four statically rendered pages
+```
+
+The three constraints written here before anything was built held, and each is now a mechanism:
+
+1. **It answers through the same permission checks as the pages** (section 36). The model cannot
+   read the database; it asks for lookups, and each lookup checks the permission and reach the page
+   for the same records checks, then calls the same query. A refused lookup returns a refusal, so
+   the records never reach the model. Who is asking comes from the signed-in principal, never from
+   the model. Tests assert on what was *sent*, through a fake `IAiModel`: no test calls the provider.
+2. **It separates fact, calculation and inference** (section 37) by construction. Facts come from
+   `ProjectFacts`; figures from code, each with how it was counted; the model's reading comes back
+   in a fixed JSON shape and is drawn in its own labelled box. The first two need no model at all.
+3. **It proposes and a person decides.** The assistant changes nothing: a task it suggests is
+   created only when the person presses the button. The recruitment aids have no field for a
+   recommendation, score or rank, and send nothing to a candidate (section 7).
+
+Off by default: with no `Ai:ApiKey` every AI page says it is not configured and nothing is sent.
+A per-person daily limit, a round limit on lookups, one deadline across retries, and retries for
+rate limits and overloads bound the cost and the wait. Each use is logged, without its answer.
+
+Not built: conversations, streaming, embeddings or semantic search, and most of section 36's
+actions beyond looking things up — see [ai.md](ai.md).
 
 ## Deployment architecture
 

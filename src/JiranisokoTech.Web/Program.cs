@@ -1,6 +1,7 @@
 using JiranisokoTech.Application.Abstractions;
 using JiranisokoTech.Application.Settings;
 using JiranisokoTech.Infrastructure;
+using JiranisokoTech.Infrastructure.Ai;
 using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Infrastructure.Persistence;
 using JiranisokoTech.Web;
@@ -31,6 +32,9 @@ builder.Services.AddModules(builder.Configuration);
 // How mail leaves, and who gets told what.
 builder.Services.AddMail(builder.Configuration);
 builder.Services.AddCaching(builder.Configuration);
+
+// The language model: off until a key is configured, and permission-bound when it is on.
+builder.Services.AddAi(builder.Configuration);
 
 // Accounts and sign-in, then authorization. Registered in that order because
 // the authorization fallback below assumes authentication exists.

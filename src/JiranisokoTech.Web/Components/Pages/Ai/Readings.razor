@@ -1,0 +1,71 @@
+@page "/projects/readings"
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Infrastructure.Ai
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Infrastructure.Work
+@using JiranisokoTech.Web.Authorization
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.AiAnalyse)]
+@inject ProjectFacts Facts
+@inject PeopleQueries People
+
+@*
+    The way in for somebody who may ask for a reading and may not open the projects list — a tech
+    lead, whose projects are the ones they are on. The list is theirs, narrowed by the same reach
+    the search box uses, so it offers nothing the reading page would then refuse.
+*@
+
+<PageTitle>Project readings — Jiranisoko Delivery</PageTitle>
+
+<h1>How each project stands</h1>
+
+<p class="subtle">
+    Each project's recorded facts and the figures calculated from them, with a language model's
+    reading on request. Only the projects you can see are listed.
+</p>
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">There are no projects you can see.</p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Projects you can ask about</caption>
+        <thead>
+            <tr>
+                <th scope="col">Project</th>
+                <th scope="col">Code</th>
+                <th scope="col">State</th>
+                <th scope="col">Work</th>
+                <th scope="col">Due</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var project in Rows)
+            {
+                <tr>
+                    <td><a href="/projects/@project.Id/reading">@project.Name</a></td>
+                    <td><code>@project.Code</code></td>
+                    <td>@project.Status</td>
+                    <td>@project.OpenItems open of @project.TotalItems</td>
+                    <td>@(project.DueOn?.ToString("d MMM yyyy") ?? "—")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private List<ProjectRow> Rows { get; set; } = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var asker = await Askers.FromAsync((await AuthenticationState).User, People);
+
+        Rows = await Facts.WithinReachAsync(asker);
+    }
+}

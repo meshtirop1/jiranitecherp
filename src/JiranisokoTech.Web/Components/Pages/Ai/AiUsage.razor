@@ -1,0 +1,101 @@
+@page "/ai/usage"
+@using JiranisokoTech.Application.Ai
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Infrastructure.Ai
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.AuditView)]
+@inject AiLedger Ledger
+@inject IAiModel Model
+
+@*
+    Behind audit.view, beside the trail it complements: the people who answer "who changed this"
+    are the people who answer "who asked the assistant about it, and what did it look at".
+*@
+
+<PageTitle>AI usage — Jiranisoko Delivery</PageTitle>
+
+<h1>Who has used the AI features</h1>
+
+<dl class="facts">
+    <dt>Provider</dt>
+    <dd>Anthropic</dd>
+
+    <dt>Model</dt>
+    <dd><code>@Model.Name</code></dd>
+
+    <dt>Switched on</dt>
+    <dd>@(Model.IsConfigured ? "Yes — an API key is set" : "No — no API key is set, so nothing is sent")</dd>
+
+    <dt>Each person, each day</dt>
+    <dd>@Ledger.DailyLimit uses</dd>
+</dl>
+
+<p class="subtle">
+    The newest 200. Questions are kept in the asker's words; answers are not kept at all, because
+    an answer is a copy of records that outlives the permission that let them be read.
+</p>
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">Nobody has used them yet.</p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Uses of the AI features</caption>
+        <thead>
+            <tr>
+                <th scope="col">When</th>
+                <th scope="col">Who</th>
+                <th scope="col">What</th>
+                <th scope="col">Asked</th>
+                <th scope="col">Looked up</th>
+                <th scope="col">Outcome</th>
+                <th scope="col">Tokens</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Rows)
+            {
+                <tr>
+                    <td>@row.At.ToString("d MMM HH:mm")</td>
+                    <td>@(row.AskedBy ?? "Unknown")</td>
+                    <td>@Named(row.Feature)</td>
+                    <td>@(row.Question ?? "—")</td>
+                    <td>@(row.Lookups.Length == 0 ? "—" : row.Lookups)</td>
+                    <td>
+                        <span class="pill @PillFor(row.Outcome)">@row.Outcome</span>
+                        @if (row.Problem is { } problem)
+                        {
+                            <span class="subtle">@problem</span>
+                        }
+                    </td>
+                    <td class="number">@row.InputTokens in, @row.OutputTokens out</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<AiExchange> Rows { get; set; } = [];
+
+    protected override async Task OnInitializedAsync() => Rows = await Ledger.RecentAsync();
+
+    private static string Named(AiFeature feature) => feature switch
+    {
+        AiFeature.Assistant => "Question",
+        AiFeature.ProjectReading => "Project reading",
+        AiFeature.CvSummary => "CV summary",
+        AiFeature.InterviewQuestions => "Interview questions",
+        AiFeature.Draft => "Letter draft",
+        _ => feature.ToString(),
+    };
+
+    private static string? PillFor(AiOutcome outcome) => outcome switch
+    {
+        AiOutcome.Answered => "pill--done",
+        AiOutcome.Failed => "pill--danger",
+        _ => "pill--wait",
+    };
+}

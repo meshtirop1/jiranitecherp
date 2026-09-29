@@ -56,6 +56,35 @@ values.
 Reads of what is most sensitive are recorded too — a staff record showing pay, an
 employee's or an agreement's document, an applicant's CV, and an access-request export.
 
+## What leaves the firm to be read by an AI provider
+
+Nothing, unless an administrator sets `AI_API_KEY`. Once it is set, the assistant, the project
+readings and the recruitment aids send records to **Anthropic**, a processor outside Kenya, to be
+read by a language model. What goes is kept to what each use needs, and is listed in full in
+[ai.md](ai.md); in short:
+
+| Use | Personal data sent | Who can cause it |
+|---|---|---|
+| A question to the assistant | Whatever the lookups it makes return — names of staff, clients and (for recruiters' roles) candidates, work item and pull request titles, authors, invoice numbers and amounts — and never more than the person asking could open on a screen. The question itself. | Holders of `ai.ask` |
+| A project reading | The project's work, with who holds each item; pull request and deployment authors; hours and money only for holders of `projects.view_all`. | Holders of `ai.analyse` |
+| A CV summary | **The applicant's CV**, and the experience, education and skills they wrote on the form. Not their name, contact details, links or salary expectation. | Holders of `ai.recruit` and `candidates.view` |
+| Interview questions | The experience, education and skills from the form. | The same |
+| A draft letter | The applicant's name and whatever the recruiter types. | The same |
+
+Staff contact details, pay, identity numbers, next of kin, leave and reviews are read by no AI
+lookup at all.
+
+Every use is written to the usage log (`ai_exchanges`, shown to holders of `audit.view`): who, when,
+which feature, about what, the question in the asker's words, and what was looked up. The answers
+are not kept. Every CV sent is also on the audit trail, as `job_application.cv_sent_to_ai`, beside
+every opening of it.
+
+Two things to settle before switching it on. **The firm's agreement with Anthropic** decides how
+long Anthropic keeps what it is sent and what it may do with it; that is a contract question this
+application cannot answer. And **the careers form's consent sentence** does not yet tell applicants
+that their CV may be read by a third party's model, so the lawful basis for summarising CVs received
+under the current wording is the firm's to decide.
+
 ## How long
 
 Every period below is **off until an administrator sets it** on the settings page, and off
@@ -74,7 +103,7 @@ The sweep runs nightly as `retention.sweep` and its result is on the machinery s
 Application logs are Docker's, capped by `LOG_MAX_SIZE` and `LOG_MAX_FILES` — see
 [configuration](configuration.md).
 
-**Not yet covered by a period:** sign-in records, and the staff record itself. A leaver's
+**Not yet covered by a period:** sign-in records, the AI usage log, and the staff record itself. A leaver's
 name stays on their work for as long as the work is kept, which is argued on
 `Employee.Leave`; erasing somebody who has left is a decision taken on an erasure request,
 not by a timer.

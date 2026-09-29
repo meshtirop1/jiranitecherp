@@ -82,6 +82,13 @@ services:
       # looking for. The counters describe the business: how many people sign in, how
       # many invoices go out, when the firm is busy.
       Metrics__Token: ${METRICS_TOKEN:-}
+      # The AI features: the assistant, project readings and the recruitment aids. Blank means
+      # off — every AI page says it is not configured and nothing is sent. Set, it means the
+      # records a question looks up are sent to Anthropic to be read; docs/ai.md says exactly
+      # which. The model and the daily allowance per person have defaults and rarely need setting.
+      Ai__ApiKey: ${AI_API_KEY:-}
+      Ai__Model: ${AI_MODEL:-claude-opus-5-5}
+      Ai__DailyLimit: ${AI_DAILY_LIMIT:-40}
       # The networks a proxy may send X-Forwarded-For from, if there is one.
       # Left unset the application reads the address it can see, which behind a
       # proxy is the proxy — see ReverseProxy.cs for why that is not simply

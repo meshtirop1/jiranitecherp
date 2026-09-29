@@ -1830,3 +1830,69 @@ code.key {
     font-size: 0.875rem;
     font-weight: 600;
 }
+
+/*
+ * What a language model wrote, set apart from the records around it. Section 37 asks that
+ * inference be clearly distinguished from data, and a sentence of the model's in the same box and
+ * type as a recorded fact is not distinguished however it is worded. So it gets its own ground and
+ * a dashed edge — dashed because a solid one reads as another panel of records — and a tag above
+ * it that says what it is in words, since colour is the one thing a reader may not have.
+ */
+.inference {
+    margin: 1.5rem 0;
+    padding: 1rem 1.25rem;
+    border: 1px dashed var(--warn);
+    border-radius: 6px;
+    background: var(--warn-ground);
+    color: var(--ink);
+}
+
+.inference h2,
+.inference h3 {
+    margin-top: 0;
+}
+
+.inference__tag {
+    display: inline-block;
+    margin: 0 0 0.5rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    background: var(--warn-ground);
+    color: var(--warn-ink);
+    border: 1px solid var(--warn);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+/* The assistant's answer: its line breaks are part of it, and a long word must not widen the page. */
+.answer__text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-width: 48rem;
+}
+
+/* A drafted letter, full width and read-only, for copying out rather than editing here. */
+.draft {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 0.75rem;
+    font-size: var(--text-sm);
+    font-weight: 600;
+}
+
+.draft input,
+.draft textarea {
+    width: 100%;
+    max-width: 48rem;
+    box-sizing: border-box;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--field-line);
+    border-radius: 4px;
+    font: inherit;
+    font-weight: 400;
+    background: var(--surface);
+    color: var(--ink);
+}

@@ -1,0 +1,292 @@
+@page "/projects/{Id:guid}/reading"
+@using JiranisokoTech.Application.Ai
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Domain.Engineering
+@using JiranisokoTech.Infrastructure.Ai
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Web.Authorization
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.AiAnalyse)]
+@inject ProjectFacts Facts
+@inject ProjectReading Reader
+@inject IAiModel Model
+@inject PeopleQueries People
+
+@*
+    Section 37, in the three layers it asks to be kept apart: what is recorded, what is calculated
+    from it, and what a model infers. The first two are drawn on every visit and need no model at
+    all; the third is asked for with a button and drawn in its own box, each line of it tagged as
+    inference, below the facts it was read from.
+*@
+
+@if (Picture is null)
+{
+    <PageTitle>Project not found — Jiranisoko Delivery</PageTitle>
+
+    <h1>No such project</h1>
+    <p>No project you can see has that identifier. <a href="/projects/readings">Back to the list</a>.</p>
+}
+else
+{
+    <PageTitle>@Picture.Project.Name, read — Jiranisoko Delivery</PageTitle>
+
+    <nav class="crumbs"><a href="/projects/readings">Project readings</a></nav>
+
+    <div class="page-head">
+        <h1>@Picture.Project.Name</h1>
+        <span class="pill">@Picture.Project.Status</span>
+    </div>
+
+    <section class="standing">
+        <h2>Recorded</h2>
+        <p class="subtle">Read from the firm's records as they stand, as you — nothing here is estimated.</p>
+
+        <dl class="facts">
+            <dt>Code</dt>
+            <dd><code>@Picture.Project.Code</code></dd>
+
+            <dt>Led by</dt>
+            <dd>@(Picture.Project.LeadName ?? "Nobody yet")</dd>
+
+            <dt>Due</dt>
+            <dd>@(Picture.Project.DueOn?.ToString("d MMMM yyyy") ?? "No date set")</dd>
+
+            @if (Picture.Hours is { } hours)
+            {
+                <dt>Hours logged</dt>
+                <dd>@Said(hours.TotalMinutes) in all, @Said(hours.ApprovedUnbilledMinutes) approved and not yet billed</dd>
+            }
+
+            @if (Picture.Money is { } money)
+            {
+                <dt>Budget</dt>
+                <dd>@(money.Budget ?? "None set")</dd>
+
+                <dt>Invoiced</dt>
+                <dd>@(money.Invoiced ?? "Nothing yet")</dd>
+
+                <dt>Cost so far</dt>
+                <dd>@(money.Cost ?? "Not known — no standard cost rate is set")</dd>
+            }
+        </dl>
+
+        <h3>Work@(Picture.SeesAllWork ? null : ", yours only")</h3>
+
+        @if (Picture.Work.Count == 0)
+        {
+            <p class="empty">No work items you can see.</p>
+        }
+        else
+        {
+            <table class="grid">
+                <caption class="visually-hidden">Work on this project</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Item</th>
+                        <th scope="col">State</th>
+                        <th scope="col">Who</th>
+                        <th scope="col">Due</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in Picture.Work)
+                    {
+                        <tr>
+                            <td>@item.Reference @item.Title</td>
+                            <td>
+                                @item.Status
+                                @if (item.BlockedBecause is { } why)
+                                {
+                                    <span class="subtle">@why</span>
+                                }
+                            </td>
+                            <td>@(item.AssignedTo ?? "Nobody")</td>
+                            <td>@(item.DueOn?.ToString("d MMM") ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        @if (Picture.OpenPullRequests is { Count: > 0 } pulls)
+        {
+            <h3>Open pull requests</h3>
+
+            <ul class="plain">
+                @foreach (var pull in pulls)
+                {
+                    <li>
+                        <code>@pull.Repository#@pull.Number</code> @pull.Title
+                        <span class="subtle">by @pull.Author, opened @pull.OpenedAt.ToString("d MMM")</span>
+                    </li>
+                }
+            </ul>
+        }
+
+        @if (Picture.Builds is { Count: > 0 } builds)
+        {
+            <h3>Builds, last @ProjectFacts.WindowDays days</h3>
+
+            <ul class="plain">
+                @foreach (var build in builds.Take(15))
+                {
+                    <li>
+                        <span class="pill @(build.Outcome == BuildOutcome.Failed ? "pill--danger" : null)">@build.Outcome</span>
+                        @build.Name on <code>@build.Branch</code>
+                        <span class="subtle">@build.StartedAt.ToString("d MMM HH:mm")</span>
+                    </li>
+                }
+            </ul>
+        }
+
+        @if (Picture.Deployments is { Count: > 0 } deployments)
+        {
+            <h3>Deployments, last @ProjectFacts.WindowDays days</h3>
+
+            <ul class="plain">
+                @foreach (var deployment in deployments.Take(15))
+                {
+                    <li>
+                        <span class="pill @(deployment.State == DeploymentState.Failed ? "pill--danger" : null)">@deployment.State</span>
+                        @deployment.Environment
+                        <span class="subtle">@deployment.At.ToString("d MMM HH:mm")</span>
+                    </li>
+                }
+            </ul>
+        }
+
+        @if (Picture.Withheld.Count > 0)
+        {
+            <h3>Not shown to you</h3>
+
+            <ul class="plain">
+                @foreach (var withheld in Picture.Withheld)
+                {
+                    <li class="subtle">@withheld</li>
+                }
+            </ul>
+        }
+    </section>
+
+    <section class="standing">
+        <h2>Calculated from those records</h2>
+        <p class="subtle">Counted by this system from the list above, each with how.</p>
+
+        <dl class="facts">
+            @foreach (var figure in Picture.Calculations())
+            {
+                <dt>@figure.Name</dt>
+                <dd>@figure.Value <span class="subtle">@figure.How</span></dd>
+            }
+        </dl>
+    </section>
+
+    <section class="inference">
+        <h2>A model's reading</h2>
+        <p class="inference__tag">Inference, not fact</p>
+        <p class="subtle">
+            A language model's interpretation of the records above. It can be wrong; the records are
+            the source. Asking sends the records shown on this page to Anthropic.
+        </p>
+
+        @if (!Model.IsConfigured)
+        {
+            <p class="refusal" role="alert">
+                Readings are not available on this copy of the system: no API key has been set for
+                the AI provider. The facts and figures above do not need one.
+            </p>
+        }
+        else
+        {
+            <EditForm Model="Asking" method="post" OnSubmit="Read" FormName="read" class="inline">
+                <button type="submit">Ask for a reading</button>
+            </EditForm>
+        }
+
+        @if (Result?.Problem is { } problem)
+        {
+            <p class="refusal" role="alert">@problem</p>
+        }
+
+        @if (Result?.Reading is { } reading)
+        {
+            <p>@reading.Summary</p>
+
+            <dl class="facts">
+                @foreach (var judgement in reading.Judgements)
+                {
+                    <dt>@judgement.Area</dt>
+                    <dd>
+                        <span class="pill @PillFor(judgement.Assessment)">@judgement.Assessment</span>
+                        @judgement.Because
+                    </dd>
+                }
+
+                <dt>Main risk</dt>
+                <dd>@reading.MainRisk</dd>
+            </dl>
+
+            @if (reading.Blockers.Count > 0)
+            {
+                <h3>What it reads as blocking</h3>
+
+                <ul>
+                    @foreach (var blocker in reading.Blockers)
+                    {
+                        <li>@blocker</li>
+                    }
+                </ul>
+            }
+        }
+    </section>
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private Nothing _asking = new();
+
+    [SupplyParameterFromForm(FormName = "read")]
+    private Nothing Asking
+    {
+        get => _asking;
+        set => _asking = value ?? new Nothing();
+    }
+
+    private ProjectPicture? Picture { get; set; }
+
+    private ReadingResult? Result { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var asker = await Askers.FromAsync((await AuthenticationState).User, People);
+
+        Picture = await Facts.GatherAsync(Id, asker);
+    }
+
+    private async Task Read()
+    {
+        var asker = await Askers.FromAsync((await AuthenticationState).User, People);
+
+        Result = await Reader.ReadAsync(Id, asker);
+    }
+
+    private static string? PillFor(string assessment) => assessment switch
+    {
+        "Healthy" => "pill--done",
+        "At risk" => "pill--wait",
+        "In trouble" => "pill--danger",
+        _ => "pill--quiet",
+    };
+
+    private static string Said(int minutes) => minutes % 60 == 0
+        ? $"{minutes / 60}h"
+        : $"{minutes / 60}h {minutes % 60}m";
+
+    /// <summary>The reading's form carries nothing but the press.</summary>
+    private sealed class Nothing;
+}

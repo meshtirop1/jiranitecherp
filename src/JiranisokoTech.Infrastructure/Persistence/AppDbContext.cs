@@ -391,6 +391,15 @@ public class AppDbContext(
 
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
+    /// <summary>
+    /// Every use of the language model: who asked, about what, and what it looked up.
+    /// </summary>
+    /// <remarks>
+    /// Kept beside the audit trail rather than in it — a question changes nothing — and counted
+    /// by the daily limit. The answers are not kept; see AiExchange.
+    /// </remarks>
+    public DbSet<Ai.AiExchange> AiExchanges => Set<Ai.AiExchange>();
+
     public DbSet<OutboxMessage> Outbox => Set<OutboxMessage>();
 
     /// <summary>

@@ -160,6 +160,21 @@
                     <NavLink class="nav-link" href="search">Search</NavLink>
                 </div>
 
+                @* Beside the search box, because it answers the same kind of question in words. *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.AiAsk)"
+                               Context="ask">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="assistant">Ask</NavLink>
+                    </div>
+                </AuthorizeView>
+
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.AiAnalyse)"
+                               Context="readings">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="projects/readings">How projects stand</NavLink>
+                    </div>
+                </AuthorizeView>
+
                 <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.PostingsManage)"
                                Context="adverts">
                     <div class="nav-item px-3">
