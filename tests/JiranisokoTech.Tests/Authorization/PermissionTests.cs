@@ -257,17 +257,28 @@ public class PermissionTests
         Assert.All(brief, role => Assert.Contains(role, Roles.All));
     }
 
-    /// <summary>An auditor changes nothing.</summary>
+    /// <summary>
+    /// An auditor changes nothing.
+    /// </summary>
     /// <remarks>
     /// Checked by the shape of the name rather than a list, so a write permission added next
     /// year and granted to the auditor by habit fails here without anybody updating the test.
+    ///
+    /// Four shapes count as reading, not two. The narrow ones were left out when this was
+    /// written and the omission surfaced the day the auditor was given <c>tasks.view_own</c> —
+    /// which is not a write and had to be granted, because <c>Board.razor</c> asks for it and
+    /// an auditor holding <c>tasks.view_all</c> alone could find work through the search box
+    /// and not open the board it sits on. A rule about names has to know every name shape the
+    /// vocabulary uses, or it fails for the right reason at the wrong place.
     /// </remarks>
     [Fact]
     public void An_auditor_only_reads()
     {
+        string[] reading = [".view", ".view_all", ".view_own", ".view_member"];
+
         var writes = Roles.PermissionsFor(Roles.Auditor)
-            .Where(permission => !permission.EndsWith(".view", StringComparison.Ordinal)
-                && !permission.EndsWith(".view_all", StringComparison.Ordinal))
+            .Where(permission => !reading.Any(
+                shape => permission.EndsWith(shape, StringComparison.Ordinal)))
             .ToList();
 
         Assert.Empty(writes);

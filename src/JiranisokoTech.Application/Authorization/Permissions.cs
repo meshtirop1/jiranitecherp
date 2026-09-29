@@ -1143,7 +1143,17 @@ public static class Roles
                 Permissions.ClientsView, Permissions.VendorsView, Permissions.PurchasesView,
                 Permissions.ExpensesViewAll, Permissions.PayrollView,
                 Permissions.TimeViewAll, Permissions.LeaveViewAll,
-                Permissions.ProjectsViewAll, Permissions.TasksViewAll,
+                /*
+                 * Both halves, and view_own is the one that opens the door. Board.razor asks
+                 * for tasks.view_own and widens to everything for anybody holding view_all, so
+                 * an auditor with view_all alone held a permission that could not be exercised
+                 * on the screen it is about — they could find work through the search box and
+                 * not open the board it sits on. Found by the test that checks each link in
+                 * the navigation against the page behind it.
+                 */
+                Permissions.ProjectsViewAll,
+                Permissions.TasksViewAll, Permissions.TasksViewOwn,
+
                 Permissions.ReposView, Permissions.IncidentsView, Permissions.PlatformView,
                 Permissions.AssetsView, Permissions.RequisitionsView,
                 Permissions.AutomationView,

@@ -17,7 +17,15 @@
         <AuthorizeView>
             <Authorized>
                 <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                    @*
+                        The letters the brief names — C, T, P, G, D — are attributes on the
+                        links themselves rather than a map in JavaScript. A map would be a
+                        fourth copy of the permission matrix and the first one no test can
+                        see; an attribute sits inside the AuthorizeView already guarding the
+                        page, so a letter somebody cannot use is a letter that was never
+                        rendered. See wwwroot/palette.js, which reads them.
+                    *@
+                    <NavLink class="nav-link" href="" Match="NavLinkMatch.All" data-shortcut="d">
                         <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
                     </NavLink>
                 </div>
@@ -33,10 +41,20 @@
                     <NavLink class="nav-link" href="overview">How the firm is</NavLink>
                 </div>
 
+                @*
+                    Sign-ins, not money. Two pages in this application were both headed
+                    "Accounts" and both linked from here under that word, and the two links had
+                    their addresses swapped: this one was gated on users.view and opened the
+                    ledger, while the ledger's was gated on accounting.view and opened this. So
+                    everybody holding one permission and not the other — HR, a project manager,
+                    an engineering manager, an accountant — was shown a door that refused them.
+                    The labels are different words now, because identical names are what let
+                    the two be swapped without anybody noticing.
+                *@
                 <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.UsersView)"
                                Context="accounts">
                     <div class="nav-item px-3">
-                        <NavLink class="nav-link" href="accounting">Accounts</NavLink>
+                        <NavLink class="nav-link" href="accounts">Sign-ins</NavLink>
                     </div>
                 </AuthorizeView>
 
@@ -63,17 +81,45 @@
                     </div>
                 </AuthorizeView>
 
-                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.TasksViewAll)"
+                @*
+                    Raising a piece of work had no link anywhere in the navigation: it was
+                    reachable from a button on the board and from nowhere else, so the one
+                    thing an engineer does most often cost them two pages. C is the brief's
+                    letter for it, and tasks.create is what the page asks for.
+                *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.TasksCreate)"
+                               Context="raising">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="work/new" data-shortcut="c">
+                            Raise something
+                        </NavLink>
+                    </div>
+                </AuthorizeView>
+
+                @*
+                    tasks.view_own, which is what Board.razor asks for — and that permission
+                    exists for exactly this: "Separate from view_all so that an engineer can
+                    open the board at all." This link was gated on view_all anyway, so the five
+                    roles holding view_own and not view_all — developer, QA engineer, DevOps
+                    engineer, designer, support — could open the board and were shown no way to
+                    reach it from any page. The palette is built from this sidebar, so they had
+                    no entry there either.
+                *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.TasksViewOwn)"
                                Context="work">
                     <div class="nav-item px-3">
-                        <NavLink class="nav-link" href="work">Work</NavLink>
+                        <NavLink class="nav-link" href="work" data-shortcut="t">Work</NavLink>
                     </div>
+                </AuthorizeView>
 
-                    @*
-                        Inside the same check rather than behind one of its own, because they are
-                        two views of the same work and the permission is therefore the same one:
-                        the board is what is happening, and this is what was decided.
-                    *@
+                @*
+                    Its own check now rather than inside the board's. They were written as one
+                    because they are two views of the same work — but they are not two views
+                    behind the same permission: planning is what was decided for everybody, and
+                    it asks for view_all.
+                *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.TasksViewAll)"
+                               Context="planning">
                     <div class="nav-item px-3">
                         <NavLink class="nav-link" href="planning">Planning</NavLink>
                     </div>
@@ -82,7 +128,7 @@
                 <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ProjectsViewAll)"
                                Context="projects">
                     <div class="nav-item px-3">
-                        <NavLink class="nav-link" href="projects">Projects</NavLink>
+                        <NavLink class="nav-link" href="projects" data-shortcut="p">Projects</NavLink>
                     </div>
                 </AuthorizeView>
 
@@ -150,7 +196,7 @@
                 <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ReposView)"
                                Context="repositories">
                     <div class="nav-item px-3">
-                        <NavLink class="nav-link" href="repositories">Repositories</NavLink>
+                        <NavLink class="nav-link" href="repositories" data-shortcut="g">Repositories</NavLink>
                     </div>
                 </AuthorizeView>
 
@@ -220,7 +266,7 @@
                     Policy="@(PermissionClaim.PolicyPrefix + Permissions.AccountingView)"
                     Context="accounting">
                     <div class="nav-item px-3">
-                        <NavLink class="nav-link" href="accounts">Accounts</NavLink>
+                        <NavLink class="nav-link" href="accounting">Ledger</NavLink>
                     </div>
                 </AuthorizeView>
 
@@ -263,14 +309,21 @@
                     </div>
                 </AuthorizeView>
 
-                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.TimeApprove)"
+                @*
+                    The read rather than the act. Approving a timesheet needs time.approve, and
+                    opening the page that lists them needs time.view_all — so gating the link
+                    on the act showed nothing to HR and to the auditor, both of whom hold the
+                    read and may open it.
+                *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.TimeViewAll)"
                                Context="timesheets">
                     <div class="nav-item px-3">
                         <NavLink class="nav-link" href="time/approvals">Timesheets</NavLink>
                     </div>
                 </AuthorizeView>
 
-                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.LeaveApprove)"
+                @* The read rather than the act, as above: the auditor holds leave.view_all. *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.LeaveViewAll)"
                                Context="leaveDecisions">
                     <div class="nav-item px-3">
                         <NavLink class="nav-link" href="leave/decisions">Leave</NavLink>

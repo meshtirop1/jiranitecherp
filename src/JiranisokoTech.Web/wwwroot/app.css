@@ -1772,6 +1772,10 @@ code.key {
     padding: 0.55rem 1rem;
     text-decoration: none;
     color: var(--ink);
+
+    /* Takes the width so the shortcut letter beside it sits at the end of the row, and so
+       the whole row stays clickable rather than only the words. */
+    flex: 1;
 }
 
 /* The chosen row is marked with a ground and a left rule rather than colour alone,
@@ -1793,6 +1797,28 @@ code.key {
     background: var(--surface-sunken);
     border-radius: 3px;
     padding: 0 0.3rem;
+}
+
+/* A row that has a letter is a row with two children, so it lays out as a line with the
+   letter pushed to the end. The rows without one are unaffected, which is why this is on
+   the row rather than on the list. */
+.palette__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+/* The letter beside its destination, which is the whole of this feature's discoverability:
+   somebody reads it on the second visit and uses it on the third. Quiet, because it is a
+   note about the row and not the row. */
+.palette__key {
+    margin-right: 1rem;
+    background: var(--surface-sunken);
+    border-radius: 3px;
+    padding: 0 0.35rem;
+    color: var(--ink-quiet);
+    font-size: var(--text-sm);
 }
 
 /*

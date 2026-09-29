@@ -29,7 +29,11 @@
      */
     var destinations = Array.prototype.map
         .call(document.querySelectorAll('.sidebar a[href]'), function (link) {
-            return { label: link.textContent.trim(), href: link.getAttribute('href') };
+            return {
+                label: link.textContent.trim(),
+                href: link.getAttribute('href'),
+                letter: (link.getAttribute('data-shortcut') || '').toLowerCase(),
+            };
         })
         .filter(function (entry) {
             return entry.label.length > 0;
@@ -74,6 +78,20 @@
 
             row.className = index === 0 ? 'palette__row palette__row--on' : 'palette__row';
             row.appendChild(link);
+
+            /*
+             * The letter shown beside the destination it goes to, which is the whole of this
+             * feature's discoverability. A shortcut documented on a page of its own is a
+             * shortcut nobody reads about; one shown where somebody is already navigating is
+             * one they notice on the second visit and use on the third.
+             */
+            if (entry.letter) {
+                var key = document.createElement('kbd');
+                key.className = 'palette__key';
+                key.textContent = entry.letter.toUpperCase();
+                row.appendChild(key);
+            }
+
             list.appendChild(row);
         });
     }
@@ -115,12 +133,35 @@
     }
 
     /*
+     * The single letters the brief names: C, T, P, G, D.
+     *
+     * Read off the navigation rather than mapped here, for the reason the destinations are.
+     * Each letter is a data-shortcut attribute on a link that already sits inside the
+     * AuthorizeView guarding the page it points at — so a letter somebody may not use is a
+     * letter that was never rendered, and a map in this file would be a fourth copy of the
+     * permission matrix and the first one no test can see.
+     */
+    var letters = {};
+
+    Array.prototype.forEach.call(
+        document.querySelectorAll('.sidebar a[href][data-shortcut]'),
+        function (link) {
+            var letter = link.getAttribute('data-shortcut').toLowerCase();
+
+            if (letter.length === 1 && !letters[letter]) {
+                letters[letter] = link.getAttribute('href');
+            }
+        });
+
+    /*
      * Ctrl+K, and also the plain slash — which is what every search box on the web has
      * trained people to press. The slash is ignored while a field has focus, because
      * otherwise typing a date into a form opens the palette instead.
      */
     document.addEventListener('keydown', function (event) {
-        var typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+        var active = document.activeElement || document.body;
+        var typing = /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)
+            || active.isContentEditable;
 
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
             event.preventDefault();
@@ -131,6 +172,24 @@
         if (event.key === '/' && !typing && overlay.hidden) {
             event.preventDefault();
             open();
+            return;
+        }
+
+        /*
+         * A bare letter, and only a bare one. Nothing fires while a field has focus, while
+         * the palette is open, or with a modifier held — the last of those because Ctrl+P is
+         * print and Ctrl+D is bookmark, and a shortcut that eats the browser's own is a
+         * shortcut people turn off by not using the application.
+         */
+        if (overlay.hidden
+            && !typing
+            && !event.ctrlKey
+            && !event.metaKey
+            && !event.altKey
+            && !event.shiftKey
+            && Object.prototype.hasOwnProperty.call(letters, event.key.toLowerCase())) {
+            event.preventDefault();
+            window.location.href = letters[event.key.toLowerCase()];
             return;
         }
 
