@@ -23,12 +23,14 @@ namespace JiranisokoTech.Tests.Workflows;
 /// rendered against a null the moment a query genuinely awaited — see
 /// <see cref="PostgresApplicationFactory"/>.
 /// </remarks>
-public static class EveryPageOpens
+public static partial class EveryPageOpens
 {
     public static async Task CheckAsync(ApplicationFactory factory)
     {
         var browser = await Browsing.SignedInAsync(factory, "every-page@jiranisokotech.co.ke", Roles.Owner);
         var failures = new List<string>();
+
+        var unlabelled = new List<string>();
 
         foreach (var address in Addresses())
         {
@@ -39,11 +41,86 @@ public static class EveryPageOpens
                 || html.Contains("Quote this reference if you report it", StringComparison.Ordinal))
             {
                 failures.Add($"{address} → {(int)response.StatusCode}");
+                continue;
             }
+
+            unlabelled.AddRange(Unlabelled(html).Select(control => $"{address}  {control}"));
         }
 
         Assert.True(failures.Count == 0, "These pages did not open:\n  " + string.Join("\n  ", failures));
+
+        Assert.True(
+            unlabelled.Count == 0,
+            "A control with no label is announced by a screen reader as \"edit text\" or \"combo box\" "
+            + "and nothing else. Wrap it in a <label>, point a label's for= at its id, or give it an "
+            + "aria-label:\n  " + string.Join("\n  ", unlabelled.Distinct()));
     }
+
+    /// <summary>
+    /// Form controls a person can see that nothing names.
+    /// </summary>
+    /// <remarks>
+    /// Section 81 lists accessibility in the definition of done, and nothing checked any of it.
+    /// This is the part a machine can check without a browser: every visible input, select
+    /// and text area is named by a label around it, a label pointing at it, or an aria-label.
+    /// Hidden fields and buttons are left out — a button is named by its own text.
+    /// </remarks>
+    public static IEnumerable<string> Unlabelled(string html)
+    {
+        var labelledIds = LabelFor().Matches(html).Select(match => match.Groups[1].Value).ToHashSet();
+        var depth = 0;
+
+        foreach (System.Text.RegularExpressions.Match tag in Tag().Matches(html))
+        {
+            var text = tag.Value;
+            var name = tag.Groups[2].Value.ToLowerInvariant();
+
+            if (name == "label")
+            {
+                depth += tag.Groups[1].Value == "/" ? -1 : 1;
+                continue;
+            }
+
+            if (tag.Groups[1].Value == "/" || name is not ("input" or "select" or "textarea"))
+            {
+                continue;
+            }
+
+            var type = TypeOf().Match(text) is { Success: true } typed ? typed.Groups[1].Value.ToLowerInvariant() : "text";
+
+            if (name == "input" && type is "hidden" or "submit" or "button" or "reset" or "image")
+            {
+                continue;
+            }
+
+            if (depth > 0
+                || text.Contains("aria-label", StringComparison.Ordinal)
+                || text.Contains("aria-labelledby", StringComparison.Ordinal)
+                || (IdOf().Match(text) is { Success: true } id && labelledIds.Contains(id.Groups[1].Value)))
+            {
+                continue;
+            }
+
+            yield return NameOf().Match(text) is { Success: true } named
+                ? $"<{name} name=\"{named.Groups[1].Value}\">"
+                : $"<{name}>";
+        }
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"<(/?)(label|input|select|textarea)\b[^>]*>", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex Tag();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"<label\b[^>]*\bfor=""([^""]+)""")]
+    private static partial System.Text.RegularExpressions.Regex LabelFor();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\btype=""([^""]+)""")]
+    private static partial System.Text.RegularExpressions.Regex TypeOf();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\bid=""([^""]+)""")]
+    private static partial System.Text.RegularExpressions.Regex IdOf();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\bname=""([^""]+)""")]
+    private static partial System.Text.RegularExpressions.Regex NameOf();
 
     public static IReadOnlyList<string> Addresses() =>
         typeof(Program).Assembly.GetTypes()

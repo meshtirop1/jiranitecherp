@@ -164,9 +164,14 @@
                     var row = i;
 
                     <tr>
-                        <td><InputNumber @bind-Value="Input.Bands[row].From" step="0.01" /></td>
-                        <td><InputNumber @bind-Value="Input.Bands[row].To" step="0.01" /></td>
-                        <td><InputNumber @bind-Value="Input.Bands[row].Percent" step="0.01" /></td>
+                        @*
+                            Named per row, because the column heading is not a label: a screen
+                            reader landing in the eighteenth box of this table announced "edit
+                            text" and nothing about which band or which figure it was.
+                        *@
+                        <td><InputNumber @bind-Value="Input.Bands[row].From" step="0.01" aria-label="@($"Band {row + 1}, from")" /></td>
+                        <td><InputNumber @bind-Value="Input.Bands[row].To" step="0.01" aria-label="@($"Band {row + 1}, up to")" /></td>
+                        <td><InputNumber @bind-Value="Input.Bands[row].Percent" step="0.01" aria-label="@($"Band {row + 1}, percent")" /></td>
                     </tr>
                 }
             </tbody>
