@@ -389,6 +389,16 @@ public class AppDbContext(
     public DbSet<Domain.Privacy.PrivacyRequest> PrivacyRequests =>
         Set<Domain.Privacy.PrivacyRequest>();
 
+    /// <summary>
+    /// What the firm knows, written down.
+    /// </summary>
+    /// <remarks>
+    /// Section 25. The revisions are an owned collection rather than a table of their own here,
+    /// because a revision has no life without the article it is a version of — nothing ever
+    /// asks for one by its identifier.
+    /// </remarks>
+    public DbSet<Domain.Knowledge.Article> Articles => Set<Domain.Knowledge.Article>();
+
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
     /// <summary>

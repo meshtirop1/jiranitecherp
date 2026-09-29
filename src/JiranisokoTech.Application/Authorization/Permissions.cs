@@ -86,6 +86,32 @@ public static class Permissions
     public const string AnnouncementsPost = "announcements.post";
 
     /// <summary>
+    /// Write something down in the knowledge base, publish it, and take it down again.
+    /// </summary>
+    /// <remarks>
+    /// Section 25, and held by everybody who works here, like asking the firm to buy something.
+    /// That breadth is the decision rather than an oversight. The person who knows how a thing
+    /// is done is the person who should write it down, and a knowledge base whose contributions
+    /// queue behind an editor is a knowledge base with nothing in it — the article never gets
+    /// written, the answer stays in one person's head, and the next person asks them in a
+    /// corridor.
+    ///
+    /// One permission rather than three, and no separate right to publish or to retire. A
+    /// publishing gate would mean articles sitting in draft for a fortnight waiting for
+    /// somebody with no knowledge of the subject to press a button, which is the same failure
+    /// in a costlier form. What guards against a bad edit is not a permission: every article
+    /// carries an owner's name, every publication writes a revision, and the trail records who
+    /// changed what.
+    ///
+    /// Reading needs no permission at all, exactly as the notice board needs none. A knowledge
+    /// base with locked pages in it is one nobody trusts to be complete, so people go back to
+    /// asking a person — the failure the whole section exists to prevent. Anything that
+    /// genuinely must be restricted is a document, and documents already carry their own
+    /// permission and an access log.
+    /// </remarks>
+    public const string KnowledgeWrite = "knowledge.write";
+
+    /// <summary>
     /// Open the performance area: your own goals, and your own review once it has been shared.
     /// </summary>
     /// <remarks>
@@ -641,6 +667,7 @@ public static class Permissions
         DepartmentsView, DepartmentsManage,
         TeamsView, TeamsManage,
         AnnouncementsPost,
+        KnowledgeWrite,
         GoalsView, GoalsManage, GoalsViewAll,
 
         PayrollView, PayrollRun, PayrollPay, PayrollRates,
@@ -738,6 +765,14 @@ public static class Roles
     [
         Permissions.TimeLogOwn, Permissions.LeaveAsk, Permissions.ExpensesClaim,
         Permissions.PurchasesRequest, Permissions.GoalsView, Permissions.TeamsView,
+
+        /*
+         * Section 25, and here for the same reason as the rest: writing down how a thing is
+         * done is not a privilege. A knowledge base whose contributions queue behind an editor
+         * is one with nothing in it, because the article never gets written and the answer
+         * stays in one person's head.
+         */
+        Permissions.KnowledgeWrite,
     ];
 
     public static IReadOnlyDictionary<string, IReadOnlyList<string>> Matrix { get; } =

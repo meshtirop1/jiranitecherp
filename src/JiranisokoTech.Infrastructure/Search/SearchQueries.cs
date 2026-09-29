@@ -28,6 +28,17 @@ public enum ResultKind
     /// there when they cannot remember which.
     /// </remarks>
     Document = 7,
+
+    /// <summary>
+    /// Something the firm has written down.
+    /// </summary>
+    /// <remarks>
+    /// Section 25, and found here rather than through a search box of its own. A knowledge base
+    /// with its own search is one people only reach once they have already decided the answer
+    /// is written down — and the moment worth catching is the one before that, when somebody
+    /// types a word into the box they already use and the article is sitting in the results.
+    /// </remarks>
+    Article = 8,
 }
 
 public sealed record SearchResult(ResultKind Kind, Guid Id, string Title, string? Detail, string Href);
@@ -276,6 +287,35 @@ public sealed class SearchQueries(AppDbContext database, Reaches reaches)
                 ResultKind.Candidate, candidate.Id, candidate.FullName, candidate.Email,
                 "/hiring")));
         }
+
+        /*
+         * The knowledge base, behind no permission at all — the only group here that is not,
+         * and deliberately. Reading it needs none for the reason the notice board needs none:
+         * it is addressed to everybody who works here. Only published articles are matched,
+         * because a draft is somebody's half-written thought and a retired one describes
+         * something the firm has stopped doing, and a search result is read as an answer.
+         *
+         * Title, summary and labels; never the body. Matching forty thousand characters would
+         * return every article that mentions the word in passing, ranked no better than the one
+         * about it.
+         */
+        var articles = await database.Articles
+            .AsNoTracking()
+            .Where(article => article.State == Domain.Knowledge.ArticleState.Published
+                && (article.Title.ToLower().Contains(cleaned)
+                    || article.Summary.ToLower().Contains(cleaned)
+                    || (article.Labels != null && article.Labels.Contains(cleaned))))
+            .OrderBy(article => article.Title)
+            .Take(PerGroup)
+            .Select(article => new { article.Id, article.Key, article.Title, article.Summary })
+            .ToListAsync(cancellationToken);
+
+        found.AddRange(articles.Select(article => new SearchResult(
+            ResultKind.Article,
+            article.Id,
+            article.Title,
+            article.Summary,
+            $"/knowledge/{article.Key}")));
 
         return found;
     }

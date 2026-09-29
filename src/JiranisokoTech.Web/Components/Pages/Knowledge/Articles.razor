@@ -1,0 +1,315 @@
+@page "/knowledge"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Knowledge
+@using JiranisokoTech.Domain.Knowledge
+@using JiranisokoTech.Infrastructure.Knowledge
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject KnowledgeService Service
+@inject KnowledgeQueries Queries
+@inject PeopleQueries People
+@inject NavigationManager Navigation
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    Section 25. What the firm knows, written down where the next person can find it.
+
+    Reading needs no permission, exactly as the notice board needs none — a knowledge base with
+    locked pages in it is one nobody trusts to be complete, so people go back to asking a person,
+    which is the failure the whole section exists to prevent.
+
+    The heading counts what has gone stale rather than how many articles there are. A count of
+    articles only ever goes up and says nothing; a count of articles nobody has confirmed in time
+    is the one number here anybody can act on.
+*@
+
+<PageTitle>Knowledge — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Knowledge</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+<p class="instructions">
+    How things are done here. Every article carries a name and a date by which somebody says out
+    loud that it is still true — an article that quietly stopped being true is worse than no
+    article, because somebody follows it, it does not work, and after that they ask a person
+    instead.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<form method="get" class="filters" data-narrow-submit>
+    <label>
+        <span>Search</span>
+        <input name="term" value="@Term" placeholder="deploying, expenses, onboarding" />
+    </label>
+
+    <label>
+        <span>Label</span>
+        <select name="label">
+            <option value="">Any</option>
+            @foreach (var (name, count) in Labels)
+            {
+                <option value="@name" selected="@(name == Label)">@name (@count)</option>
+            }
+        </select>
+    </label>
+
+    <label>
+        <span>Showing</span>
+        <select name="show">
+            <option value="" selected="@(Show is null)">What is up</option>
+            <option value="stale" selected="@(Show == "stale")">Overdue a check</option>
+            <option value="all" selected="@(Show == "all")">Everything, drafts included</option>
+        </select>
+    </label>
+
+    <button type="submit">Show</button>
+
+    @if (Term is { Length: > 0 } || Label is { Length: > 0 } || Show is not null)
+    {
+        <a class="filters__clear" href="/knowledge">Clear</a>
+    }
+</form>
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">@Nothing</p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Articles</caption>
+        <thead>
+            <tr>
+                <th scope="col">Article</th>
+                <th scope="col">Labels</th>
+                <th scope="col">Kept by</th>
+                <th scope="col">Checked by</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Rows)
+            {
+                <tr class="@(row.State == ArticleState.Retired ? "row--closed" : null)">
+                    <td>
+                        <a href="/knowledge/@row.Key"><strong>@row.Title</strong></a>
+
+                        @if (row.State == ArticleState.Draft)
+                        {
+                            <span class="pill pill--wait">draft</span>
+                        }
+                        else if (row.State == ArticleState.Retired)
+                        {
+                            <span class="pill pill--quiet">retired</span>
+                        }
+
+                        <br />
+                        <span class="subtle">@row.Summary</span>
+                    </td>
+                    <td><span class="subtle">@(row.Labels ?? "—")</span></td>
+                    <td>@row.Owner</td>
+                    <td>
+                        @if (row.ReviewBy is { } due)
+                        {
+                            @due.ToString("d MMM yyyy")
+
+                            @if (row.IsStale)
+                            {
+                                <span class="pill pill--danger">overdue</span>
+                            }
+                        }
+                        else
+                        {
+                            <span class="subtle">—</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<AuthorizeView Policy="@Writing" Context="permitted">
+    <EditForm Model="Input" method="post" OnValidSubmit="Start" FormName="write"
+              class="panel stack">
+        <DataAnnotationsValidator />
+
+        <h2>Write one</h2>
+
+        <p class="subtle">
+            It starts as a draft that only people who write can see. Publishing it is a separate
+            act, because that is where the review date is promised.
+        </p>
+
+        <label>
+            <span>Title</span>
+            <InputText @bind-Value="Input.Title" placeholder="Deploying by hand" />
+            <ValidationMessage For="() => Input.Title" />
+            <span class="subtle">
+                The address comes from this and never moves again, so a link pasted into a
+                ticket still opens the article after somebody fixes a typo in the title.
+            </span>
+        </label>
+
+        <label>
+            <span>What is in it</span>
+            <InputText @bind-Value="Input.Summary"
+                       placeholder="The steps to follow when the pipeline is unavailable" />
+            <ValidationMessage For="() => Input.Summary" />
+            <span class="subtle">
+                One or two sentences. This is what the list and the search results show, so it
+                is what somebody chooses between six articles on.
+            </span>
+        </label>
+
+        <label>
+            <span>Labels</span>
+            <InputText @bind-Value="Input.Labels" placeholder="deployment, runbooks" />
+            <span class="subtle">
+                Comma separated. Labels rather than folders, because the article on deploying
+                the payments service belongs under deployment and under APIs both.
+            </span>
+        </label>
+
+        <label>
+            <span>The article</span>
+            <InputTextArea rows="12" @bind-Value="Input.Body" />
+            <ValidationMessage For="() => Input.Body" />
+        </label>
+
+        <button type="submit">Start it</button>
+    </EditForm>
+</AuthorizeView>
+
+@code {
+    private const string Writing = PermissionClaim.PolicyPrefix + Permissions.KnowledgeWrite;
+
+    [SupplyParameterFromQuery(Name = "term")]
+    private string? Term { get; set; }
+
+    [SupplyParameterFromQuery(Name = "label")]
+    private string? Label { get; set; }
+
+    [SupplyParameterFromQuery(Name = "show")]
+    private string? Show { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private WriteInput _input = new();
+
+    [SupplyParameterFromForm(FormName = "write")]
+    private WriteInput Input
+    {
+        get => _input;
+        set => _input = value ?? new WriteInput();
+    }
+
+    private List<ArticleRow> Rows { get; set; } = [];
+
+    private IReadOnlyList<(string Label, int Count)> Labels { get; set; } = [];
+
+    private int Stale { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private DateOnly Today => Clock.Today;
+
+    private string Headline =>
+        Rows.Count == 0 && Stale == 0
+            ? "Nothing has been written down yet."
+            : Stale == 0
+                ? "Everything up is within its review date."
+                : Stale == 1
+                    ? "One article is overdue a check."
+                    : $"{Stale} articles are overdue a check.";
+
+    private string Nothing =>
+        Show == "stale"
+            ? "Nothing is overdue a check."
+            : Term is { Length: > 0 } || Label is { Length: > 0 }
+                ? "Nothing here matches that."
+                : "Nothing has been written down yet.";
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        /*
+         * Whether drafts are shown is decided here rather than by the select, because a query
+         * string is not behind a permission: somebody who cannot write can type ?show=all into
+         * the address bar, and without this they would be reading other people's half-written
+         * thoughts.
+         */
+        var user = (await AuthenticationState).User;
+        var mayWrite = user.HasClaim(PermissionClaim.Type, Permissions.KnowledgeWrite);
+
+        Rows = await Queries.ListAsync(
+            Today,
+            Term,
+            Label,
+            includeUnpublished: mayWrite && Show == "all",
+            onlyStale: Show == "stale");
+
+        Labels = await Queries.LabelsAsync();
+        Stale = await Queries.StaleCountAsync(Today);
+    }
+
+    private async Task Start()
+    {
+        Refusal = null;
+
+        try
+        {
+            var user = (await AuthenticationState).User;
+
+            var me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+                ? await People.EmployeeForAccountAsync(account)
+                : null;
+
+            if (me is not { } owner)
+            {
+                throw new InvalidOperationException(
+                    "An article carries the name of whoever keeps it true, and this account is "
+                    + "not linked to a staff record.");
+            }
+
+            var article = await Service.StartAsync(
+                Input.Title, Input.Summary, Input.Body, owner, Input.Labels);
+
+            Navigation.NavigateTo($"/knowledge/{article.Key}");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private sealed class WriteInput
+    {
+        [Required(ErrorMessage = "An article needs a title, which is also its address.")]
+        [StringLength(200)]
+        public string Title { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Say in a sentence what is in it. The list shows this.")]
+        [StringLength(500)]
+        public string Summary { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "An empty article is a title nobody can act on.")]
+        [StringLength(Article.LongestBody)]
+        public string Body { get; set; } = string.Empty;
+
+        [StringLength(400)]
+        public string? Labels { get; set; }
+    }
+}

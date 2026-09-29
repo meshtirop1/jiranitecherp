@@ -1,0 +1,569 @@
+@page "/knowledge/{Key}"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Knowledge
+@using JiranisokoTech.Domain.Knowledge
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject KnowledgeService Service
+@inject PeopleQueries People
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    One article.
+
+    The address is the slug rather than the identifier, and this is the only page in the
+    application where that is true. It is here because this is the one kind of page people paste
+    into chat messages and tickets — "see /knowledge/deploying-by-hand" is a sentence somebody
+    types, and a GUID is not.
+
+    Statically rendered. Every control is a form that posts and re-renders, which is also what
+    makes it testable: a page test can post the publish form and assert the row.
+*@
+
+<PageTitle>@(Written?.Title ?? "Article") — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/knowledge">Knowledge</a></nav>
+
+@if (Written is null)
+{
+    <p class="empty">
+        Nothing is written down at that address. It may have been started under another title —
+        the knowledge base is <a href="/knowledge">here</a>.
+    </p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Written.Title</h1>
+        <p class="subtle">
+            @if (Written.State == ArticleState.Draft)
+            {
+                <span class="pill pill--wait">draft</span>
+            }
+            else if (Written.State == ArticleState.Retired)
+            {
+                <span class="pill pill--quiet">retired</span>
+            }
+            else if (Written.IsStaleOn(Today))
+            {
+                <span class="pill pill--danger">overdue a check</span>
+            }
+            else
+            {
+                <span class="pill pill--done">up</span>
+            }
+
+            <span class="subtle">kept by @Owner</span>
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    @if (Written.State == ArticleState.Retired)
+    {
+        @*
+            Above the article rather than below it, because somebody who arrived from a search
+            result is about to act on what is written here and needs to know first that the firm
+            has stopped doing it.
+        *@
+        <p class="refusal" role="note">This was taken down. @Written.RetiredBecause</p>
+    }
+    else if (Written.IsStaleOn(Today))
+    {
+        <p class="refusal" role="note">
+            Nobody has confirmed this since
+            @(Written.LastCheckedAt?.ToString("d MMMM yyyy") ?? "it was written"), and it was due
+            a check on @(Written.ReviewBy?.ToString("d MMMM yyyy")). Read it before you act on it.
+        </p>
+    }
+
+    <p class="instructions">@Written.Summary</p>
+
+    @if (Written.Labelled() is { Count: > 0 } labels)
+    {
+        <p class="subtle">
+            @foreach (var label in labels)
+            {
+                <a class="pill pill--quiet" href="/knowledge?label=@label">@label</a>
+            }
+        </p>
+    }
+
+    <section class="standing">
+        <h2 class="visually-hidden">The article</h2>
+        <p class="as-typed">@Written.Body</p>
+    </section>
+
+    <dl class="facts">
+        <dt>Written</dt>
+        <dd>@Written.WrittenAt.ToLocalTime().ToString("d MMMM yyyy")</dd>
+
+        @if (Written.PublishedAt is { } first)
+        {
+            <dt>First published</dt>
+            <dd>@first.ToLocalTime().ToString("d MMMM yyyy")</dd>
+        }
+
+        @if (Written.LastCheckedAt is { } checkedAt)
+        {
+            <dt>Last confirmed true</dt>
+            <dd>
+                @checkedAt.ToLocalTime().ToString("d MMMM yyyy")
+                @if (CheckedBy is { Length: > 0 } who)
+                {
+                    <span class="subtle">by @who</span>
+                }
+            </dd>
+        }
+
+        @if (Written.ReviewBy is { } due)
+        {
+            <dt>Due a check</dt>
+            <dd>
+                <span class="@(Written.IsStaleOn(Today) ? "stale" : null)">
+                    @due.ToString("d MMMM yyyy")
+                </span>
+            </dd>
+        }
+    </dl>
+
+    <AuthorizeView Policy="@Writing" Context="permitted">
+        @if (Written.State == ArticleState.Published)
+        {
+            <EditForm Model="Check" method="post" OnValidSubmit="StillTrue" FormName="confirm"
+                      class="panel stack">
+                <DataAnnotationsValidator />
+
+                <h2>Say it is still true</h2>
+
+                <p class="subtle">
+                    The cheap act this whole section is arranged around. It changes nothing in
+                    the article and writes no revision — it records that somebody read it and
+                    stood behind it, which is the only thing that moves the date.
+                </p>
+
+                <div class="fields">
+                    <label>
+                        <span>Check it again by</span>
+                        <InputDate @bind-Value="Check.ReviewBy" />
+                        <ValidationMessage For="() => Check.ReviewBy" />
+                    </label>
+                </div>
+
+                <button type="submit">Still true</button>
+            </EditForm>
+        }
+
+        @if (Written.State != ArticleState.Retired)
+        {
+            <EditForm Model="Edit" method="post" OnValidSubmit="Rewrite" FormName="rewrite"
+                      class="panel stack">
+                <DataAnnotationsValidator />
+
+                <h2>Change what it says</h2>
+
+                <p class="subtle">
+                    Editing a published article leaves it published, because the alternative is
+                    that fixing one wrong sentence takes the right ones off the screen while
+                    somebody waits to press publish again. It writes no revision — only
+                    publishing does.
+                </p>
+
+                <label>
+                    <span>Title</span>
+                    <InputText @bind-Value="Edit.Title" />
+                    <ValidationMessage For="() => Edit.Title" />
+                    <span class="subtle">
+                        The address stays <code>@Written.Key</code> whatever this says.
+                    </span>
+                </label>
+
+                <label>
+                    <span>What is in it</span>
+                    <InputText @bind-Value="Edit.Summary" />
+                    <ValidationMessage For="() => Edit.Summary" />
+                </label>
+
+                <label>
+                    <span>Labels</span>
+                    <InputText @bind-Value="Edit.Labels" />
+                </label>
+
+                <label>
+                    <span>The article</span>
+                    <InputTextArea rows="16" @bind-Value="Edit.Body" />
+                    <ValidationMessage For="() => Edit.Body" />
+                </label>
+
+                <button type="submit">Save it</button>
+            </EditForm>
+
+            <EditForm Model="Put" method="post" OnValidSubmit="Publish" FormName="publish"
+                      class="panel stack">
+                <DataAnnotationsValidator />
+
+                <h2>@(Written.IsPublished ? "Publish the change" : "Publish it")</h2>
+
+                <p class="subtle">
+                    This writes a revision — the version of the words the firm stood behind from
+                    now until the next one — and promises a date by which somebody will say it is
+                    still true. A date in the past is refused, and so is one more than two years
+                    off.
+                </p>
+
+                <div class="fields">
+                    <label>
+                        <span>Check it by</span>
+                        <InputDate @bind-Value="Put.ReviewBy" />
+                        <ValidationMessage For="() => Put.ReviewBy" />
+                    </label>
+                </div>
+
+                <label>
+                    <span>What changed</span>
+                    <InputText @bind-Value="Put.Note" placeholder="Optional" />
+                </label>
+
+                <button type="submit">Publish</button>
+            </EditForm>
+
+            <EditForm Model="Hand" method="post" OnValidSubmit="HandOver" FormName="hand-over"
+                      class="panel stack">
+                <h2>Hand it to somebody else</h2>
+
+                <p class="subtle">
+                    Review is an act a person performs, so an article owed by a team is owed by
+                    nobody. When the person who knows this moves on, the name moves with the
+                    subject rather than out of the door.
+                </p>
+
+                <div class="fields">
+                    <label>
+                        <span>Kept by</span>
+                        <InputSelect @bind-Value="Hand.OwnerId">
+                            @foreach (var (id, name) in Names.OrderBy(one => one.Value))
+                            {
+                                <option value="@id">@name</option>
+                            }
+                        </InputSelect>
+                    </label>
+                </div>
+
+                <button type="submit" class="button--quiet">Hand it over</button>
+            </EditForm>
+
+            <EditForm Model="Down" method="post" OnValidSubmit="Retire" FormName="retire"
+                      class="panel stack">
+                <DataAnnotationsValidator />
+
+                <h2>Take it down</h2>
+
+                <p class="subtle">
+                    It stays findable and stops being an answer. The reason is required, because
+                    somebody will search for what this described and a retired article with no
+                    explanation is indistinguishable from one taken down by accident — so they
+                    read it anyway.
+                </p>
+
+                <label>
+                    <span>Why, and what to read instead</span>
+                    <InputText @bind-Value="Down.Because"
+                               placeholder="The pipeline does this now — see /knowledge/…" />
+                    <ValidationMessage For="() => Down.Because" />
+                </label>
+
+                <button type="submit" class="danger">Take it down</button>
+            </EditForm>
+        }
+
+        @if (Written.Revisions is { Count: > 0 } revisions)
+        {
+            <section class="standing">
+                <h2>Versions the firm stood behind</h2>
+
+                <p class="subtle">
+                    One per publication, and none for a save. A revision per keystroke is a table
+                    of half-finished sentences nobody has ever read; this is the list that
+                    answers what this said in March.
+                </p>
+
+                <table class="grid">
+                    <caption class="visually-hidden">Published versions</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">When</th>
+                            <th scope="col">By</th>
+                            <th scope="col">What changed</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var revision in revisions)
+                        {
+                            <tr>
+                                <td>@revision.At.ToLocalTime().ToString("d MMM yyyy HH:mm")</td>
+                                <td>@(Names.GetValueOrDefault(revision.ByEmployeeId) ?? "somebody")</td>
+                                <td><span class="subtle">@(revision.Note ?? "—")</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        }
+    </AuthorizeView>
+}
+
+@code {
+    private const string Writing = PermissionClaim.PolicyPrefix + Permissions.KnowledgeWrite;
+
+    [Parameter]
+    public string Key { get; set; } = string.Empty;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    private EditInput _edit = new();
+
+    [SupplyParameterFromForm(FormName = "rewrite")]
+    private EditInput Edit
+    {
+        get => _edit;
+        set => _edit = value ?? new EditInput();
+    }
+
+    private PublishInput _put = new();
+
+    [SupplyParameterFromForm(FormName = "publish")]
+    private PublishInput Put
+    {
+        get => _put;
+        set => _put = value ?? new PublishInput();
+    }
+
+    private DateInput _check = new();
+
+    [SupplyParameterFromForm(FormName = "confirm")]
+    private DateInput Check
+    {
+        get => _check;
+        set => _check = value ?? new DateInput();
+    }
+
+    private OwnerInput _hand = new();
+
+    [SupplyParameterFromForm(FormName = "hand-over")]
+    private OwnerInput Hand
+    {
+        get => _hand;
+        set => _hand = value ?? new OwnerInput();
+    }
+
+    private ReasonInput _down = new();
+
+    [SupplyParameterFromForm(FormName = "retire")]
+    private ReasonInput Down
+    {
+        get => _down;
+        set => _down = value ?? new ReasonInput();
+    }
+
+    private Article? Written { get; set; }
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private Guid? Me { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private DateOnly Today => Clock.Today;
+
+    private string Owner =>
+        Written is not null ? Names.GetValueOrDefault(Written.OwnerId) ?? "nobody" : "nobody";
+
+    private string? CheckedBy =>
+        Written?.LastCheckedById is { } who ? Names.GetValueOrDefault(who) : null;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        Me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        Written = await Service.ByKeyAsync(Key);
+        Names = await People.NamesAsync();
+
+        /*
+         * The controls are filled from the stored article only on a GET. Doing it on every pass
+         * would overwrite what was just typed: under static rendering every request is a new
+         * component instance, so a flag set on the first pass is false again on the POST and
+         * the seeding runs before the handler reads the model. See FirstLook — four pages were
+         * silently doing nothing because of exactly this, and then three more.
+         */
+        if (Written is { } article && FirstLook.ThisTime(Request))
+        {
+            Edit = new EditInput
+            {
+                Title = article.Title,
+                Summary = article.Summary,
+                Body = article.Body,
+                Labels = article.Labels,
+            };
+
+            Hand = new OwnerInput { OwnerId = article.OwnerId };
+
+            var suggested = (article.ReviewBy ?? Today.AddMonths(6))
+                .ToDateTime(TimeOnly.MinValue);
+
+            Put = new PublishInput { ReviewBy = suggested };
+            Check = new DateInput { ReviewBy = Today.AddMonths(6).ToDateTime(TimeOnly.MinValue) };
+        }
+    }
+
+    private Task Rewrite() => Act(
+        article => Service.RewriteAsync(
+            article.Id, Edit.Title, Edit.Summary, Edit.Body, Edit.Labels),
+        "Saved.");
+
+    private Task Publish() => Act(
+        async article =>
+        {
+            if (Me is not { } me)
+            {
+                throw new InvalidOperationException(
+                    "Publishing carries the name of whoever did it, and this account is not "
+                    + "linked to a staff record.");
+            }
+
+            await Service.PublishAsync(
+                article.Id,
+                me,
+                DateOnly.FromDateTime(Put.ReviewBy),
+                string.IsNullOrWhiteSpace(Put.Note) ? null : Put.Note);
+        },
+        "Published, and a version recorded.");
+
+    private Task StillTrue() => Act(
+        async article =>
+        {
+            if (Me is not { } me)
+            {
+                throw new InvalidOperationException(
+                    "Confirming an article carries a name, and this account is not linked to a "
+                    + "staff record.");
+            }
+
+            await Service.StillTrueAsync(
+                article.Id, me, DateOnly.FromDateTime(Check.ReviewBy));
+        },
+        "Recorded. The clock has moved.");
+
+    private Task HandOver() => Act(
+        article => Service.HandOverAsync(article.Id, Hand.OwnerId), "Handed over.");
+
+    private Task Retire() => Act(
+        article => Service.RetireAsync(article.Id, Down.Because),
+        "Taken down. It stays findable, and says why.");
+
+    /// <summary>
+    /// Run one of the forms and say what happened.
+    /// </summary>
+    /// <remarks>
+    /// Catching broadly, because these cross out of the domain and into the database. A handler
+    /// that caught only the domain's exceptions would kill the circuit on anything else and
+    /// leave the page contradicting the row — which on this page means pressing publish twice.
+    /// </remarks>
+    private async Task Act(Func<Article, Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        if (Written is not { } article)
+        {
+            return;
+        }
+
+        try
+        {
+            await work(article);
+            Done = done;
+        }
+        catch (Exception exception)
+        {
+            Refusal = exception.Message;
+        }
+
+        Written = await Service.ByKeyAsync(Key);
+    }
+
+    private sealed class EditInput
+    {
+        [Required(ErrorMessage = "An article needs a title.")]
+        [StringLength(200)]
+        public string Title { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Say in a sentence what is in it.")]
+        [StringLength(500)]
+        public string Summary { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "An empty article is a title nobody can act on.")]
+        [StringLength(Article.LongestBody)]
+        public string Body { get; set; } = string.Empty;
+
+        [StringLength(400)]
+        public string? Labels { get; set; }
+    }
+
+    private sealed class DateInput
+    {
+        [Required(ErrorMessage = "Name the day somebody will look at this again.")]
+        public DateTime ReviewBy { get; set; }
+    }
+
+    /// <summary>
+    /// The same date, and a line about what changed.
+    /// </summary>
+    /// <remarks>
+    /// A type of its own rather than a nullable note on <see cref="DateInput"/>, because the two
+    /// forms are bound by name and a shared model would put the publish note on the confirm
+    /// form — where there is nothing to say, since confirming changes nothing.
+    /// </remarks>
+    private sealed class PublishInput
+    {
+        [Required(ErrorMessage = "Name the day somebody will look at this again.")]
+        public DateTime ReviewBy { get; set; }
+
+        [StringLength(500)]
+        public string? Note { get; set; }
+    }
+
+    private sealed class OwnerInput
+    {
+        public Guid OwnerId { get; set; }
+    }
+
+    private sealed class ReasonInput
+    {
+        [Required(ErrorMessage = "Say why, and what to read instead.")]
+        [StringLength(1_000)]
+        public string Because { get; set; } = string.Empty;
+    }
+}

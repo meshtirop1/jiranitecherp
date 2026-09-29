@@ -294,6 +294,15 @@ public static class ServiceCollectionExtensions
          * means — are asked of the class that decides them rather than worked out again.
          */
         services.AddScoped<OverviewQueries>();
+
+        /*
+         * The knowledge base. Section 25, and the queries are separate from the service because
+         * the list shows forty summaries and must never load forty bodies to do it.
+         */
+        services.AddScoped<Application.Knowledge.IKnowledgeRepository,
+            Infrastructure.Knowledge.KnowledgeRepository>();
+        services.AddScoped<Application.Knowledge.KnowledgeService>();
+        services.AddScoped<Infrastructure.Knowledge.KnowledgeQueries>();
         services.AddScoped<WaitingQueries>();
         services.AddScoped<IExchangeRateRepository, ExchangeRateRepository>();
         services.AddScoped<ExchangeRateService>();
