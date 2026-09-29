@@ -91,6 +91,22 @@ internal static class Program
         services.AddModules(configuration);
 
         /*
+         * The mail registrations, which AddModules does not include — and without them twelve of
+         * the queued announcements failed rather than settling.
+         *
+         * Several notice handlers take IMailer so that a notice can also be a letter, and the
+         * handlers are resolved by the dispatcher through GetServices, so a missing registration is
+         * not a start-up error: the message is claimed, the handler cannot be built, and it is
+         * recorded as a failure and scheduled for retry. Twelve WorkItemAssigned messages did that
+         * silently, and the demonstration database would have shown twelve dead letters on the
+         * machinery page — which is precisely the thing that makes a demonstration look broken.
+         *
+         * Found by seeding a real database and counting what was left in the outbox. The transport
+         * is None (see the configuration above), so this registers a mailer that writes nothing.
+         */
+        services.AddMail(configuration);
+
+        /*
          * The travelling clock and the named actor replace what AddPersistence registered. Without
          * the first, every date would be the same three seconds; without the second, a year of
          * history would have no actor in the audit trail and nobody could explain it later.
@@ -131,16 +147,23 @@ internal static class Program
         var report = await firm.FillAsync();
 
         /*
-         * The outbox is drained here rather than left for a running application to find. Everything
-         * above raised domain events — a client taken on, an invoice sent, somebody hired — and
-         * they are queued rather than dispatched, deliberately, so that a rule cannot fire for
-         * something that then fails to save. Left queued, the first start of the application after
-         * a seed would process eighteen months of them at once, which is how a demonstration
-         * database sends a year of notices to whoever signs in first.
+         * The queue is drained as part of the seed rather than left for a running application to
+         * find. Everything above raised domain events — a client taken on, an invoice sent, somebody
+         * hired — and they are queued rather than dispatched, deliberately, so that a rule cannot
+         * fire for something that then fails to save. Left queued, the first start of the
+         * application after a seed would process eighteen months of them at once.
+         *
+         * See DemoFirm.DrainAsync for why it loops and what the left-over count is for.
          */
-        var settled = await scope.ServiceProvider
-            .GetRequiredService<OutboxDispatcher>()
-            .RunOnceAsync();
+        var (settled, leftOver) = await firm.DrainAsync();
+
+        if (leftOver > 0)
+        {
+            Console.Error.WriteLine(
+                $"{leftOver} queued announcements are still waiting, which means they are failing "
+                + "rather than queued. The application will keep retrying them; look at "
+                + "/settings/machinery.");
+        }
 
         Console.WriteLine();
         Console.WriteLine($"Done. {settled} queued announcements settled on the way out.");

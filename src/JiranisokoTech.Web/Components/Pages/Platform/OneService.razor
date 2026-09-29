@@ -162,7 +162,7 @@ else
                             <td>
                                 @if (one.ResolvedAt is { } ended)
                                 {
-                                    @Length(ended - one.StartedAt)
+                                    @Words.HowLong(ended - one.StartedAt)
                                 }
                                 else
                                 {
@@ -357,28 +357,6 @@ else
 
     private string RepositoryName(Guid id) =>
         Repos.FirstOrDefault(one => one.Id == id)?.FullName ?? "a repository since disconnected";
-
-    private static string Length(TimeSpan span)
-    {
-        if (span < TimeSpan.FromMinutes(1))
-        {
-            return "under a minute";
-        }
-
-        if (span < TimeSpan.FromHours(1))
-        {
-            return $"{(int)span.TotalMinutes} min";
-        }
-
-        if (span < TimeSpan.FromDays(1))
-        {
-            var hours = (int)span.TotalHours;
-
-            return span.Minutes == 0 ? $"{hours} hr" : $"{hours} hr {span.Minutes} min";
-        }
-
-        return $"{(int)span.TotalDays} days";
-    }
 
     private static string PillFor(HowCritical matters) => matters switch
     {

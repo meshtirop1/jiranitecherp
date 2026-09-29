@@ -231,12 +231,12 @@ else
 
         if (minutes >= day && minutes % day == 0)
         {
-            return $"{minutes / day} day(s)";
+            return Words.Count(minutes / day, "day");
         }
 
         return minutes >= 60 && minutes % 60 == 0
-            ? $"{minutes / 60} hour(s)"
-            : $"{minutes} minute(s)";
+            ? Words.Count(minutes / 60, "hour")
+            : Words.Count(minutes, "minute");
     }
 
     private sealed class WriteInput

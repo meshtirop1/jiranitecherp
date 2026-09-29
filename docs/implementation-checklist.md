@@ -16,7 +16,7 @@ row with a fixed key rather than a table of organisations.
 
 `✅` done · `◐` partial, with the gap named · `☐` not started
 
-Last updated: 30 September 2026 · 1,700 tests, three of the brief's four workflows walked end to end and a page
+Last updated: 30 September 2026 · 1,663 tests, three of the brief's four workflows walked end to end and a page
 sweep among them, run on SQLite and again on PostgreSQL in CI · earlier verified against PostgreSQL in
 Docker, including the webhook endpoint answering a signed delivery inside the
 container, a lost opportunity surviving its client record being deleted, the

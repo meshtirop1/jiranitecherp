@@ -5,6 +5,7 @@
 @layout CareersLayout
 @attribute [AllowAnonymous]
 @inject RecruitmentQueries Queries
+@inject JiranisokoTech.Application.Settings.SettingsService Settings
 
 @*
     The only page in this application a stranger is meant to read, and the one
@@ -12,7 +13,7 @@
     scripts of its own, nothing to wait for.
 *@
 
-<PageTitle>Work with us — Jiranisoko Tech Solutions</PageTitle>
+<PageTitle>Work with us — @Firm</PageTitle>
 
 <h1 class="careers__title">Work with us</h1>
 
@@ -30,8 +31,7 @@
 else
 {
     <p class="careers__lead">
-        @Openings.Count @(Openings.Count == 1 ? "opening" : "openings") at Jiranisoko
-        Tech Solutions.
+        @Openings.Count @(Openings.Count == 1 ? "opening" : "openings") at @Firm.
     </p>
 
     <ul class="careers__list">
@@ -54,5 +54,20 @@ else
 @code {
     private List<OpeningRow> Openings { get; set; } = [];
 
-    protected override async Task OnInitializedAsync() => Openings = await Queries.OpeningsAsync();
+    /// <summary>
+    /// The firm's own name, for the title of the one page a stranger reads.
+    /// </summary>
+    /// <remarks>
+    /// Read rather than typed. It used to be a literal here and in six other places, so renaming
+    /// the firm renamed it on invoices and not on the page a candidate is looking at — and it is
+    /// also what makes a demonstration copy of this application say so in its own title rather
+    /// than advertising a real-looking job.
+    /// </remarks>
+    private string Firm { get; set; } = Words.TheFirm;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Openings = await Queries.OpeningsAsync();
+        Firm = (await Settings.CurrentAsync()).TradingName;
+    }
 }

@@ -8,9 +8,10 @@
 @attribute [AllowAnonymous]
 @attribute [EnableRateLimiting(JiranisokoTech.Web.CareersLimits.Limit)]
 @inject RecruitmentQueries Queries
+@inject JiranisokoTech.Application.Settings.SettingsService Settings
 @inject RecruitmentService Service
 
-<PageTitle>@(Advert?.Title ?? "Opening") — Jiranisoko Tech Solutions</PageTitle>
+<PageTitle>@(Advert?.Title ?? "Opening") — @Firm</PageTitle>
 
 @if (Advert is null)
 {
@@ -145,8 +146,14 @@ else
 
     private string? Refusal { get; set; }
 
-    protected override async Task OnInitializedAsync() =>
+    /// <summary>The firm's own name, for the title. See Careers.razor for why it is read.</summary>
+    private string Firm { get; set; } = Words.TheFirm;
+
+    protected override async Task OnInitializedAsync()
+    {
         Advert = await Queries.OpeningAsync(Slug);
+        Firm = (await Settings.CurrentAsync()).TradingName;
+    }
 
     private async Task Apply()
     {

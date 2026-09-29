@@ -230,6 +230,44 @@ public class DemoDataTests
     }
 
     /// <summary>
+    /// <b>The seed leaves nothing in the queue.</b>
+    /// </summary>
+    /// <remarks>
+    /// Two faults in one test, and both were found by seeding a real database and then starting the
+    /// application rather than by anything failing.
+    ///
+    /// The drain was a single <c>RunOnceAsync</c>, which takes one batch — so it settled fifty of
+    /// two hundred and twenty-nine, and the application processed the remaining hundred and
+    /// seventy-nine on its next start, writing six acknowledgement letters in its log while the
+    /// comment above it claimed that could not happen.
+    ///
+    /// And once it looped, twelve were still left: several notice handlers take <c>IMailer</c> so a
+    /// notice can also be a letter, and the tool never called <c>AddMail</c>. A handler that cannot
+    /// be built is not a start-up error — the dispatcher resolves handlers through
+    /// <c>GetServices</c>, so the message is claimed, fails, and is scheduled for retry. Twelve
+    /// <c>WorkItemAssigned</c> messages did that quietly, and the demonstration database would have
+    /// shown twelve dead letters on the machinery page, which is exactly what makes a demonstration
+    /// look broken.
+    ///
+    /// So the assertion is the honest one: nothing left waiting, and the number settled is the
+    /// number that was queued.
+    /// </remarks>
+    [Fact]
+    public async Task The_seed_leaves_nothing_waiting_in_the_queue()
+    {
+        await using var fixture = await DatabaseFixture.CreateAsync();
+        var (_, database, drained) = await SeedAndDrainAsync(fixture);
+
+        Assert.True(drained.Settled > 0, "nothing was queued at all, which cannot be right");
+
+        Assert.Equal(0, drained.LeftOver);
+
+        Assert.Equal(
+            0,
+            await database.Outbox.CountAsync(one => one.DispatchedAt == null));
+    }
+
+    /// <summary>
     /// It refuses a database that has anybody's records in it.
     /// </summary>
     /// <remarks>
@@ -296,6 +334,15 @@ public class DemoDataTests
     private static async Task<(DemoReport Report, TestDbContext Database)> SeedAsync(
         DatabaseFixture fixture)
     {
+        var (report, database, _) = await SeedAndDrainAsync(fixture, drain: false);
+
+        return (report, database);
+    }
+
+    private static async Task<(
+        DemoReport Report, TestDbContext Database, (int Settled, int LeftOver) Drained)>
+        SeedAndDrainAsync(DatabaseFixture fixture, bool drain = true)
+    {
         var clock = new TravellingClock();
 
         var configuration = new ConfigurationBuilder()
@@ -315,6 +362,10 @@ public class DemoDataTests
         services.AddLogging();
         services.AddMessaging(configuration);
         services.AddModules(configuration);
+
+        // The mail registrations, without which twelve notice handlers cannot be built and their
+        // messages fail rather than settling. See the remark on the drain test.
+        services.AddMail(configuration);
 
         var actor = new DemoUser();
 
@@ -338,9 +389,11 @@ public class DemoDataTests
         await using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
 
-        var report = await new DemoFirm(
-            scope.ServiceProvider, clock, TextWriter.Null).FillAsync();
+        var firm = new DemoFirm(scope.ServiceProvider, clock, TextWriter.Null);
 
-        return (report, fixture.NewContext(clock, actor));
+        var report = await firm.FillAsync();
+        var drained = drain ? await firm.DrainAsync() : (0, 0);
+
+        return (report, fixture.NewContext(clock, actor), drained);
     }
 }

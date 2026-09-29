@@ -78,8 +78,8 @@ else
     @if (Ticket.FirstRespondedAt is { } answered)
     {
         <p class="instructions">
-            Answered @Length(answered - Ticket.RaisedAt) after it arrived, against a promise of
-            @Length(Ticket.RespondBy - Ticket.RaisedAt).
+            Answered @Words.HowLong(answered - Ticket.RaisedAt) after it arrived, against a promise of
+            @Words.HowLong(Ticket.RespondBy - Ticket.RaisedAt).
             @if (answered > Ticket.RespondBy)
             {
                 <strong>That was late.</strong>
@@ -110,7 +110,7 @@ else
         <p class="refusal" role="note">
             <strong>@Who is waiting for an answer</strong>, and one was owed by
             @Ticket.AnswerOwedBy!.Value.ToLocalTime().ToString("d MMM HH:mm") — that was
-            @Length(Now - Ticket.AnswerOwedBy!.Value) ago. An internal note is not an answer; only
+            @Words.HowLong(Now - Ticket.AnswerOwedBy!.Value) ago. An internal note is not an answer; only
             saying something to them stops this clock, which is the point of it.
         </p>
     }
@@ -118,7 +118,7 @@ else
     {
         <p class="instructions">
             @Who is waiting. An answer is owed by @owed.ToLocalTime().ToString("d MMM HH:mm"),
-            which is in @Length(owed - Now).
+            which is in @Words.HowLong(owed - Now).
         </p>
     }
 
@@ -723,34 +723,6 @@ else
         return line.Audience == Audience.Requester
             ? $"{name}, to {Who} — {when}"
             : $"{name}, to the others here — {when}";
-    }
-
-    private static string Length(TimeSpan span)
-    {
-        if (span < TimeSpan.Zero)
-        {
-            return "no time";
-        }
-
-        if (span < TimeSpan.FromMinutes(1))
-        {
-            return "under a minute";
-        }
-
-        if (span < TimeSpan.FromHours(1))
-        {
-            return $"{(int)span.TotalMinutes} min";
-        }
-
-        if (span < TimeSpan.FromDays(1))
-        {
-            var hours = (int)span.TotalHours;
-            var minutes = span.Minutes;
-
-            return minutes == 0 ? $"{hours} hr" : $"{hours} hr {minutes} min";
-        }
-
-        return $"{(int)span.TotalDays} days";
     }
 
     private static string Means(TicketPriority priority) => priority switch

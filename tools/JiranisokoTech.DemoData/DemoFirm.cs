@@ -76,6 +76,16 @@ public sealed class DemoFirm(
     /// </remarks>
     private const int MonthsOfHistory = 18;
 
+    /// <summary>
+    /// How many batches of queued announcements to settle before giving up on the queue.
+    /// </summary>
+    /// <remarks>
+    /// The seed queues a few hundred and the dispatcher takes one batch per pass, so fifty passes
+    /// is several times more than it produces. Reaching it means messages are failing rather than
+    /// waiting, which is worth reporting rather than looping over.
+    /// </remarks>
+    private const int DrainPasses = 50;
+
     private readonly List<string> _steps = [];
 
     public async Task<DemoReport> FillAsync(CancellationToken cancellationToken = default)
@@ -115,6 +125,53 @@ public sealed class DemoFirm(
             tickets,
             repositories.Everybody.Count,
             articles);
+    }
+
+    /// <summary>
+    /// Settle everything the seed queued, and say how much was left over.
+    /// </summary>
+    /// <remarks>
+    /// Part of the seed's job rather than the caller's, because a demonstration database whose
+    /// queue is full is one where the application processes eighteen months of announcements on its
+    /// next start — writing a year of letters and notices to whoever signs in first.
+    ///
+    /// <b>Until it is empty, not once.</b> The first version of this was a single
+    /// <c>RunOnceAsync</c> in the tool's Program, and it settled fifty of two hundred and
+    /// twenty-nine: one call takes one batch, which is what its name says and what the background
+    /// processor relies on. The rest were processed by the application on its next start, exactly
+    /// as the comment there said would not happen — found by seeding a real database, starting the
+    /// container, and reading six acknowledgement letters being written in its log.
+    ///
+    /// Bounded, because a message that fails every attempt is retried rather than dropped and an
+    /// unbounded loop over one would never end. Reaching the bound means something is failing, and
+    /// the count this returns is how the caller says so.
+    /// </remarks>
+    public async Task<(int Settled, int LeftOver)> DrainAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var dispatcher = Get<Infrastructure.Messaging.OutboxDispatcher>();
+        var settled = 0;
+
+        for (var pass = 0; pass < DrainPasses; pass++)
+        {
+            var took = await dispatcher.RunOnceAsync(cancellationToken);
+
+            if (took == 0)
+            {
+                break;
+            }
+
+            settled += took;
+        }
+
+        var database = Get<Infrastructure.Persistence.AppDbContext>();
+
+        var waiting = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+            .CountAsync(
+                database.Outbox.Where(one => one.DispatchedAt == null),
+                cancellationToken);
+
+        return (settled, waiting);
     }
 
     public IReadOnlyList<string> Steps => _steps;

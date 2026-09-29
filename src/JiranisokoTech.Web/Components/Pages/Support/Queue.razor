@@ -116,17 +116,17 @@ else
                                 first version of this column could not see.
                             *@
                             <span class="subtle">
-                                answered in @Length(
+                                answered in @Words.HowLong(
                                     (row.FirstRespondedAt ?? Now) - Raised(row))
                             </span>
                         }
                         else if (row.AnswerOverdue)
                         {
-                            <span class="pill pill--danger">@Length(Now - owed) late</span>
+                            <span class="pill pill--danger">@Words.HowLong(Now - owed) late</span>
                         }
                         else
                         {
-                            <span class="subtle">within @Length(owed - Now)</span>
+                            <span class="subtle">within @Words.HowLong(owed - Now)</span>
                         }
                     </td>
                     <td>
@@ -394,44 +394,8 @@ else
     {
         var (respond, resolve) = Ticket.TargetsFor(priority);
 
-        return $"The firm answers within {Length(respond)} and settles it within "
-            + $"{Length(resolve)}.";
-    }
-
-    /// <summary>
-    /// A duration said the way a person would say it.
-    /// </summary>
-    /// <remarks>
-    /// The same shape the incidents page uses, and for the same reason: the only thing anybody
-    /// does with these numbers is compare them to what was promised, and "4.25 hours" is harder
-    /// to do that with than "4 hr".
-    /// </remarks>
-    private static string Length(TimeSpan span)
-    {
-        if (span < TimeSpan.Zero)
-        {
-            return "no time";
-        }
-
-        if (span < TimeSpan.FromMinutes(1))
-        {
-            return "under a minute";
-        }
-
-        if (span < TimeSpan.FromHours(1))
-        {
-            return $"{(int)span.TotalMinutes} min";
-        }
-
-        if (span < TimeSpan.FromDays(1))
-        {
-            var hours = (int)span.TotalHours;
-            var minutes = span.Minutes;
-
-            return minutes == 0 ? $"{hours} hr" : $"{hours} hr {minutes} min";
-        }
-
-        return $"{(int)span.TotalDays} days";
+        return $"The firm answers within {Words.HowLong(respond)} and settles it within "
+            + $"{Words.HowLong(resolve)}.";
     }
 
     private static string Means(TicketPriority priority) => priority switch

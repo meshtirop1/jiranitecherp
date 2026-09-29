@@ -215,7 +215,7 @@ else
             {
                 <p class="subtle">
                     @Billed of @(Contract.Value?.ToString() ?? "an unagreed figure"),
-                    across @Within.Count invoice(s).
+                    across @Words.Count(Within.Count, "invoice").
                 </p>
 
                 <table class="grid">

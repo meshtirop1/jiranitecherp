@@ -70,7 +70,7 @@ else
         <dt>Started</dt>
         <dd>
             @Incident.StartedAt.ToLocalTime().ToString("d MMM yyyy HH:mm")
-            <span class="subtle">@Length(Incident.ToDetect) before anybody noticed</span>
+            <span class="subtle">@Words.HowLong(Incident.ToDetect) before anybody noticed</span>
         </dd>
 
         <dt>Reported</dt>
@@ -84,7 +84,7 @@ else
             <dt>Harm stopped</dt>
             <dd>
                 @mitigated.ToLocalTime().ToString("d MMM yyyy HH:mm")
-                <span class="subtle">@Length(Incident.ToMitigate!.Value) after it began</span>
+                <span class="subtle">@Words.HowLong(Incident.ToMitigate!.Value) after it began</span>
             </dd>
         }
 
@@ -93,7 +93,7 @@ else
             <dt>Cause gone</dt>
             <dd>
                 @resolved.ToLocalTime().ToString("d MMM yyyy HH:mm")
-                <span class="subtle">@Length(Incident.ToResolve!.Value) after it began</span>
+                <span class="subtle">@Words.HowLong(Incident.ToResolve!.Value) after it began</span>
             </dd>
         }
 
@@ -230,7 +230,7 @@ else
                             <td>
                                 @suspect.At.ToLocalTime().ToString("d MMM HH:mm")
                                 <span class="subtle">
-                                    @Length(Incident.StartedAt - suspect.At) before
+                                    @Words.HowLong(Incident.StartedAt - suspect.At) before
                                 </span>
                             </td>
                             <td>@(suspect.Who ?? "—")</td>
@@ -275,7 +275,7 @@ else
                             <td>
                                 @change.At.ToLocalTime().ToString("d MMM HH:mm")
                                 <span class="subtle">
-                                    @Length(Incident.StartedAt - change.At) before
+                                    @Words.HowLong(Incident.StartedAt - change.At) before
                                 </span>
                             </td>
                         </tr>
@@ -792,33 +792,6 @@ else
         Names.GetValueOrDefault(id) ?? "somebody no longer on the staff list";
 
     private static string Short(string sha) => sha.Length > 7 ? sha[..7] : sha;
-
-    private static string Length(TimeSpan span)
-    {
-        if (span < TimeSpan.Zero)
-        {
-            return "no time";
-        }
-
-        if (span < TimeSpan.FromMinutes(1))
-        {
-            return "under a minute";
-        }
-
-        if (span < TimeSpan.FromHours(1))
-        {
-            return $"{(int)span.TotalMinutes} min";
-        }
-
-        if (span < TimeSpan.FromDays(1))
-        {
-            var hours = (int)span.TotalHours;
-
-            return span.Minutes == 0 ? $"{hours} hr" : $"{hours} hr {span.Minutes} min";
-        }
-
-        return $"{(int)span.TotalDays} days";
-    }
 
     private static string Verb(NoteKind kind) => kind switch
     {

@@ -1,0 +1,54 @@
+@using JiranisokoTech.Application.Settings
+@inject IServiceScopeFactory Scopes
+
+@*
+    The firm's own trading name, read from the firm's own settings.
+
+    It exists because seven places in this application had that name typed into them as a literal
+    — both anonymous layouts, four page titles and an offer letter's default — so changing it on
+    the settings screen changed it on invoices and on nothing a visitor ever sees. The screen
+    promised something it did not deliver, and the two pages an outsider actually looks at, the
+    sign-in panel and the careers site, were the two furthest from the truth.
+
+    It is also what makes section 83's marking reach those pages. A demonstration copy left
+    running otherwise shows a careers site advertising a real-looking job for a real-looking firm,
+    which is precisely what marking the data is for.
+
+    A component rather than a cascading value, because the thing that needs it is a layout and a
+    layout cannot be handed anything by the page inside it.
+*@
+
+@Name
+
+@code {
+    /// <remarks>
+    /// The fallback is <see cref="Words.TheFirm"/> and lives there rather than here, because this
+    /// is a .razor file and TheFirmsOwnNameTests walks every one of them for that name.
+    /// </remarks>
+    private string Name { get; set; } = Words.TheFirm;
+
+    /// <summary>
+    /// Read in a scope of its own, which is not an optimisation.
+    /// </summary>
+    /// <remarks>
+    /// <b>The layout cannot share the page's database context.</b> Blazor initialises components
+    /// concurrently, so this runs at the same moment as whatever the page is reading, on the same
+    /// scoped <c>AppDbContext</c> — which refuses a second operation while one is in flight. The
+    /// result is an intermittent error screen on whichever one loses the race, and it worked three
+    /// times before it took a page down when the incidents count was added to the navigation the
+    /// same way. <c>LayoutTests</c> fails the build for it.
+    /// </remarks>
+    protected override async Task OnInitializedAsync()
+    {
+        await using var scope = Scopes.CreateAsyncScope();
+
+        var settings = await scope.ServiceProvider
+            .GetRequiredService<SettingsService>()
+            .CurrentAsync();
+
+        if (settings.TradingName is { Length: > 0 } called)
+        {
+            Name = called;
+        }
+    }
+}

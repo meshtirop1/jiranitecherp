@@ -132,6 +132,24 @@ public readonly record struct Money : IComparable<Money>
         return MinorUnits;
     }
 
+    /// <summary>
+    /// The way this amount is written on every screen in the application.
+    /// </summary>
+    /// <remarks>
+    /// Grouped, because this format has no competition: it is what the invoice list, the ledger,
+    /// the dashboard, the project margins and the overview all render, and without a thousands
+    /// separator a figure like KES 1780000.00 has to be counted rather than read. On a list of
+    /// invoices that is every line, and the column exists to be scanned.
+    ///
+    /// Found by opening the invoice list against a demonstration database and trying to tell
+    /// 1,500,000 from 150,000 at a glance.
+    ///
+    /// No culture is named, which is deliberate and unchanged: the decimal separator was already
+    /// the running culture's and the group separator now is too, so a copy running under a culture
+    /// that writes numbers differently writes them differently in both places rather than in one.
+    /// Nothing machine-readable goes through here — no export, no API response and no webhook
+    /// payload formats money as a string, which is what makes a separator safe to add.
+    /// </remarks>
     public override string ToString() =>
-        $"{Currency} {MinorUnits / 100m:0.00}";
+        $"{Currency} {MinorUnits / 100m:#,##0.00}";
 }

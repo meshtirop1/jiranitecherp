@@ -402,7 +402,8 @@
             }
 
             var live = Services.Count(one => one.IsLive);
-            var said = $"{live} service(s), {Resources.Count(one => one.IsLive)} things they run on";
+            var said = $"{Words.Count(live, "service")}, "
+                + $"{Words.Count(Resources.Count(one => one.IsLive), "thing")} they run on";
 
             return Expiring.Count == 0
                 ? said + "."
@@ -469,7 +470,7 @@
     {
         var count = Resources.Count(one => one.ServiceId == serviceId && one.IsLive);
 
-        return count == 0 ? "nothing recorded" : $"{count} thing(s)";
+        return count == 0 ? "nothing recorded" : Words.Count(count, "thing");
     }
 
     private string NameOf(Guid serviceId) =>

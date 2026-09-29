@@ -152,7 +152,8 @@
         @if (Report.LeftOutForCurrency > 0)
         {
             <p class="subtle">
-                @Report.LeftOutForCurrency document(s) in another currency were left out.
+                @Words.Count(Report.LeftOutForCurrency, "document") in another currency
+                @(Report.LeftOutForCurrency == 1 ? "was" : "were") left out.
                 Adding currencies together would be a figure with no meaning.
             </p>
         }

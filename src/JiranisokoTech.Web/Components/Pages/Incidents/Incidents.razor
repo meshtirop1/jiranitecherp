@@ -134,7 +134,7 @@
                     <a href="/incidents/@row.Number"><strong>@row.Number @row.Title</strong></a>
                     <span class="pill @PillFor(row.Status)">@Say(row.Status)</span>
                     <span class="pill @PillFor(row.Severity)">@row.Severity</span>
-                    <span class="subtle">going @Length(row.Ran(Now))</span>
+                    <span class="subtle">going @Words.HowLong(row.Ran(Now))</span>
                 </div>
 
                 @if (row.Affects is { } what)
@@ -201,8 +201,8 @@
                             then lasted is a fact about the response, and one of those is much
                             cheaper to improve than the other.
                         *@
-                        <td>@Length(row.ReportedAt - row.StartedAt)</td>
-                        <td>@Length(row.Ran(Now))</td>
+                        <td>@Words.HowLong(row.ReportedAt - row.StartedAt)</td>
+                        <td>@Words.HowLong(row.Ran(Now))</td>
                         <td>
                             @if (row.ReviewAgreed)
                             {
@@ -290,7 +290,7 @@
     private string Ended =>
         Over.Count == 0
             ? "a while ago"
-            : Length(Now - Over.Max(one => one.ResolvedAt ?? one.StartedAt)) + " ago";
+            : Words.HowLong(Now - Over.Max(one => one.ResolvedAt ?? one.StartedAt)) + " ago";
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -368,42 +368,6 @@
 
     private string Who(Guid id) =>
         Names.GetValueOrDefault(id) ?? "somebody no longer on the staff list";
-
-    /// <summary>
-    /// A duration said the way a person would say it.
-    /// </summary>
-    /// <remarks>
-    /// Never in seconds and never to two decimal places. The only thing anybody does with these
-    /// numbers is compare them to each other and to what they expected, and "2.3 hours" is
-    /// harder to do that with than "2 hours".
-    /// </remarks>
-    private static string Length(TimeSpan span)
-    {
-        if (span < TimeSpan.Zero)
-        {
-            return "no time";
-        }
-
-        if (span < TimeSpan.FromMinutes(1))
-        {
-            return "under a minute";
-        }
-
-        if (span < TimeSpan.FromHours(1))
-        {
-            return $"{(int)span.TotalMinutes} min";
-        }
-
-        if (span < TimeSpan.FromDays(1))
-        {
-            var hours = (int)span.TotalHours;
-            var minutes = span.Minutes;
-
-            return minutes == 0 ? $"{hours} hr" : $"{hours} hr {minutes} min";
-        }
-
-        return $"{(int)span.TotalDays} days";
-    }
 
     private static string Means(IncidentSeverity severity) => severity switch
     {

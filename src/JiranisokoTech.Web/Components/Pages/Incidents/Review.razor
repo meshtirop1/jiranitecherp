@@ -80,9 +80,9 @@ else
 
         <dt>How long</dt>
         <dd>
-            @Length(Incident.ToResolve ?? TimeSpan.Zero)
+            @Words.HowLong(Incident.ToResolve ?? TimeSpan.Zero)
             <span class="subtle">
-                of which @Length(Incident.ToDetect) was before anybody noticed
+                of which @Words.HowLong(Incident.ToDetect) was before anybody noticed
             </span>
         </dd>
 
@@ -471,28 +471,6 @@ else
 
     private string Who(Guid id) =>
         Names.GetValueOrDefault(id) ?? "somebody no longer on the staff list";
-
-    private static string Length(TimeSpan span)
-    {
-        if (span < TimeSpan.FromMinutes(1))
-        {
-            return "under a minute";
-        }
-
-        if (span < TimeSpan.FromHours(1))
-        {
-            return $"{(int)span.TotalMinutes} min";
-        }
-
-        if (span < TimeSpan.FromDays(1))
-        {
-            var hours = (int)span.TotalHours;
-
-            return span.Minutes == 0 ? $"{hours} hr" : $"{hours} hr {span.Minutes} min";
-        }
-
-        return $"{(int)span.TotalDays} days";
-    }
 
     private sealed record Question(
         string Asked, string Why, Func<string> Read, Action<string> Set)

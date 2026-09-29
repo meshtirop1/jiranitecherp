@@ -231,6 +231,36 @@ Each of these cost real time. They are written down so they cost it once.
   shows "05:51by Mesh Tirop" whether or not the chip beside a value is properly
   spaced, because the space is CSS rather than a text node. Confirm spacing with
   a screenshot; the text dump cannot tell the two apart in either direction.
+
+  It also cuts the other way, and that half cost time: `SentOverdue` and
+  `01:00missed` were both read out of a page, both looked like the fault above,
+  and both were correctly spaced on the screen. Take the screenshot before
+  writing the fix, not after.
+- **A copy of a helper is a copy of its bug.** Six pages each carried a private
+  `Length(TimeSpan)` and every one of them wrote `"1 days"` — visible on the help
+  desk, on the incidents list, and anywhere else a span landed between one and two
+  days. `Words` exists precisely so that this cannot happen, and its own remark
+  says so: a switch copied onto each page drifts. Before writing a small formatting
+  helper on a page, look in `Words.cs`; if it belongs there, it goes there.
+- **A value the settings screen owns must not be typed into a page.** The firm's
+  trading name is editable, is on every invoice, and was a literal in seven `.razor`
+  files — both anonymous layouts, four page titles and an offer letter's default.
+  So renaming the firm renamed it on the paper and on nothing a visitor sees, and
+  the careers site and the sign-in panel were the two furthest from the truth.
+  `TheFirmsOwnNameTests` fails the build for it now, and it found two more than a
+  `grep` did: Razor wraps prose across source lines, so the name was split over two
+  of them and no literal search could see it.
+- **A missing DI registration is not a start-up error when the resolver is
+  `GetServices`.** The outbox resolves handlers that way, so a handler whose
+  dependency is unregistered is claimed, fails to build, and is scheduled for retry
+  — quietly, twelve times, until it dead-letters. The demonstration seed's own
+  container did this by never calling `AddMail`, and nothing said so until the
+  outbox was counted afterwards. Count the queue after anything that writes in bulk.
+- **`RunOnceAsync` takes one batch.** Its name says so and the background processor
+  depends on it. A caller that wants the queue empty has to loop until it settles
+  nothing, bounded — the demonstration seed settled fifty of two hundred and
+  twenty-nine and the application processed the rest on its next start, while the
+  comment above the call claimed that could not happen.
 - **A `ValidationMessage` outside its `EditForm` throws.** It reads a cascading
   `EditContext`, and without one it does not render blank — it raises, and the
   whole page becomes the error screen. One placed just after `</EditForm>` took

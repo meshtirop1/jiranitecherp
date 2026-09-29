@@ -427,7 +427,9 @@ else
                             <span class="pill @Words.PillFor(run.Status)">@Words.For(run.Status)</span>
                             @if (run.Attempts > 0)
                             {
-                                <span class="subtle">@run.Attempts failed attempt(s)</span>
+                                <span class="subtle">
+                                    @Words.Count(run.Attempts, "failed attempt")
+                                </span>
                             }
                         </td>
                         <td>

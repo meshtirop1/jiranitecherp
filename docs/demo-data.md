@@ -110,6 +110,20 @@ It also takes its connection string from `DEMODATA_CONNECTION` or an argument an
 application reads is one that fills whichever database is configured on the
 machine it is run on, which on a server is the live one.
 
+## Two things that look wrong and are not
+
+The repositories page shows both seeded repositories as **"Secret differs"**. That
+is correct and is the page telling the truth: the seed connects them with its own
+webhook secret, and the copy of the application you are looking at is configured
+with a different one, so a delivery signed with the seed's secret would be
+refused. Nothing will ever send one, because nothing outside your machine knows
+those repositories exist.
+
+The **sign-in page and the careers site** show the marked trading name like every
+other page — but only since the name stopped being typed into seven places as a
+literal. If you are looking at an older build and they show the plain name, that
+is what you are seeing.
+
 ## Why it goes through the services
 
 Every row is written by calling the service a person would use. The alternative

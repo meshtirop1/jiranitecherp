@@ -24,6 +24,87 @@ namespace JiranisokoTech.Web;
 /// </remarks>
 public static class Words
 {
+    /// <summary>
+    /// What to call the firm when its own name cannot be read yet.
+    /// </summary>
+    /// <remarks>
+    /// The only place in the web project this name is typed, and it is here rather than on a page
+    /// because <c>TheFirmsOwnNameTests</c> walks every <c>.razor</c> file for it. Seven of them had
+    /// it, so changing the trading name on the settings screen changed it on invoices and on
+    /// nothing a visitor ever saw.
+    ///
+    /// It is a fallback and nothing else. Every place that shows the name reads
+    /// <c>FirmSettings.TradingName</c>; this is what renders for the frame before that read
+    /// completes, and a blank where a firm's name should be reads as a broken page.
+    /// </remarks>
+    public const string TheFirm = "Jiranisoko Tech Solutions";
+
+    /// <summary>
+    /// A count and the thing counted, in the right number.
+    /// </summary>
+    /// <remarks>
+    /// Because eight screens said "3 service(s)", "@Ever.Count thing(s)" and "invoice(s)" while
+    /// every other headline in the application says "One incident is open" and "2 clients"
+    /// properly. The bracket is the form somebody writes when they are not thinking about the
+    /// reader, and on a page beside one that does it properly it reads as the unfinished half.
+    ///
+    /// <paramref name="many"/> is for the words English does not pluralise with an s — "people",
+    /// "things it runs on" — and defaults to the regular form, which covers most of them.
+    /// </remarks>
+    public static string Count(int count, string one, string? many = null) =>
+        count == 1 ? $"1 {one}" : $"{count} {many ?? one + "s"}";
+
+    /// <summary>
+    /// A length of time, said the way a person would say it.
+    /// </summary>
+    /// <remarks>
+    /// One copy, because there were six: the two help desk pages, the two incident pages, the
+    /// incident review and the service page each carried their own, and every one of them said
+    /// <b>"1 days"</b>. It is on screen wherever a span happens to land between one and two days —
+    /// how long an incident ran, how long ago a promise was missed, how long a firm has to answer
+    /// — which is often enough that somebody would have noticed and rare enough that nobody had.
+    /// Found by opening the help desk and reading the sentence under the priority select.
+    ///
+    /// Never in seconds and never to two decimal places. The only thing anybody does with these
+    /// numbers is compare them to what was promised, and "4.25 hours" is harder to do that with
+    /// than "4 hr".
+    ///
+    /// <paramref name="nothing"/> is what to say for a span that has not begun or has run
+    /// backwards, because the pages differ: a duration reads "no time" and a countdown to a
+    /// deadline reads "moments".
+    /// </remarks>
+    public static string HowLong(TimeSpan span, string nothing = "no time")
+    {
+        if (span < TimeSpan.Zero)
+        {
+            return nothing;
+        }
+
+        if (span < TimeSpan.FromMinutes(1))
+        {
+            return "under a minute";
+        }
+
+        if (span < TimeSpan.FromHours(1))
+        {
+            var minutes = (int)span.TotalMinutes;
+
+            return minutes == 1 ? "1 min" : $"{minutes} min";
+        }
+
+        if (span < TimeSpan.FromDays(1))
+        {
+            var hours = (int)span.TotalHours;
+            var minutes = span.Minutes;
+
+            return minutes == 0 ? $"{hours} hr" : $"{hours} hr {minutes} min";
+        }
+
+        var days = (int)span.TotalDays;
+
+        return days == 1 ? "1 day" : $"{days} days";
+    }
+
     /// <summary>A number of minutes as somebody would say it out loud.</summary>
     /// <remarks>
     /// Here rather than in the reporting page because the page and its CSV export

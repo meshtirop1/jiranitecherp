@@ -251,7 +251,9 @@ public sealed class EscalateMissedPromises(
 
         if (span < TimeSpan.FromHours(1))
         {
-            return $"{(int)span.TotalMinutes} min";
+            var minutes = (int)span.TotalMinutes;
+
+            return minutes == 1 ? "1 min" : $"{minutes} min";
         }
 
         if (span < TimeSpan.FromDays(1))
@@ -262,6 +264,13 @@ public sealed class EscalateMissedPromises(
             return minutes == 0 ? $"{hours} hr" : $"{hours} hr {minutes} min";
         }
 
-        return $"{(int)span.TotalDays} days";
+        var days = (int)span.TotalDays;
+
+        /*
+         * Singular for one, which five other copies of this helper got wrong for months — every one
+         * of them said "1 days". They are one copy in Words.HowLong now; this one stays here
+         * because Infrastructure cannot reach the web project, and it is the same rule.
+         */
+        return days == 1 ? "1 day" : $"{days} days";
     }
 }
