@@ -102,7 +102,8 @@ docker compose --profile proxy up -d --build
 ```
 
 Compose builds the new image, runs the tests inside it, and replaces the `web` container only
-if that succeeded. Migrations run as the new container starts. Sessions survive, because the
+if that succeeded. CI builds the same image on every push, so a commit that would fail here has
+usually said so before it reaches a host. Migrations run as the new container starts. Sessions survive, because the
 cookie keys are on the `keys` volume.
 
 **Migrations only go forward.** Rolling back the code after a migration has run leaves an

@@ -83,7 +83,7 @@ What each item means here, and whether the system holds to it everywhere or only
 | ✅ | Notifications | In-app notices and mail, through the outbox so a failed send is retried. |
 | ✅ | Audit logging | See principle 6. |
 | ✅ | Tests | 1,400 and more, including three end-to-end workflows and a PostgreSQL run in CI. |
-| ◐ | Documentation | Architecture, configuration, deployment, git integration, performance, privacy and this file. Of section 85's list, `setup`, `development`, `database`, `api`, `authentication`, `authorization`, `automation`, `ai`, `testing` and `security` are not separate files; parts of several are in the architecture document. |
+| ◐ | Documentation | Architecture, configuration, deployment, git integration, testing, security, performance, privacy and this file. Of section 85's list, `development`, `database`, `api`, `automation` and `ai` are not written; `setup` is configuration and the README, and `authentication` and `authorization` are in security. |
 | ◐ | Accessibility | Every visible form control on every page with a fixed address has a name a screen reader can announce, checked by the page sweep; the first run of that check found the tax-band table, the chart of accounts and the navigation toggle unnamed. Pages behind an identifier, colour contrast and keyboard order are not checked by anything. |
 | ✅ | Mobile responsiveness | See principle 13. |
 

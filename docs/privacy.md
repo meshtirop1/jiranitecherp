@@ -36,13 +36,16 @@ being collected.
 | Portfolio, GitHub, LinkedIn, years of experience, education, skills, expected salary | Assessing the application — each is something the careers form asks because a decision uses it. | Recruitment. |
 | The CV they uploaded | The same. | Recruitment; every opening is recorded. |
 | The consent sentence they agreed to, and when | Evidence of what they were told. The exact wording is stored, not a tick, because the wording changes and a tick says nothing about which version was agreed. | Recruitment. |
+| Why they were not taken forward | Rejecting somebody requires a reason, because "why did we not take them?" is asked — by the candidate, a colleague, occasionally a tribunal. Internal; the candidate is not shown it. | Recruitment. |
+| Interview scores and the interviewer's notes | The hiring decision, and the evidence for it. | The panel and recruitment. |
 
 ## Accounts
 
 | What | Why | Who sees it |
 |---|---|---|
 | Email, display name, phone, whether two-factor is on | Signing in. | Administrators; the person on their profile. |
-| Sign-in attempts — address tried, outcome, time, IP address, browser | Security. A failed attempt against an address with no account is kept, because a list of such attempts is the only evidence that somebody was working through addresses. | The person, on their own security page. |
+| Authenticator key and recovery codes | The second factor. | Nobody — encrypted with the key ring before they are stored, and never shown after enrolment. |
+| Sign-in attempts — address tried, outcome, time, IP address, browser | Security. A failed attempt against an address with no account is kept, because a list of such attempts is the only evidence that somebody was working through addresses. | The person, on their own security page; administrators and auditors, on the security centre. |
 
 ## The audit trail
 
@@ -65,7 +68,7 @@ deleting something without being seen to.
 
 | Kind | Setting | Floor | What happens |
 |---|---|---|---|
-| Applicants never hired | months after their last application closed | 1 month | Name, contact details, links and application notes are erased and the CV file deleted. The row stays, empty, so counts and the history of the opening remain true. |
+| Applicants never hired | months after their last application closed | 1 month | Name, contact details, links, application notes and the reason for rejection are erased and the CV file deleted. The row stays, empty, so counts and the history of the opening remain true. **Interview scorecard notes are not erased** — they no longer name anybody once the name is gone, but an interviewer's words can still describe a person, and they should go too. |
 | Leavers' documents and photographs | years after leaving | 5 years | The files are deleted. Agreements are kept: they are the firm's record of what it signed. |
 | Withdrawn accounts | months after withdrawal | 1 month | Address, name and phone are replaced. The row stays so the trail's actors still resolve, as "Former user". |
 | The audit trail | years | 7 years | Entries older than the period are deleted, after an entry saying how many and why. |

@@ -25,6 +25,8 @@ kept flattering.
 | [docs/deployment.md](docs/deployment.md) | putting it on a host, HTTPS, updating, health |
 | [docs/configuration.md](docs/configuration.md) | every setting and environment variable |
 | [docs/git-integration.md](docs/git-integration.md) | connecting code hosts |
+| [docs/security.md](docs/security.md) | signing in, roles and permissions, the security centre, secrets |
+| [docs/testing.md](docs/testing.md) | running the suite, the PostgreSQL run, the workflow and guard tests |
 | [docs/performance.md](docs/performance.md) | what was measured at volume |
 | [docs/conformance.md](docs/conformance.md) | the brief's principles, module structure and definition of done, rule by rule |
 | [docs/privacy.md](docs/privacy.md) | what is held about people, why, for how long, and their rights |
@@ -39,6 +41,9 @@ Needs the .NET 10 SDK. Nothing else — the test suite does not require Docker.
 dotnet test
 dotnet run --project src/JiranisokoTech.Web
 ```
+
+The tests marked `[PostgresFact]` also run against a real PostgreSQL when `TEST_POSTGRES`
+names one, and CI runs them on every push — see [docs/testing.md](docs/testing.md).
 
 An empty database has no accounts, and there is no self-registration — so set
 these before the first run or the sign-in page has nothing to let you past:
@@ -82,14 +87,18 @@ src/
   JiranisokoTech.Infrastructure  EF Core, providers, the outside world
   JiranisokoTech.Web             Blazor UI and the HTTP API
 tests/
-  JiranisokoTech.Tests           xUnit, driving the real application
+  JiranisokoTech.Tests           xUnit, driving the real application; Workflows/ walks
+                                 the brief's three end-to-end chains
 tools/
   JiranisokoTech.ScaleCheck      times every read against a filled PostgreSQL
 docker/
   Dockerfile  compose.yaml  Caddyfile
+.github/workflows/
+  tests.yml                      the suite on SQLite and PostgreSQL, and the image build
 ```
 
-Dependencies point inward only: `Web → Infrastructure → Application → Domain`.
+Dependencies point inward only: `Web → Infrastructure → Application → Domain`, which
+`LayeringTests` checks against the compiled assemblies.
 The domain knows nothing about databases, HTTP or the framework, which is what
 keeps the rules testable without any of them running.
 
