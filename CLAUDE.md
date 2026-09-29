@@ -137,6 +137,19 @@ Each of these cost real time. They are written down so they cost it once.
   build and the whole suite stay green, and `compose up --build` goes on serving
   the previous image rather than stopping — so the browser shows yesterday's
   application and every conclusion drawn from it is wrong.
+- **The image build runs the tests without `docker/` or `docs/`.** `.dockerignore`
+  leaves them out so a document edit keeps the build cache, and the suite runs inside the
+  Dockerfile. Nine tests that read compose, the Caddyfile and the documents passed on every
+  checkout and threw inside the image, so the build stopped and compose went on serving the
+  previous image. A test of a repository file is `[RepositoryFact]`, which skips with its
+  reason only where those files are absent; CI builds the image to catch the next one.
+- **SQLite hides two things PostgreSQL does not forgive.** Its queries finish before an
+  await yields, so a page that reads a `default!` property before `OnInitializedAsync` is
+  done renders fine under test and is an error screen in production
+  (`RenderedBeforeLoadedTests`). And its mapping converts every timestamp to UTC, so a
+  `DateTimeOffset` carrying "+03:00" — which is what GitHub sends for a commit made in
+  Nairobi — saves in the suite and is refused by Npgsql. `TEST_POSTGRES` runs the
+  `[PostgresFact]` tests against a real server; CI sets it.
 - **A `_loaded` flag does not survive a form post.** A page that seeds a
   control with the stored value — the select showing who work is assigned to —
   must stop doing that once a form has been posted, or it overwrites the model

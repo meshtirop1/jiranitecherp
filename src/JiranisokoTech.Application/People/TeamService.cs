@@ -48,7 +48,10 @@ public sealed class TeamService(
         string? purpose = null,
         CancellationToken cancellationToken = default)
     {
-        var handle = Slug.From(slug ?? name);
+        // Blank as well as null. A browser posts an empty box as "", which "??" lets
+        // through, and a slug of nothing is refused — so leaving this optional field empty
+        // on the form refused the whole form. See SlugFallbackTests.
+        var handle = Slug.From(string.IsNullOrWhiteSpace(slug) ? name : slug);
 
         if (await teams.HandleTakenAsync(handle.Value, null, cancellationToken))
         {

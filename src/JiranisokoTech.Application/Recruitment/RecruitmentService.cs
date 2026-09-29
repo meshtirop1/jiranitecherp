@@ -133,7 +133,8 @@ public sealed class RecruitmentService(
     {
         await RequiredRequisition(requisitionId, cancellationToken);
 
-        var handle = Slug.From(slug ?? title);
+        // Blank as well as null — see SlugFallbackTests.
+        var handle = Slug.From(string.IsNullOrWhiteSpace(slug) ? title : slug);
 
         if (await recruitment.PostingSlugTakenAsync(handle.Value, cancellationToken))
         {
