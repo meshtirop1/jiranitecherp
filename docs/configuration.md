@@ -107,6 +107,29 @@ value in the host's webhook settings. Blank means deliveries from that host are 
 | `CACHE_CONNECTION` | `Cache:Connection` | `cache:6379` | Redis. Blank runs without a cache: every answer is computed, which is slower and otherwise the same. |
 | `METRICS_TOKEN` | `Metrics:Token` | blank | The token a collector presents at `/metrics`. Blank means the endpoint does not exist at all. |
 
+### The AI features
+
+The assistant, project readings and the recruitment aids. **Off until a key is set**: with
+`AI_API_KEY` blank every AI page says it is not configured and nothing is sent anywhere. With it
+set, the records each use looks up are sent to Anthropic to be read — see [ai.md](ai.md) for
+exactly what, and [privacy.md](privacy.md). The key is listed, set or not, on the security centre.
+
+| `.env` | Read as | Default | Meaning |
+|---|---|---|---|
+| `AI_API_KEY` | `Ai:ApiKey` | blank | The Anthropic API key. Blank means off. |
+| `AI_MODEL` | `Ai:Model` | `claude-opus-5-5` | Which model answers. Change it when the provider retires this one; a retired name is refused on every question. |
+| `AI_DAILY_LIMIT` | `Ai:DailyLimit` | `40` | How many times one person may use any AI feature in a UTC day. Each use is billed by the token. |
+
+Also read if present, and not set by the compose file:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Ai:Effort` | `medium` | How hard the model thinks: `low`, `medium`, `high`, `xhigh`, `max`. Higher costs more per question. |
+| `Ai:MaxTokens` | 16000 | The most one reply may use, thinking included. |
+| `Ai:Timeout` | 2 minutes | How long one use may take, retries included, before the page says it timed out. |
+| `Ai:MaxRounds` | 6 | How many rounds of lookups the assistant may make before it must answer. |
+| `Ai:BaseAddress` | `https://api.anthropic.com/` | Changed only to point at a proxy the firm runs. |
+
 ### Retention
 
 | `.env` | Read as | Default | Meaning |

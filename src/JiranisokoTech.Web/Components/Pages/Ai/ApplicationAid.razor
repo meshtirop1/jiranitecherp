@@ -1,0 +1,324 @@
+@page "/hiring/applications/{Id:guid}/assist"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Ai
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Recruitment
+@using JiranisokoTech.Domain.Recruitment
+@using JiranisokoTech.Infrastructure.Ai
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Web.Authorization
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.AiRecruit)]
+@inject IRecruitmentRepository Recruitment
+@inject RecruitingAid Aid
+@inject IAiModel Model
+@inject PeopleQueries People
+
+@*
+    Section 7's recruiter aids for one application. Three forms, each a separate request to the
+    model, because each sends something different and the person should choose what leaves the
+    firm rather than have all of it go at once.
+*@
+
+@if (Application is null || Candidate is null || Posting is null)
+{
+    <PageTitle>Application not found — Jiranisoko Delivery</PageTitle>
+
+    <h1>No such application</h1>
+    <p><a href="/hiring/applications">Back to applications</a></p>
+}
+else
+{
+    <PageTitle>Help with @Candidate.FullName — Jiranisoko Delivery</PageTitle>
+
+    <nav class="crumbs"><a href="/hiring/applications">Applications</a></nav>
+
+    <h1>@Candidate.FullName, for @Posting.Title</h1>
+
+    @*
+        Stated at the top of the page, not in a footnote. Section 7 forbids a system that decides
+        who is hired, and a summary that sounded like a verdict would be one in all but name.
+    *@
+    <p class="inference__tag">Everything below is written by a language model and is not an assessment</p>
+    <p class="subtle">
+        It does not recommend, score or rank anybody; the decision is yours. Drafts are drafts —
+        nothing here is sent to the candidate. Each button sends what it says to Anthropic.
+    </p>
+
+    @if (!Model.IsConfigured)
+    {
+        <p class="refusal" role="alert">
+            These aids are not available on this copy of the system: no API key has been set for
+            the AI provider.
+        </p>
+    }
+    else
+    {
+        <section class="standing">
+            <h2>Summarise the CV</h2>
+            <p class="subtle">
+                Sends the CV and the advert — not the candidate's name, contact details or salary
+                expectation. @(Application.CvStoredName is null ? "No CV was sent with this application." : null)
+            </p>
+
+            <EditForm Model="Summarising" method="post" OnSubmit="Summarise" FormName="summary" class="inline">
+                <button type="submit">Summarise it</button>
+            </EditForm>
+
+            @if (Summary is { } summary)
+            {
+                <div class="inference">
+                    <p class="inference__tag">Inference, not fact</p>
+                    <p>@summary.Summary</p>
+
+                    <dl class="facts">
+                        <dt>Experience</dt>
+                        <dd>@summary.Experience</dd>
+
+                        <dt>Education</dt>
+                        <dd>@summary.Education</dd>
+
+                        <dt>Skills it found evidence of</dt>
+                        <dd>@string.Join(", ", summary.Skills)</dd>
+                    </dl>
+
+                    @if (summary.MissingInformation.Count > 0)
+                    {
+                        <h3>Not in the CV</h3>
+                        <ul>
+                            @foreach (var missing in summary.MissingInformation)
+                            {
+                                <li>@missing</li>
+                            }
+                        </ul>
+                    }
+
+                    @if (summary.AgainstTheAdvert.Count > 0)
+                    {
+                        <h3>Against what the advert asks for</h3>
+
+                        <table class="grid">
+                            <caption class="visually-hidden">The advert's requirements and the CV's evidence</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">The advert asks for</th>
+                                    <th scope="col">In the CV</th>
+                                    <th scope="col">Evidence</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var requirement in summary.AgainstTheAdvert)
+                                {
+                                    <tr>
+                                        <td>@requirement.Requirement</td>
+                                        <td>@requirement.Shown</td>
+                                        <td>@requirement.Evidence</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="standing">
+            <h2>Suggest interview questions</h2>
+            <p class="subtle">Sends the advert and the skills the candidate described on the form.</p>
+
+            <EditForm Model="Asking" method="post" OnValidSubmit="Suggest" FormName="questions" class="inline">
+                <label>
+                    <span>Interview</span>
+                    <InputSelect @bind-Value="Asking.Interview">
+                        @foreach (var type in RecruitingAid.InterviewTypes)
+                        {
+                            <option value="@type">@type</option>
+                        }
+                    </InputSelect>
+                </label>
+                <button type="submit">Suggest questions</button>
+            </EditForm>
+
+            @if (Questions is { } questions)
+            {
+                <div class="inference">
+                    <p class="inference__tag">Suggestions, not a script</p>
+                    <ol>
+                        @foreach (var question in questions)
+                        {
+                            <li>
+                                @question.Question
+                                <span class="subtle">Listen for: @question.ListenFor</span>
+                            </li>
+                        }
+                    </ol>
+                </div>
+            }
+        </section>
+
+        <section class="standing">
+            <h2>Draft a letter</h2>
+            <p class="subtle">
+                Sends the candidate's name, the role, and the points you write here. Nothing is sent
+                to the candidate: copy what you want into your own message.
+            </p>
+
+            <EditForm Model="Drafting" method="post" OnValidSubmit="Draft" FormName="draft" class="stack">
+                <DataAnnotationsValidator />
+
+                <label>
+                    <span>Kind of letter</span>
+                    <InputSelect @bind-Value="Drafting.Kind">
+                        <option value="@LetterKind.Rejection">Not successful</option>
+                        <option value="@LetterKind.Invitation">Invitation to interview</option>
+                        <option value="@LetterKind.OfferCover">Covering letter for an offer</option>
+                    </InputSelect>
+                </label>
+
+                <label>
+                    <span>Points to make (optional)</span>
+                    <InputTextArea @bind-Value="Drafting.Points" rows="3" />
+                    <ValidationMessage For="() => Drafting.Points" />
+                </label>
+
+                <button type="submit">Draft it</button>
+            </EditForm>
+
+            @if (Letter is { } letter)
+            {
+                <div class="inference">
+                    <p class="inference__tag">A draft. Nothing has been sent.</p>
+
+                    <label class="draft">
+                        <span>Subject</span>
+                        <input type="text" value="@letter.Subject" readonly />
+                    </label>
+
+                    <label class="draft">
+                        <span>Letter</span>
+                        <textarea rows="12" readonly>@letter.Body</textarea>
+                    </label>
+                </div>
+            }
+        </section>
+
+        @if (Problem is not null)
+        {
+            <p class="refusal" role="alert">@Problem</p>
+        }
+
+        @if (Remaining is { } remaining)
+        {
+            <p class="subtle">You have @remaining uses of the AI features left today.</p>
+        }
+    }
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private Nothing _summarising = new();
+
+    [SupplyParameterFromForm(FormName = "summary")]
+    private Nothing Summarising
+    {
+        get => _summarising;
+        set => _summarising = value ?? new Nothing();
+    }
+
+    private QuestionsInput _asking = new();
+
+    [SupplyParameterFromForm(FormName = "questions")]
+    private QuestionsInput Asking
+    {
+        get => _asking;
+        set => _asking = value ?? new QuestionsInput();
+    }
+
+    private DraftInput _drafting = new();
+
+    [SupplyParameterFromForm(FormName = "draft")]
+    private DraftInput Drafting
+    {
+        get => _drafting;
+        set => _drafting = value ?? new DraftInput();
+    }
+
+    private JobApplication? Application { get; set; }
+
+    private Candidate? Candidate { get; set; }
+
+    private JobPosting? Posting { get; set; }
+
+    private CvSummary? Summary { get; set; }
+
+    private IReadOnlyList<SuggestedQuestion>? Questions { get; set; }
+
+    private LetterDraft? Letter { get; set; }
+
+    private string? Problem { get; set; }
+
+    private int? Remaining { get; set; }
+
+    /*
+     * The application's own permission as well as the aid's. candidates.view is what opens a
+     * candidate anywhere else, and a recruitment aid that showed a candidate to somebody without it
+     * would be a second door to the same room.
+     */
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        if (!user.HasPermission(Permissions.CandidatesView))
+        {
+            return;
+        }
+
+        Application = await Recruitment.FindApplicationAsync(Id);
+
+        if (Application is null)
+        {
+            return;
+        }
+
+        Candidate = await Recruitment.FindCandidateAsync(Application.CandidateId);
+        Posting = await Recruitment.FindPostingAsync(Application.PostingId);
+    }
+
+    private Task Summarise() => Run(asker => Aid.SummariseAsync(Id, asker));
+
+    private Task Suggest() => Run(asker => Aid.QuestionsAsync(Id, Asking.Interview, asker));
+
+    private Task Draft() => Run(asker => Aid.DraftAsync(Id, Drafting.Kind, Drafting.Points, asker));
+
+    private async Task Run(Func<Asker, Task<AidResult>> ask)
+    {
+        var asker = await Askers.FromAsync((await AuthenticationState).User, People);
+        var result = await ask(asker);
+
+        Summary = result.Summary;
+        Questions = result.Questions;
+        Letter = result.Draft;
+        Problem = result.Problem;
+        Remaining = result.Status is AnswerStatus.NotConfigured or AnswerStatus.NotPermitted ? null : result.Remaining;
+    }
+
+    private sealed class Nothing;
+
+    private sealed class QuestionsInput
+    {
+        public string Interview { get; set; } = "Technical";
+    }
+
+    private sealed class DraftInput
+    {
+        public LetterKind Kind { get; set; } = LetterKind.Rejection;
+
+        [StringLength(2000)]
+        public string? Points { get; set; }
+    }
+}

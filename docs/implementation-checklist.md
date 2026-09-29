@@ -52,7 +52,7 @@ timesheet rather than typed into it. What is built is an ERP that a software
 company could run its business on, and the part that makes it developer-native
 is no longer the part that is missing.
 
-By section: **64 done, 20 partial, 14 not started, 1 excluded by agreement.**
+By section: **65 done, 21 partial, 12 not started, 1 excluded by agreement.**
 
 Until the Foundation pass the figure here read 58 done, 0 partial and 40 not started,
 which was wrong against its own tables — they said 60, 4 and 34, because §1, §28, §81
@@ -108,7 +108,7 @@ pass rather than adjusted by the size of the change.
 | ✅ | 78 | Architecture | Domain ← Application ← Infrastructure ← Web, enforced by project references |
 | ✅ | 86 | Environment configuration | Production, staging and testing each have a settings file; anything but production carries a banner on every page saying it is not the live system. `.env.example` and docs/configuration.md list every variable compose reads, and a test fails if one is missing from either. No secrets committed, and the security centre shows where each secret came from |
 | ✅ | 87 | Deployment | Docker and Compose, built and run, migrations verified against real PostgreSQL; a Caddy proxy with automatic HTTPS behind a profile; docs/deployment.md covers first install, updating, rollback and what to back up. CI builds the image on every push, which runs the suite against the source as the image sees it — the check that found the image build broken by tests of the repository's own files. One web container, because the scheduler takes no lock |
-| ◐ | 1 | Core principles | Thirteen of the twenty met outright, five in part — connectedness, automation, APIs, automation per module, and a check across screen widths — and two not: multi-company, excluded by agreement, and AI throughout. Assessed one by one, with evidence, in docs/conformance.md |
+| ◐ | 1 | Core principles | Thirteen of the twenty met outright, six in part — connectedness, automation, AI throughout, APIs, automation per module, and a check across screen widths — and one not: multi-company, excluded by agreement. Assessed one by one, with evidence, in docs/conformance.md |
 | ✅ | 2 | Architecture document | docs/architecture.md, covering every heading the section asks for, which a test checks; the layering it describes is now checked against the compiled assemblies by `LayeringTests` |
 | ✅ | 79 | Module structure | Four layers depending inwards, a folder per domain named the same in each; every module the brief lists maps to one, except support, knowledge and AI, which do not exist yet. See docs/conformance.md |
 | ◐ | 81 | Definition of done | Met across the modules for model, migration, logic, validation, authorization, UI, states, notifications, audit and tests. Short in three places: APIs for about half the modules, nine of section 85's documents, and accessibility beyond named form controls — which a page sweep now checks, and which found the tax-band table, the chart of accounts and the navigation toggle unnamed on its first run. See docs/conformance.md |
@@ -223,10 +223,10 @@ This block is the brief's stated centre of gravity, and all of it is built excep
 
 | | § | Item |
 | --- | --- | --- |
-| ☐ | 36 | AI assistant, permission-aware |
-| ☐ | 37 | AI project analysis, labelled as inference not fact |
+| ◐ | 36 | AI assistant, permission-aware | /assistant answers from eight read-only lookups, each made as the signed-in person with the same permission and reach as the page for those records; refused lookups send the model a refusal, never the records (AssistantTests assert on what was sent). Off until Ai:ApiKey is set; daily allowance per person; usage log without answers at /ai/usage. Creating a task is a proposal the person confirms with a button. Not built: conversations, streaming, reports as documents, explaining failed deployment logs, drafting invoices, triggering automations, documentation help. **Not yet exercised against the live API with a working key** — the request was checked against the API reference and a refused key was shown to be reported correctly. See docs/ai.md |
+| ✅ | 37 | AI project analysis, labelled as inference not fact | /projects/{id}/reading: recorded facts and code-calculated figures (each with how it was counted) are shown without any model; the model's reading of schedule, engineering, deployment, budget, blockers and main risk comes back as structured JSON and is drawn in a separate box tagged "Inference, not fact"; a reading in the wrong shape is not shown. Facts are gathered as the person, and what was withheld is listed |
 | ✅ | 34 | Semantic search | **Declined, on the record, and the reasons are checked rather than asserted.** A vector index ranks before it filters, and this system's search deliberately does not query a group somebody may not see rather than querying and filtering it — `Reach.Only` is a per-request set of arbitrary ids that no vector store pre-filters on, so top-k would reintroduce the leak `Reaches` was built to fix. The suite also runs on SQLite via `EnsureCreated`, where a vector column has nowhere to exist. What was done instead: two **live permission leaks** in the keyword box closed — see below |
-| ☐ | 36 | AI-assisted CV summary, interview questions, drafts |
+| ◐ | 36 | AI-assisted CV summary, interview questions, drafts | /hiring/applications/{id}/assist (ai.recruit + candidates.view): CV summary against the advert's stated requirements (PDF sent as a document, docx/odt/txt read as text, .doc/.rtf refused and nothing sent), interview questions by type, drafts of rejection, invitation and offer covering letters shown for editing and never sent. No recommendation, score or rank. Sending a CV is on the audit trail. Not built: summarising interview notes; **the careers consent wording does not yet mention a third party reading the CV — the firm has to decide that before the CV summary is used** |
 
 ## Advanced — phase 9
 

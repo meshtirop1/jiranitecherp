@@ -21,7 +21,7 @@ the evidence for each and the gaps named. The section-by-section status is in
 | ✅ | 7 | Permissions are granular | 87 permissions of the form `area.action`, eighteen roles, reach for department, project, team and own-record scope, separations held by tests. See [architecture](architecture.md#authorization-strategy). |
 | ☐ | 8 | Multi-company | **Out of scope by agreement.** One firm; `FirmSettings` is one row. |
 | ✅ | 9 | Future modules without rewrites | Layered, with the layering now checked by `LayeringTests`; a module is a domain folder, a service and pages, and the outbox, audit and permission machinery apply to it without change. |
-| ☐ | 10 | AI throughout | Not built (sections 36, 37). |
+| ◐ | 10 | AI throughout | An assistant that looks things up as the signed-in person, project readings labelled as inference, and recruitment drafts (sections 36, 37; [ai](ai.md)). Off until an API key is set. Not yet in most modules, and not yet exercised against the live API with a working key. |
 | ◐ | 11 | Every module exposes an API | `/api/v1` covers clients, invoices and payments, projects, work, job openings and feature flags, with scoped keys. HR, payroll, recruitment's internal side, assets, incidents, procurement and contracts have none. |
 | ◐ | 12 | Every module supports automation | Every module raises events and outbound webhooks can carry them; no module can yet be driven by configurable rules. |
 | ✅ | 13 | Responsive | Fluid layout; every table carries its own horizontal scroll so the page never widens. Checked at 375 pixels on the pages changed in this work. |
@@ -61,7 +61,7 @@ per domain, with the same name in each layer.
 | Knowledge | — | ☐ section 25 |
 | Notifications | `Notices`, `Mail` | ✅ |
 | Automation | `Scheduling`, `Messaging`, `Integrations` (outbound webhooks) | ◐ no rule engine |
-| AI | — | ☐ sections 36, 37 |
+| AI | `Ai` in Application and Infrastructure | ◐ assistant, project reading, recruitment drafts; see [ai](ai.md) |
 | Reporting | `Reporting` | ✅ |
 | Audit | `Audit` | ✅ |
 | Integrations | `Integrations`, `Api` | ✅ |

@@ -1,0 +1,296 @@
+@page "/assistant"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Ai
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Work
+@using JiranisokoTech.Infrastructure.Ai
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Web.Authorization
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.AiAsk)]
+@inject Assistant Assistant
+@inject IAiModel Model
+@inject AiLedger Ledger
+@inject PeopleQueries People
+@inject WorkService Work
+@inject NavigationManager Navigation
+
+@*
+    Section 36. A form that posts and a page that answers, statically rendered like every other
+    page here, so that a test can ask a question by posting the real form and read the answer.
+*@
+
+<PageTitle>Ask — Jiranisoko Delivery</PageTitle>
+
+<h1>Ask about the firm's records</h1>
+
+@if (!Model.IsConfigured)
+{
+    @*
+        Said, not hidden. A page that vanished from the menu when the key was missing would leave
+        somebody who was told "ask the assistant" with no way to find out why they cannot.
+    *@
+    <p class="refusal" role="alert">
+        The assistant is not configured on this copy of the system: no API key has been set for
+        it, so nothing typed here would be sent anywhere. An administrator can switch it on; what
+        it would send, and to whom, is set out in docs/ai.md.
+    </p>
+}
+else
+{
+    <p class="subtle">
+        Answers are written by a language model from lookups made as you — it sees only what you
+        could open yourself. Your question and the records it looks up are sent to Anthropic to be
+        read. You have @Remaining of @Ledger.DailyLimit questions left today.
+    </p>
+
+    <EditForm Model="Input" method="post" OnValidSubmit="AskIt" FormName="ask" class="stack">
+        <DataAnnotationsValidator />
+
+        <label>
+            <span>Your question</span>
+            <InputTextArea @bind-Value="Input.Question" rows="3"
+                           placeholder="Which projects are late, and why?" />
+            <ValidationMessage For="() => Input.Question" />
+        </label>
+
+        <button type="submit">Ask</button>
+    </EditForm>
+}
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+@if (Answer is not null)
+{
+    <section class="standing">
+        <h2>The answer</h2>
+
+        @if (Answer.Text is { } text)
+        {
+            @*
+                Labelled every time, and above the text rather than below it, so it is read first.
+                Section 37's rule applies here as much as to a project's reading: a conclusion the
+                model drew is not a record, and the page must not let it pass for one.
+            *@
+            <p class="inference__tag">Written by a language model — check it against the records</p>
+            <div class="answer__text">@text</div>
+        }
+
+        @if (Answer.Problem is { } problem)
+        {
+            <p class="refusal" role="alert">@problem</p>
+        }
+
+        @if (Answer.Lookups.Count > 0)
+        {
+            <h3>What it looked up, as you</h3>
+
+            <ul class="plain">
+                @foreach (var lookup in Answer.Lookups)
+                {
+                    <li>
+                        @lookup.Described
+                        @if (lookup.Refused)
+                        {
+                            <span class="pill pill--danger">Refused: you may not see this</span>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+        else if (Answer.Status is AnswerStatus.Answered)
+        {
+            <p class="subtle">It looked nothing up, so nothing above comes from the firm's records.</p>
+        }
+
+    </section>
+}
+
+@if (Proposed.Title.Length > 0 || Confirming)
+{
+    @*
+        The confirmation section 36 asks for, applied to every change rather than only the
+        destructive ones. The assistant proposed this; nothing exists until it is pressed.
+
+        Drawn whenever there is a proposal in the form — after the question that produced it, and
+        again on the post that confirms it. A static page dispatches a post only to a form it draws,
+        so a form drawn only beside a fresh answer would refuse its own button.
+    *@
+    <AuthorizeView Policy="@CreatePolicy" Context="mayCreate">
+        <EditForm Model="Proposed" method="post" OnValidSubmit="Create" FormName="create-task"
+                  class="panel stack">
+            <DataAnnotationsValidator />
+
+            <h3>It proposes a task. Nothing has been created.</h3>
+
+            <label>
+                <span>Title</span>
+                <InputText @bind-Value="Proposed.Title" />
+                <ValidationMessage For="() => Proposed.Title" />
+            </label>
+
+            <p class="subtle">@(Proposed.ProjectName is { Length: > 0 } project ? $"On {project}." : "Not on any project.")</p>
+
+            <InputText type="hidden" @bind-Value="Proposed.ProjectId" />
+            <InputText type="hidden" @bind-Value="Proposed.ProjectName" />
+
+            <button type="submit">Create it</button>
+        </EditForm>
+    </AuthorizeView>
+}
+
+<AuthorizeView Policy="@UsagePolicy" Context="mayAudit">
+    <p class="subtle"><a href="/ai/usage">Who has asked what</a></p>
+</AuthorizeView>
+
+@code {
+    private const string CreatePolicy = PermissionClaim.PolicyPrefix + Permissions.TasksCreate;
+
+    private const string UsagePolicy = PermissionClaim.PolicyPrefix + Permissions.AuditView;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    /// <summary>
+    /// This request is the confirmation being pressed — so its form must be drawn even if the title
+    /// was emptied, or the post has no form to land on and the page becomes the error screen.
+    /// </summary>
+    private bool Confirming =>
+        Request?.Request.HasFormContentType == true
+        && Request.Request.Form["_handler"] == "create-task";
+
+    private AskInput _input = new();
+
+    [SupplyParameterFromForm(FormName = "ask")]
+    private AskInput Input
+    {
+        get => _input;
+        set => _input = value ?? new AskInput();
+    }
+
+    private ProposalInput _proposed = new();
+
+    [SupplyParameterFromForm(FormName = "create-task")]
+    private ProposalInput Proposed
+    {
+        get => _proposed;
+        set => _proposed = value ?? new ProposalInput();
+    }
+
+    private AssistantAnswer? Answer { get; set; }
+
+    private int Remaining { get; set; }
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var asker = await AskerAsync();
+
+        Remaining = Model.IsConfigured ? await Ledger.RemainingTodayAsync(asker.AccountId) : 0;
+    }
+
+    private async Task AskIt()
+    {
+        Refusal = null;
+
+        var asker = await AskerAsync();
+
+        Answer = await Assistant.AskAsync(Input.Question, asker);
+        Remaining = Answer.Remaining;
+
+        if (Answer.Proposal is { } proposal)
+        {
+            _proposed = new ProposalInput
+            {
+                Title = proposal.Title,
+                ProjectId = proposal.ProjectId?.ToString(),
+                ProjectName = proposal.ProjectName,
+            };
+        }
+    }
+
+    /// <summary>
+    /// Create what was proposed, as the person, after they pressed the button.
+    /// </summary>
+    /// <remarks>
+    /// Checked again here rather than trusted from the page: the button is drawn only for somebody
+    /// holding tasks.create, and a post can arrive without the page having been drawn at all. The
+    /// project comes back from a hidden field, so it is checked against the person's reach — the
+    /// field is an input like any other, and a raised task is not a way to write onto a project
+    /// they cannot see.
+    /// </remarks>
+    private async Task Create()
+    {
+        Refusal = null;
+
+        var user = (await AuthenticationState).User;
+        var asker = await AskerAsync();
+
+        if (!user.HasPermission(Permissions.TasksCreate))
+        {
+            Refusal = "You do not hold tasks.create, so you cannot create work.";
+            return;
+        }
+
+        if (asker.EmployeeId is not { } me)
+        {
+            Refusal = "Your sign-in is not linked to a staff record, so work cannot be raised in your name.";
+            return;
+        }
+
+        Guid? project = Guid.TryParse(Proposed.ProjectId, out var id) ? id : null;
+
+        if (project is { } chosen && !await WithinReachAsync(chosen, asker))
+        {
+            Refusal = "That project is not one you can see.";
+            return;
+        }
+
+        try
+        {
+            var item = await Work.RaiseAsync(Proposed.Title, me, project);
+
+            Navigation.NavigateTo($"/work/{item.Id}", forceLoad: true);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+        }
+    }
+
+    [Inject]
+    private ProjectFacts Facts { get; set; } = default!;
+
+    private async Task<bool> WithinReachAsync(Guid project, Asker asker) =>
+        (await Facts.WithinReachAsync(asker)).Any(one => one.Id == project);
+
+    private async Task<Asker> AskerAsync() =>
+        await Askers.FromAsync((await AuthenticationState).User, People);
+
+    private sealed class AskInput
+    {
+        [Required(ErrorMessage = "Ask something.")]
+        [StringLength(Assistant.LongestQuestion, MinimumLength = 3,
+            ErrorMessage = "A question between 3 and 2,000 characters.")]
+        public string Question { get; set; } = string.Empty;
+    }
+
+    private sealed class ProposalInput
+    {
+        [Required(ErrorMessage = "A task needs a title.")]
+        [StringLength(300)]
+        public string Title { get; set; } = string.Empty;
+
+        public string? ProjectId { get; set; }
+
+        // Shown beside the button and never trusted: the identifier is what is checked.
+        public string? ProjectName { get; set; }
+    }
+}

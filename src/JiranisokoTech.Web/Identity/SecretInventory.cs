@@ -34,6 +34,10 @@ public sealed class SecretInventory(IConfiguration configuration)
         ("Git:Providers:AzureDevOps:Secret", "Azure DevOps webhook secret", false),
         ("Metrics:Token", "Token a metrics collector presents", false),
 
+        // The one secret that sends the firm's records somewhere else when it is set. Shown here so
+        // an administrator can see at a glance whether the AI features are on at all.
+        ("Ai:ApiKey", "AI provider (Anthropic) API key — set means records are sent to it", false),
+
         // Needed once, to create the first account, and a standing risk after that: anybody
         // who can read the host's environment can read the owner's first password.
         ("Bootstrap:OwnerPassword", "First owner's starting password", true),

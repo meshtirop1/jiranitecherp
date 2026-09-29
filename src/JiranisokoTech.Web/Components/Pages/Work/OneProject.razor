@@ -48,6 +48,10 @@ else
         <p class="refusal" role="alert">@Refusal</p>
     }
 
+    <AuthorizeView Policy="@ReadingPolicy" Context="mayRead">
+        <p class="subtle"><a href="/projects/@Project.Id/reading">How it stands</a> — its facts, figures calculated from them, and a model's reading.</p>
+    </AuthorizeView>
+
     <dl class="facts">
         <dt>Code</dt>
         <dd><code>@Project.Code</code></dd>
@@ -250,6 +254,8 @@ else
 
 @code {
     private const string ManagePolicy = PermissionClaim.PolicyPrefix + Permissions.ProjectsManage;
+
+    private const string ReadingPolicy = PermissionClaim.PolicyPrefix + Permissions.AiAnalyse;
 
     [Parameter]
     public Guid Id { get; set; }

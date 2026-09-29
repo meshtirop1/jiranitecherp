@@ -32,6 +32,7 @@ kept flattering.
 | [docs/performance.md](docs/performance.md) | what was measured at volume |
 | [docs/conformance.md](docs/conformance.md) | the brief's principles, module structure and definition of done, rule by rule |
 | [docs/privacy.md](docs/privacy.md) | what is held about people, why, for how long, and their rights |
+| [docs/ai.md](docs/ai.md) | the assistant, project readings and recruitment aids: what is sent, who may use them, and what is not built |
 
 ---
 
