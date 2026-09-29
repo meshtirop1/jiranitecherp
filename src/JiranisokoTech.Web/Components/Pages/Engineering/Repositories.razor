@@ -73,6 +73,36 @@
             <h2>Connect a repository</h2>
 
             <div class="fields">
+                @*
+                    Four hosts, and this select is what makes three of them exist.
+
+                    GitLab, Bitbucket and Azure DevOps have had adapters, signature schemes and
+                    payload parsers since section 39 — all registered, all tested against real
+                    payload shapes — and this form posted GitProvider.GitHub as a literal. So
+                    there was no way to connect a repository on any of the other three from
+                    anywhere in the application, and the brief's sentence about adding providers
+                    without changing core business logic was true of the business logic and false
+                    of the firm: the work existed and nobody could reach it. It is the fault
+                    ReachabilityTests was written for, one level up — a whole provider rather than
+                    a service method.
+
+                    First, above the owner, because it decides what "owner" means: a GitHub
+                    organisation, a GitLab group, a Bitbucket workspace, an Azure DevOps project.
+                *@
+                <label>
+                    <span>Where it is hosted</span>
+                    <InputSelect @bind-Value="Input.Provider">
+                        @foreach (var host in Hosts)
+                        {
+                            <option value="@host">@Say(host)</option>
+                        }
+                    </InputSelect>
+                    <span class="subtle">
+                        Each host signs its deliveries differently, and the secret below is
+                        checked the way that host does it.
+                    </span>
+                </label>
+
                 <label>
                     <span>Owner</span>
                     <InputText @bind-Value="Input.Owner" placeholder="jiranisokotech" />
@@ -348,7 +378,7 @@ else
         try
         {
             await Repos.ConnectAsync(
-                GitProvider.GitHub,
+                Input.Provider,
                 Input.Owner,
                 Input.Name,
                 Input.Secret,
@@ -409,6 +439,29 @@ else
         public string? ProjectId { get; set; }
     }
 
+    /// <summary>The hosts a repository can be connected from.</summary>
+    /// <remarks>
+    /// Taken from the enum rather than written out, so a fifth host is one value and an adapter
+    /// rather than a value, an adapter and a line on this page that somebody forgets.
+    /// </remarks>
+    private static readonly GitProvider[] Hosts = Enum.GetValues<GitProvider>();
+
+    /// <summary>
+    /// What each host is called by the people who use it.
+    /// </summary>
+    /// <remarks>
+    /// Spelt out because the enum names are not: "AzureDevOps" renders as one word and
+    /// "Bitbucket" has a lower-case b in the middle that the enum cannot carry.
+    /// </remarks>
+    private static string Say(GitProvider provider) => provider switch
+    {
+        GitProvider.GitHub => "GitHub",
+        GitProvider.GitLab => "GitLab",
+        GitProvider.Bitbucket => "Bitbucket",
+        GitProvider.AzureDevOps => "Azure DevOps",
+        _ => provider.ToString(),
+    };
+
     private sealed class ConnectInput
     {
         [Required(ErrorMessage = "The account or organisation the repository sits under.")]
@@ -424,5 +477,13 @@ else
         public string Secret { get; set; } = string.Empty;
 
         public string? ProjectId { get; set; }
+
+        /// <remarks>
+        /// Not nullable, so there is no blank option and no state where somebody chose no host.
+        /// GitHub is the default because it is what this firm actually uses — and because it is
+        /// what the form silently posted before there was a control for it, so the default keeps
+        /// every existing test and every existing habit correct.
+        /// </remarks>
+        public GitProvider Provider { get; set; } = GitProvider.GitHub;
     }
 }

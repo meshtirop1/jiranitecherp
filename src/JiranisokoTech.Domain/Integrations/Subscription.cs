@@ -29,6 +29,49 @@ namespace JiranisokoTech.Domain.Integrations;
 /// retrying into it forever is a queue nobody reads and a slow leak of attempts at
 /// somebody else's address.
 /// </remarks>
+/// <summary>
+/// What is at the far end, and therefore what shape to post.
+/// </summary>
+/// <remarks>
+/// Section 51 asks that new providers can be added without changing core business logic, and this
+/// is where that sentence is tested. Everything that decides <em>whether</em> to notify somebody —
+/// the domain events, the offered list, the queue, the retries, the backoff, the dead letters —
+/// stays exactly as it was. What a provider changes is one thing: the bytes on the wire. So a
+/// provider is a value on this enum and an <c>IOutboundSender</c> that says it handles it, and
+/// nothing above the sender has to know the difference.
+///
+/// It is stored on the subscription rather than guessed from the endpoint's host. Guessing works
+/// for Slack today and fails the first time somebody puts a proxy in front of it, and the failure
+/// is silent: the firm's own JSON posted at a chat service, which answers 400 and looks like an
+/// endpoint that is down.
+/// </remarks>
+public enum DestinationKind
+{
+    /// <summary>
+    /// Somebody's own server, told in this system's own envelope.
+    /// </summary>
+    /// <remarks>
+    /// The original and the default, which is why it is 1: every row that existed before this
+    /// column did is one of these, and a migration that had to decide would have had to guess.
+    /// </remarks>
+    Webhook = 1,
+
+    /// <summary>
+    /// A Slack channel, told in a sentence.
+    /// </summary>
+    /// <remarks>
+    /// <b>The reason this exists is that the outbound half of section 40 had no possible
+    /// consumer.</b> It was finished and tested — signing, retries, backoff, dead letters, a
+    /// replay button — and what it posts is a bespoke envelope that only code somebody writes can
+    /// read. A firm of twenty software engineers has not written that code and never will, so
+    /// every one of those parts was machinery with nothing at the far end.
+    ///
+    /// A Slack incoming webhook is an https URL somebody pastes, which is the shape this table
+    /// already stores and already validates. What was missing was the sentence.
+    /// </remarks>
+    Slack = 2,
+}
+
 public sealed class Subscription : Entity, IAuditable
 {
     /// <summary>
@@ -40,6 +83,17 @@ public sealed class Subscription : Entity, IAuditable
     /// endpoint that has been unreachable for days rather than one that blinked.
     /// </remarks>
     public const int MaximumConsecutiveFailures = 10;
+
+    /// <summary>
+    /// Where a Slack incoming webhook lives.
+    /// </summary>
+    /// <remarks>
+    /// Written here rather than configurable, because it is the one thing about a Slack
+    /// destination that is not somebody's choice. A setting for it would be a setting whose only
+    /// use is to let somebody send the firm's notifications to an address that is not Slack while
+    /// the record says Slack.
+    /// </remarks>
+    public const string SlackHost = "hooks.slack.com";
 
     private readonly List<SubscribedEvent> _events = [];
 
@@ -54,11 +108,13 @@ public sealed class Subscription : Entity, IAuditable
         string name,
         string endpoint,
         string protectedSecret,
+        DestinationKind kind,
         IEnumerable<string> events,
         DateTimeOffset at)
     {
         Name = Required(name, nameof(name));
-        Endpoint = Https(endpoint);
+        Kind = kind;
+        Endpoint = Https(endpoint, kind);
         ProtectedSecret = Required(protectedSecret, nameof(protectedSecret));
         CreatedAt = at;
 
@@ -85,11 +141,21 @@ public sealed class Subscription : Entity, IAuditable
         string endpoint,
         string protectedSecret,
         IEnumerable<string> events,
-        DateTimeOffset at) =>
-        new(name, endpoint, protectedSecret, events, at);
+        DateTimeOffset at,
+        DestinationKind kind = DestinationKind.Webhook) =>
+        new(name, endpoint, protectedSecret, kind, events, at);
 
     /// <summary>What this integration is, for whoever finds it in a year.</summary>
     public string Name { get; private set; }
+
+    /// <summary>What is at the far end. Fixed, like the endpoint.</summary>
+    /// <remarks>
+    /// Not changeable, for the same reason the endpoint is not: a subscription whose kind could be
+    /// edited is one where somebody repoints a Slack destination at a colleague's server and the
+    /// audit trail shows a rename. Adding a second subscription and switching the first off says
+    /// what happened.
+    /// </remarks>
+    public DestinationKind Kind { get; private init; }
 
     public string Endpoint { get; private init; }
 
@@ -225,7 +291,7 @@ public sealed class Subscription : Entity, IAuditable
     /// publishes all of it to every hop in between, and a subscription is added once
     /// and then forgotten about for years.
     /// </remarks>
-    private static string Https(string endpoint)
+    private static string Https(string endpoint, DestinationKind kind)
     {
         if (!Uri.TryCreate(endpoint?.Trim(), UriKind.Absolute, out var address))
         {
@@ -239,6 +305,25 @@ public sealed class Subscription : Entity, IAuditable
                 "An outgoing webhook has to be https. The payload describes invoices, pay and "
                 + "clients, and plain http shows all of it to everything between here and "
                 + "there.",
+                nameof(endpoint));
+        }
+
+        /*
+         * A Slack destination has to be a Slack address, and this is the one place that can
+         * insist on it. The kind decides what is posted, so a row marked Slack pointing anywhere
+         * else sends chat-shaped JSON at a stranger — which the receiver refuses with a 4xx that
+         * looks exactly like an endpoint that is temporarily down, so the queue retries it into
+         * somebody else's server for days before disabling itself.
+         *
+         * The host and not a prefix on the whole URL, because the path carries the credential and
+         * Slack has changed its shape before. What must not change is whose server it is.
+         */
+        if (kind == DestinationKind.Slack && address.Host != SlackHost)
+        {
+            throw new ArgumentException(
+                $"A Slack destination has to be a Slack incoming-webhook address on {SlackHost}. "
+                + "Marking somebody else's server as Slack would post chat messages at it, which "
+                + "it refuses in a way that looks like an outage.",
                 nameof(endpoint));
         }
 

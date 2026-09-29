@@ -29,6 +29,7 @@ public sealed class SubscriptionService(
         string name,
         string endpoint,
         IEnumerable<string> events,
+        DestinationKind kind = DestinationKind.Webhook,
         CancellationToken cancellationToken = default)
     {
         var wanted = events.ToList();
@@ -54,10 +55,21 @@ public sealed class SubscriptionService(
                 + "twice.");
         }
 
+        /*
+         * A secret is generated whatever the kind, including for Slack, which does not sign
+         * anything — the URL itself is the credential there.
+         *
+         * Generated anyway rather than made optional, and that is the cheaper of two honest
+         * answers. A nullable secret would put a null check into the dispatcher's one hot path
+         * for the benefit of saving thirty-two bytes, and the day a chat provider does start
+         * signing its incoming hooks the column would have to come back. What the screen must not
+         * do is show somebody a secret to paste into Slack, because there is nowhere to paste it;
+         * see the page.
+         */
         var secret = NewSecret();
 
         var subscription = Subscription.Add(
-            name, endpoint, secrets.Protect(secret), wanted, clock.Now);
+            name, endpoint, secrets.Protect(secret), wanted, clock.Now, kind);
 
         integrations.Add(subscription);
         await integrations.SaveAsync(cancellationToken);

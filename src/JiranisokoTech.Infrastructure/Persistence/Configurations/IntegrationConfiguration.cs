@@ -15,6 +15,16 @@ public sealed class SubscriptionConfiguration : IEntityTypeConfiguration<Subscri
 
         builder.Property(one => one.Name).HasMaxLength(200).IsRequired();
         builder.Property(one => one.Endpoint).HasMaxLength(2000).IsRequired();
+
+        /*
+         * Section 51. Stored as an int with a default of 1, so every row written before this
+         * column existed is a Webhook — which is what it was. A nullable column would have made
+         * "no kind" a state the dispatcher had to have an opinion about for ever afterwards.
+         */
+        builder.Property(one => one.Kind)
+            .HasConversion<int>()
+            .HasDefaultValue(DestinationKind.Webhook)
+            .IsRequired();
         builder.Property(one => one.DisabledReason).HasMaxLength(500);
 
         // No length. A protected value is the ciphertext plus the key ring's own

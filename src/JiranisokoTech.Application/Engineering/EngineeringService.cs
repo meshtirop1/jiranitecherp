@@ -42,6 +42,28 @@ public sealed class EngineeringService(
         Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
+        /*
+         * Refused before anything else, because zero is reachable.
+         *
+         * The connect form posts the host as a select, and a non-nullable enum bound from a form
+         * comes back as the underlying zero when nothing is posted for it — which no member of
+         * this enum is. A browser always posts a select, so the route is a crafted POST or a
+         * caller that forgot; either way the next line down is a lookup for
+         * "Git:Providers:0:Secret", and the message it produces tells whoever asked the shape of
+         * this application's configuration keys while explaining nothing they can act on.
+         *
+         * The same hazard as the empty option BlankChoices exists for, one type along: there the
+         * posted value is "" against a nullable value type, here it is absent against a
+         * non-nullable one.
+         */
+        if (!Enum.IsDefined(provider))
+        {
+            throw new ArgumentException(
+                "That is not a host this application knows how to watch. Choose where the "
+                + "repository is hosted.",
+                nameof(provider));
+        }
+
         var fullName = $"{owner.Trim()}/{name.Trim()}";
 
         if (await repositories.ByFullNameAsync(provider, fullName, cancellationToken)

@@ -31,6 +31,16 @@ public sealed record SendResult(bool Accepted, int? ResponseCode, string? Error)
 /// </remarks>
 public interface IOutboundSender
 {
+    /// <summary>Which kind of destination this one knows how to talk to.</summary>
+    /// <remarks>
+    /// Declared by the sender rather than mapped in a table somewhere above it, which is the
+    /// whole of section 51's "a provider can be added without changing core business logic": a new
+    /// provider is a new file with a new value here and a registration, and the dispatcher's rules
+    /// are untouched. A table would be a second place that has to learn about every provider, and
+    /// the day somebody forgot to edit it the subscription would be sent in the wrong shape.
+    /// </remarks>
+    DestinationKind Handles { get; }
+
     Task<SendResult> SendAsync(
         Subscription subscription,
         OutboundDelivery delivery,
@@ -48,7 +58,7 @@ public interface IOutboundSender
 /// </remarks>
 public sealed class OutboundDispatcher(
     IIntegrationRepository integrations,
-    IOutboundSender sender,
+    IEnumerable<IOutboundSender> senders,
     ISecretStore secrets,
     IClock clock,
     ILogger<OutboundDispatcher> logger)
@@ -118,6 +128,36 @@ public sealed class OutboundDispatcher(
                 clock.Now);
 
             delivery.Abandon("The signing secret could not be read back.", clock.Now);
+
+            await integrations.SaveAsync(cancellationToken);
+            return;
+        }
+
+        /*
+         * Chosen by the subscription's kind, and a missing sender is treated as an endpoint that
+         * refused rather than as an exception.
+         *
+         * It is a wiring fault and not a data fault — a value on the enum that nothing was
+         * registered for — so it cannot be fixed by the person reading the screen. But throwing
+         * here would take out the whole batch, including the deliveries queued behind it for
+         * destinations that work. Refusing lets the ordinary machinery do the right thing: this
+         * one retries, gives up, and after ten give-ups the subscription switches itself off with
+         * a reason on the screen, while everything else keeps going.
+         */
+        if (senders.FirstOrDefault(one => one.Handles == subscription.Kind) is not { } sender)
+        {
+            logger.LogError(
+                "Nothing is registered to send to a {Kind} destination, so {Subscription} cannot "
+                + "be told anything.",
+                subscription.Kind,
+                subscription.Name);
+
+            delivery.Failed(
+                $"Nothing in this application knows how to post to a {subscription.Kind} "
+                + "destination.",
+                null,
+                RetryDelayAfter(delivery.Attempts + 1),
+                clock.Now);
 
             await integrations.SaveAsync(cancellationToken);
             return;

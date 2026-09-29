@@ -64,7 +64,7 @@ per domain, with the same name in each layer.
 | AI | `Ai` in Application and Infrastructure | ◐ assistant, project reading, recruitment drafts; see [ai](ai.md) |
 | Reporting | `Reporting` | ✅ |
 | Audit | `Audit` | ✅ |
-| Integrations | `Integrations`, `Api` | ✅ |
+| Integrations | `Integrations`, `Api` | ◐ four Git hosts and two outbound destination kinds; no cloud, payment or calendar provider — see §51 |
 
 ## Section 81 — definition of done
 

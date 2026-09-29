@@ -465,6 +465,16 @@ public static class ServiceCollectionExtensions
         services.AddScoped<SubscriptionService>();
         services.AddScoped<IntegrationQueries>();
         services.AddScoped<IOutboundSender, HttpOutboundSender>();
+
+        /*
+         * Section 51's second provider, registered beside the first rather than instead of it. The
+         * dispatcher takes every IOutboundSender and picks the one whose Handles matches the
+         * subscription's kind, so adding a third is this line and one file — which is the brief's
+         * "new providers can be added without changing core business logic", and it is only
+         * demonstrated by there being two.
+         */
+        services.AddScoped<IOutboundSender, SlackOutboundSender>();
+
         services.AddScoped<OutboundDispatcher>();
         services.AddHostedService<OutboundProcessor>();
 
@@ -477,6 +487,19 @@ public static class ServiceCollectionExtensions
              * endpoint set the pace of every notification behind it.
              */
             client.Timeout = TimeSpan.FromSeconds(10);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("JiranisokoTech-Delivery/1.0");
+        });
+
+        /*
+         * Its own client rather than sharing the one above, because the timeout above is an
+         * argument about somebody else's server doing its work inside the request. Slack is not
+         * somebody else's server in that sense — it is a service with its own latency that this
+         * firm does not get a vote on — and pinning it to a figure chosen for a bespoke receiver
+         * would mean a notification lost to a slow afternoon at Slack.
+         */
+        services.AddHttpClient(SlackOutboundSender.ClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(20);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("JiranisokoTech-Delivery/1.0");
         });
 

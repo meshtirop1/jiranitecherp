@@ -412,7 +412,7 @@ public class OutgoingWebhookTests
         {
             await new OutboundDispatcher(
                     new IntegrationRepository(context),
-                    new Accepting(),
+                    [new Accepting()],
                     new Unreadable(),
                     fixture.Clock,
                     NullLogger<OutboundDispatcher>.Instance)
@@ -479,7 +479,7 @@ public class OutgoingWebhookTests
 
         await new OutboundDispatcher(
                 new IntegrationRepository(context),
-                sender,
+                [sender],
                 new Readable(),
                 fixture.Clock,
                 NullLogger<OutboundDispatcher>.Instance)
@@ -502,6 +502,8 @@ public class OutgoingWebhookTests
 
     private sealed class Accepting : IOutboundSender
     {
+        public DestinationKind Handles => DestinationKind.Webhook;
+
         public Task<SendResult> SendAsync(
             Subscription subscription,
             OutboundDelivery delivery,
@@ -512,6 +514,8 @@ public class OutgoingWebhookTests
 
     private sealed class Refusing : IOutboundSender
     {
+        public DestinationKind Handles => DestinationKind.Webhook;
+
         public Task<SendResult> SendAsync(
             Subscription subscription,
             OutboundDelivery delivery,

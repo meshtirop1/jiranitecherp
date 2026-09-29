@@ -175,6 +175,14 @@ public static partial class DeliveryWorkflow
 
         Browsing.Accepted(await Browsing.PressAsync(engineering, "/repositories", "connect", new Dictionary<string, string>
         {
+            /*
+             * The host is posted because a browser posts a select, and because leaving it out is
+             * how this step first failed: a non-nullable enum bound from a form comes back as the
+             * underlying zero when nothing is posted for it, and zero is no member of GitProvider.
+             * The service now refuses that outright; before it did, the refusal was a complaint
+             * about "Git:Providers:0:Secret".
+             */
+            ["Input.Provider"] = nameof(GitProvider.GitHub),
             ["Input.Owner"] = "jiranisokotech",
             ["Input.Name"] = repositoryName,
             ["Input.Secret"] = Workflow.GitHubSecret,

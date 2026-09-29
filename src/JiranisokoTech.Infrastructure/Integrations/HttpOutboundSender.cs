@@ -36,6 +36,16 @@ public sealed class HttpOutboundSender(IHttpClientFactory clients) : IOutboundSe
 
     public const string DeliveryHeader = "X-Jiranisoko-Delivery";
 
+    /// <summary>
+    /// Somebody's own server, told in this system's own envelope.
+    /// </summary>
+    /// <remarks>
+    /// Section 51. This was the only sender, so the dispatcher held one and the question never
+    /// arose. Saying which kind it handles is what lets a second one exist beside it without the
+    /// dispatcher's rules learning anything about either.
+    /// </remarks>
+    public DestinationKind Handles => DestinationKind.Webhook;
+
     public async Task<SendResult> SendAsync(
         Subscription subscription,
         OutboundDelivery delivery,

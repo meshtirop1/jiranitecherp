@@ -66,6 +66,23 @@
         <ValidationMessage For="() => Input.Name" />
     </label>
 
+    @*
+        Above the address, because it decides what the address may be and what arrives at it. A
+        Slack destination is refused unless it is a hooks.slack.com address, so asking afterwards
+        would mean typing a URL and then being told the wrong thing about it.
+    *@
+    <label>
+        <span>What is at the far end</span>
+        <InputSelect @bind-Value="Input.Kind">
+            <option value="@DestinationKind.Webhook">Somebody's own server</option>
+            <option value="@DestinationKind.Slack">A Slack channel</option>
+        </InputSelect>
+        <span class="subtle">
+            A server gets this system's own signed JSON envelope, which something has to be
+            written to read. Slack gets a sentence in a channel, and needs nothing written.
+        </span>
+    </label>
+
     <label>
         <span>Where to post</span>
         <InputText @bind-Value="Input.Endpoint" placeholder="https://accounts.example.com/hooks/erp" />
@@ -73,6 +90,11 @@
         <span class="subtle">
             Must be https. The payload describes invoices, pay and clients, and
             plain http shows all of it to everything in between.
+        </span>
+        <span class="subtle">
+            <strong>For Slack, this address is the password.</strong> An incoming-webhook URL is
+            all anybody needs to post into that channel, so it is stored here and shown nowhere
+            else, and a new one has to be created in Slack if it ever leaks.
         </span>
     </label>
 
@@ -121,7 +143,25 @@ else
                 <tr class="@(row.IsActive ? null : "row--closed")">
                     <td>
                         <strong>@row.Name</strong>
-                        <span class="subtle">@row.Endpoint</span>
+                        @if (row.Kind == DestinationKind.Slack)
+                        {
+                            <span class="pill pill--quiet">Slack</span>
+                        }
+                        <br />
+                        @*
+                            The address is shown for a server and withheld for Slack, because for
+                            Slack it is the credential: anybody who can read this page could
+                            otherwise copy it and post into the channel from anywhere. The name and
+                            the events are enough to tell two destinations apart.
+                        *@
+                        @if (row.Kind == DestinationKind.Slack)
+                        {
+                            <span class="subtle">a channel in Slack</span>
+                        }
+                        else
+                        {
+                            <span class="subtle">@row.Endpoint</span>
+                        }
                     </td>
                     <td class="subtle">@string.Join(", ", row.Events)</td>
                     <td class="number">
@@ -306,10 +346,19 @@ else
                 return;
             }
 
-            var (_, secret) = await Subscriptions.AddAsync(
-                Input.Name, Input.Endpoint, [.. events!]);
+            var kind = Input.Kind;
 
-            Issued = secret;
+            var (_, secret) = await Subscriptions.AddAsync(
+                Input.Name, Input.Endpoint, [.. events!], kind);
+
+            /*
+             * The secret is shown only for a destination that signs. A Slack subscription has one
+             * because the column is not nullable and nothing is signed with it, so putting it on
+             * the screen would be handing somebody a string to paste into a box Slack does not
+             * have — and the ten minutes they spend looking for that box is ten minutes spent
+             * doubting the thing they just set up.
+             */
+            Issued = kind == DestinationKind.Webhook ? secret : null;
             Input = new AddInput();
 
             await LoadAsync();
@@ -365,5 +414,12 @@ else
         public string Endpoint { get; set; } = string.Empty;
 
         public List<string> Events { get; set; } = [];
+
+        /// <remarks>
+        /// Not nullable, so there is no blank option for BlankChoices to have to strip and no
+        /// state where somebody has chosen nothing. A subscription is a webhook unless somebody
+        /// says otherwise, which is what every row that existed before this field also was.
+        /// </remarks>
+        public DestinationKind Kind { get; set; } = DestinationKind.Webhook;
     }
 }
