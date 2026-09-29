@@ -120,6 +120,17 @@ staff records, withdrawn accounts and the audit trail — is set by an administr
 `retention.sweep` job. Each is kept for ever until somebody sets a period, and each has a
 floor below which it cannot be set.
 
+### Backups
+
+Read by the `backup` and `restore` services, which run only when started by hand or by the
+host's scheduler. [backups.md](backups.md) has the rest.
+
+| `.env` | Read as | Default | Meaning |
+|---|---|---|---|
+| `BACKUP_DIRECTORY` | the host directory mounted at `/backups/data` | `/var/backups/jiranisokotech/data` | Where the database dump and the archives of attachments and CVs are written, one timestamped directory per run. |
+| `KEYS_BACKUP_DIRECTORY` | the host directory mounted at `/backups/keys` | `/var/backups/jiranisokotech-keys` | Where the key ring's backup is written. Must be a different place from `BACKUP_DIRECTORY`, and not inside it; the backup refuses to run otherwise, because the two together undo the encryption of every second factor. |
+| `BACKUP_RETENTION_DAYS` | `RETENTION_DAYS` in `backup.sh` | `30` | Backups older than this are removed after each successful run, and never after a failed one. `0` keeps everything. |
+
 ### Fixed in the compose file
 
 These are paths on volumes, not choices, and are listed so that whoever backs the host up
@@ -127,7 +138,7 @@ knows what they are.
 
 | Read as | Value | Holds |
 |---|---|---|
-| `DataProtection:KeyRingPath` | `/keys` | The keys that sign cookies and links. Losing them signs everybody out and voids every link already sent. |
+| `DataProtection:KeyRingPath` | `/keys` | The key ring that signs cookies and links and encrypts every account's second factor and every webhook subscription's secret. Losing it signs everybody out, voids every link already sent, and leaves no second factor that can be checked — back it up, apart from the database. See [backups](backups.md). |
 | `Documents:Directory` | `/documents` | Attachments. |
 | `Cvs:Directory` | `/cvs` | Applicants' CVs. |
 | `Mail:Directory` | `/mail` | What the File transport "sent". |

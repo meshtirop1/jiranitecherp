@@ -23,6 +23,8 @@ kept flattering.
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | how the system is built, and why |
 | [docs/deployment.md](docs/deployment.md) | putting it on a host, HTTPS, updating, health |
+| [docs/backups.md](docs/backups.md) | what is backed up, scheduling it, verifying it, restoring it |
+| [docs/disaster-recovery.md](docs/disaster-recovery.md) | what to do when the host, the database or the keys are lost |
 | [docs/configuration.md](docs/configuration.md) | every setting and environment variable |
 | [docs/git-integration.md](docs/git-integration.md) | connecting code hosts |
 | [docs/security.md](docs/security.md) | signing in, roles and permissions, the security centre, secrets |

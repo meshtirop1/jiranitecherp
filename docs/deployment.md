@@ -95,9 +95,9 @@ in its log at startup.
 ## Updating
 
 ```sh
-cd jiranitecherp
+cd jiranitecherp/docker
+docker compose run --rm backup
 git pull
-cd docker
 docker compose --profile proxy up -d --build
 ```
 
@@ -109,8 +109,9 @@ cookie keys are on the `keys` volume.
 **Migrations only go forward.** Rolling back the code after a migration has run leaves an
 older application facing a newer schema, which usually works — new columns are ignored — and
 sometimes does not. To go back reliably, restore the database from the backup taken before
-the update, then check out the earlier commit and rebuild. Take that backup first; see
-section 88 in the checklist, which is not yet done.
+the update, then check out the earlier commit and rebuild — the first command above takes
+that backup, and [disaster-recovery.md](disaster-recovery.md#an-update-went-wrong) has the
+way back.
 
 ## Is it running
 
@@ -151,5 +152,7 @@ recovery codes are encrypted with it, so without it no code can be checked, and 
 with two-factor on needs it reset by hand. Back it up — and keep that backup apart from the
 database's, because the two together are what the encryption was keeping apart.
 
-`cache-data` and `mail` can be lost without harm. What backing these up involves is section 88,
-which is not yet done.
+`cache-data` and `mail` can be lost without harm. How the others are backed up — nightly,
+verified, the keys to a place of their own, and restored by the suite on every push — is
+[backups.md](backups.md); what to do when one is lost is
+[disaster-recovery.md](disaster-recovery.md).

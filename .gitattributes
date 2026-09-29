@@ -1,0 +1,7 @@
+# Shell scripts are run inside Linux containers from a bind mount of the checkout, so they
+# must reach the container with LF endings whatever the machine that cloned them does. Git
+# for Windows converts text to CRLF on checkout by default, and a CRLF script fails in sh on
+# its first line — "set: illegal option -" — so the nightly backup would never have run on a
+# host administered from a Windows clone, and would have said so only to whoever read the
+# timer's log.
+*.sh text eol=lf
