@@ -57,11 +57,39 @@ else
     }
 
     <dl class="facts">
+        @*
+            Both of these were the name as plain text, with the identifier already on the row.
+            Section 98 calls that losing context: the navigation it names — employee → team →
+            project → task → repository → PR → deployment → invoice → client — has to be walkable,
+            and a hop you make by going back to a list and searching is a hop that breaks.
+        *@
         <dt>Project</dt>
-        <dd>@(Row.ProjectName ?? "None")</dd>
+        <dd>
+            @if (Row.ProjectId is { } project)
+            {
+                <a href="/projects/@project">@Row.ProjectName</a>
+            }
+            else
+            {
+                @*
+                    No project is an ordinary state — the firm's own work belongs to nobody's
+                    project — so it is said rather than left blank.
+                *@
+                <span class="subtle">None</span>
+            }
+        </dd>
 
         <dt>Assigned to</dt>
-        <dd>@(Row.AssigneeName ?? "Nobody")</dd>
+        <dd>
+            @if (Row.AssigneeId is { } assignee)
+            {
+                <a href="/people/@assignee">@Row.AssigneeName</a>
+            }
+            else
+            {
+                <span class="subtle">Nobody</span>
+            }
+        </dd>
 
         <dt>Priority</dt>
         <dd>@Row.Priority</dd>

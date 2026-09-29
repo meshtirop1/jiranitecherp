@@ -8,11 +8,13 @@
 @using JiranisokoTech.Domain.People
 @using JiranisokoTech.Domain.Work
 @using JiranisokoTech.Infrastructure.Business
+@using JiranisokoTech.Infrastructure.Engineering
 @using JiranisokoTech.Infrastructure.People
 @using JiranisokoTech.Infrastructure.Work
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ProjectsViewAll)]
 @inject WorkQueries Work
+@inject EngineeringQueries Engineering
 @inject BusinessQueries Business
 @inject DocumentService Files
 @inject WorkService Service
@@ -201,6 +203,90 @@ else
         }
     </section>
 
+    @*
+        The two hops section 98 says the navigation breaks at. Its chain runs project → repository
+        and project → invoice → client, and this page linked its client and nothing else — so both
+        were made by going back to a list and searching, which is the losing of context the section
+        is about.
+
+        Both are behind the permission that guards the page they lead to, because a link somebody
+        cannot follow is a door that refuses them — which is the fault NavigationMatchesTheDoorTests
+        was written for, one level down from the navigation.
+    *@
+    <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ReposView)"
+                   Context="repositories">
+        <section class="standing">
+            <h2>Where the code is</h2>
+
+            @if (Repositories.Count == 0)
+            {
+                <p class="empty">
+                    No repository is filed under this project. One is connected on the
+                    <a href="/repositories">repositories page</a> and can be moved here from
+                    there.
+                </p>
+            }
+            else
+            {
+                <ul class="plain">
+                    @foreach (var repository in Repositories)
+                    {
+                        <li>
+                            <a href="/repositories">@repository.FullName</a>
+                            <span class="pill pill--quiet">@repository.Provider</span>
+                            <span class="subtle">
+                                @Words.Count(repository.Commits, "commit"),
+                                @Words.Count(repository.OpenPullRequests, "pull request") open
+                            </span>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.InvoicesView)"
+                   Context="invoices">
+        <section class="standing">
+            <h2>What has been billed</h2>
+
+            @if (Invoices.Count == 0)
+            {
+                <p class="empty">
+                    Nothing has been invoiced against this project. An invoice is billed to a
+                    project on its own page, which is what puts it here.
+                </p>
+            }
+            else
+            {
+                <table class="grid">
+                    <caption class="visually-hidden">Invoices billed to this project</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Number</th>
+                            <th scope="col">Issued</th>
+                            <th scope="col">Total</th>
+                            <th scope="col">Outstanding</th>
+                            <th scope="col">State</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var invoice in Invoices)
+                        {
+                            <tr>
+                                <td><a href="/invoices/@invoice.Id">@invoice.Number</a></td>
+                                <td>@invoice.IssuedOn.ToString("d MMM yyyy")</td>
+                                <td>@invoice.Total</td>
+                                <td>@invoice.Outstanding</td>
+                                <td>@Words.For(invoice.Status)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    </AuthorizeView>
+
     <section class="standing">
         <h2>Attached</h2>
 
@@ -323,6 +409,16 @@ else
 
     private List<ClientRow> Clients { get; set; } = [];
 
+    /// <summary>The repositories filed under this project, and what it has been billed.</summary>
+    /// <remarks>
+    /// Read whatever the reader may see, and shown behind the permission that guards the page each
+    /// links to. Both are small lists — a project has a repository or two and a handful of
+    /// invoices — so neither is paged.
+    /// </remarks>
+    private List<RepositoryRow> Repositories { get; set; } = [];
+
+    private List<InvoiceRow> Invoices { get; set; } = [];
+
     private int Logged { get; set; }
 
     private int Unbilled { get; set; }
@@ -353,6 +449,8 @@ else
         Items = await Work.ItemsAsync(projectId: Id);
         Staff = await People.RosterAsync(status: EmploymentStatus.Active);
         Clients = await Business.ClientsAsync();
+        Repositories = await Engineering.RepositoriesAsync(Id);
+        Invoices = await Business.InvoicesAsync(projectId: Id);
 
         // Seeded only when somebody arrives. On the POST the posted choice is in the model, and
         // seeding it here would put the stored client back before the handler reads it — the

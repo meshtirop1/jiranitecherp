@@ -80,8 +80,13 @@ else
     </section>
 
     <dl class="facts">
+        @*
+            The client's name was plain text on the page that bills them, which is the last hop of
+            the navigation section 98 names and the one somebody makes most often: an invoice is
+            queried, and the next question is always about the client.
+        *@
         <dt>Client</dt>
-        <dd>@ClientName</dd>
+        <dd><a href="/clients/@Invoice.ClientId">@ClientName</a></dd>
 
         <dt>Issued</dt>
         <dd>@Invoice.IssuedOn.ToString("d MMMM yyyy")</dd>

@@ -26,11 +26,24 @@ public sealed class EngineeringQueries(AppDbContext database)
     /// GitHub; "connected three weeks ago, nothing received since" is the thing
     /// worth having, and it is the thing a naive list would hide.
     /// </remarks>
+    /// <param name="projectId">
+    /// Only the repositories filed under one project, or all of them.
+    /// </param>
+    /// <remarks>
+    /// The filter is here rather than in the caller because <see cref="RepositoryRow"/> carries the
+    /// project's NAME and not its identifier, so a page narrowing the list itself would be matching
+    /// on a string two projects may share. The key is right here and is the thing to match on.
+    ///
+    /// Added for the project page, which linked its client and nothing else — section 98's
+    /// navigation goes project → repository and there was no way to make that hop.
+    /// </remarks>
     public async Task<List<RepositoryRow>> RepositoriesAsync(
+        Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
         var rows = await database.Repositories
             .AsNoTracking()
+            .Where(repository => projectId == null || repository.ProjectId == projectId)
             .OrderBy(repository => repository.DisconnectedAt == null ? 0 : 1)
             .ThenBy(repository => repository.Owner)
             .ThenBy(repository => repository.Name)

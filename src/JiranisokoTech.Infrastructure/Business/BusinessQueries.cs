@@ -616,9 +616,11 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
         InvoiceStatus? status = null,
         int skip = 0,
         int? take = null,
+        Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
-        var query = NarrowInvoices(database.Invoices.AsNoTracking(), clientId, status);
+        var query = NarrowInvoices(
+            database.Invoices.AsNoTracking(), clientId, status, projectId);
 
         // The totals below are summed by the aggregate from these, so an invoice
         // loaded without them reports zero — not an error anywhere, just a wrong
@@ -709,11 +711,22 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
     /// The filtering, in one place, because a count and a page have to agree.
     /// </summary>
     private static IQueryable<Invoice> NarrowInvoices(
-        IQueryable<Invoice> query, Guid? clientId, InvoiceStatus? status)
+        IQueryable<Invoice> query, Guid? clientId, InvoiceStatus? status, Guid? projectId = null)
     {
         if (clientId is { } client)
         {
             query = query.Where(invoice => invoice.ClientId == client);
+        }
+
+        /*
+         * And by the project it bills for, which the project page needs and nothing could ask.
+         * Invoice.BillsFor has existed since section 19 and no query read it, so a project's page
+         * could name its client and not what the firm had charged them for the work — which is
+         * one of the hops section 98 says the navigation breaks at.
+         */
+        if (projectId is { } project)
+        {
+            query = query.Where(invoice => invoice.ProjectId == project);
         }
 
         if (status is { } only)
