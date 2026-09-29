@@ -57,47 +57,99 @@ public sealed class EscalateMissedPromises(
     {
         var now = clock.Now;
 
+        var heads = await people.WhoHeadsADepartmentAsync(cancellationToken);
+
         /*
-         * The same three conditions the navigation's count uses, plus "and nobody has been told".
-         * Deliberately the same three: a number beside a link and a notice in somebody's list
-         * that disagreed about what counts as late would be two answers to one question, and the
-         * one people would believe is whichever they saw first.
+         * The same condition the navigation's count uses, plus "and nobody has been told".
+         * Deliberately the same: a number beside a link and a notice in somebody's list that
+         * disagreed about what counts as late would be two answers to one question, and the one
+         * people would believe is whichever they saw first.
+         *
+         * AnswerOwedBy is what makes it one condition rather than three. It is null unless
+         * somebody is waiting, so a resolved ticket and an answered one are both excluded without
+         * a word about either — and a ticket that was answered, chased, and left is included,
+         * which the first version of this sweep could not see at all.
          */
-        var late = await database.Tickets
-            .Where(one => one.FirstRespondedAt == null
-                && one.Status != TicketStatus.Resolved
-                && one.RespondBy < now
-                && one.EscalatedAt == null)
-            .OrderBy(one => one.RespondBy)
+        var owed = database.Tickets
+            .Where(one => one.AnswerOwedBy != null
+                && one.AnswerOwedBy < now
+                && one.EscalatedAt == null);
+
+        /*
+         * With nobody heading a department there is nobody to tell about an unassigned ticket, so
+         * those are counted, said out loud, and left out of the batch.
+         *
+         * Leaving them out is not tidiness. The batch is fifty rows ordered by how late they are,
+         * and fifty untellable ones at the front would push every tellable ticket out of every
+         * sweep for as long as they sat there — so a firm with no department heads recorded would
+         * stop being told about the tickets it COULD act on. Left out, they are picked up the
+         * moment somebody records a head.
+         *
+         * Counting them first is the other half. Silently skipping them would be a firm whose
+         * escalations reach nobody and whose job history says the work was done, which is the one
+         * outcome worse than the starvation.
+         */
+        var unreachable = 0;
+
+        if (heads.Count == 0)
+        {
+            unreachable = await owed.CountAsync(one => one.AssigneeId == null, cancellationToken);
+
+            if (unreachable > 0)
+            {
+                logger.LogWarning(
+                    "{Count} missed promises are on tickets nobody has picked up, and no "
+                    + "department has a head recorded — so there is nobody to tell. Appointing a "
+                    + "head, or assigning the tickets, is what makes them visible.",
+                    unreachable);
+            }
+
+            owed = owed.Where(one => one.AssigneeId != null);
+        }
+
+        /*
+         * Read as a projection and not as aggregates. A ticket owns its thread, so EF includes
+         * ticket_messages in any read of the entity — and a message runs to ten thousand
+         * characters, so loading fifty threads to look at two dates each would pull megabytes this
+         * job never reads. The handful that are actually escalated are loaded whole below, because
+         * that is where the aggregate's own rule has to run.
+         */
+        var late = await owed
+            .OrderBy(one => one.AnswerOwedBy)
             .Take(Batch)
+            .Select(one => new
+            {
+                one.Id,
+                one.Number,
+                one.Subject,
+                one.AssigneeId,
+                Owed = one.AnswerOwedBy!.Value,
+            })
             .ToListAsync(cancellationToken);
 
         if (late.Count == 0)
         {
-            return "Every promise still standing is being kept.";
+            return unreachable == 0
+                ? "Every promise still standing is being kept."
+                : $"{unreachable} missed promises have nobody to tell about them.";
         }
 
-        var heads = await people.WhoHeadsADepartmentAsync(cancellationToken);
         var told = 0;
 
-        foreach (var ticket in late)
+        foreach (var row in late)
         {
-            var recipients = await WhoToTellAsync(ticket, heads, cancellationToken);
+            var recipients = await WhoToTellAsync(row.AssigneeId, heads, cancellationToken);
 
-            if (recipients.Count == 0)
+            /*
+             * Loaded whole only now, and only for the ones being escalated. Escalated() is the
+             * aggregate's own refusal of a second escalation and it has to run on the aggregate;
+             * what this avoids is paying for every thread in the batch to find the few that need
+             * it, which on a busy desk is the difference between kilobytes and megabytes.
+             */
+            if (await database.Tickets
+                    .FirstOrDefaultAsync(one => one.Id == row.Id, cancellationToken)
+                is not { } ticket)
             {
-                /*
-                 * Said out loud rather than swallowed, and the ticket is deliberately NOT marked.
-                 * A firm with no department heads and no reporting lines is a firm whose
-                 * escalations reach nobody, and marking the ticket would turn that into silence
-                 * that looks like success — the sweep would report "told 1" for ever afterwards.
-                 * Leaving it unmarked means it escalates the moment somebody sets a head.
-                 */
-                logger.LogWarning(
-                    "{Reference} missed its promise and there is nobody to tell: it has no "
-                    + "assignee, and no department has a head recorded.",
-                    ticket.Reference);
-
                 continue;
             }
 
@@ -115,27 +167,29 @@ public sealed class EscalateMissedPromises(
             ticket.Escalated(now);
             await database.SaveChangesAsync(cancellationToken);
 
-            var howLate = Length(now - ticket.RespondBy);
+            var howLate = Length(now - row.Owed);
 
             foreach (var person in recipients)
             {
                 await notices.TellAsync(
                     person,
                     NoticeKind.PromiseMissed,
-                    $"{ticket.Reference} has had no answer and is {howLate} past what we "
-                    + $"promised: {ticket.Subject}",
-                    $"/support/{ticket.Number}",
+                    $"{Reference(row.Number)} has had no answer and is {howLate} past what we "
+                    + $"promised: {row.Subject}",
+                    $"/support/{row.Number}",
                     cancellationToken);
             }
 
             told++;
         }
 
-        return told == 0
-            ? $"{late.Count} promises were missed and there was nobody to tell about any of them."
-            : told == 1
-                ? "One missed promise was escalated."
-                : $"{told} missed promises were escalated.";
+        var also = unreachable == 0
+            ? string.Empty
+            : $" {unreachable} more have nobody to tell about them.";
+
+        return (told == 1
+            ? "One missed promise was escalated."
+            : $"{told} missed promises were escalated.") + also;
     }
 
     /// <summary>
@@ -150,11 +204,17 @@ public sealed class EscalateMissedPromises(
     /// With nobody assigned there is no person to go above, so it goes to the heads of the firm's
     /// departments — see <c>PeopleQueries.WhoHeadsADepartmentAsync</c> for why that is the
     /// fallback rather than nobody.
+    ///
+    /// It cannot answer nothing, and the caller relies on that. An assigned ticket always yields
+    /// at least the assignee; an unassigned one only reaches here when there is at least one
+    /// department head, because the query above excludes them otherwise. There used to be a guard
+    /// for the empty case, and it was a branch that could not run pretending the caller had a
+    /// decision to make.
     /// </remarks>
     private async Task<List<Guid>> WhoToTellAsync(
-        Ticket ticket, List<Guid> heads, CancellationToken cancellationToken)
+        Guid? assigneeId, List<Guid> heads, CancellationToken cancellationToken)
     {
-        if (ticket.AssigneeId is not { } assignee)
+        if (assigneeId is not { } assignee)
         {
             return heads;
         }
@@ -171,6 +231,17 @@ public sealed class EscalateMissedPromises(
     /// The same shape the help desk and the incidents pages use. It goes into a subject line
     /// somebody reads on a telephone, where "4.25 hours" is harder to act on than "4 hr".
     /// </remarks>
+    /// <summary>
+    /// What a client quotes back, built here from the number.
+    /// </summary>
+    /// <remarks>
+    /// The aggregate has a Reference property and it is <c>builder.Ignore</c>'d, so projecting it
+    /// in a query is refused at run time with "translation of member 'Reference' failed". Written
+    /// out here rather than by loading the ticket, because loading the ticket to read one string
+    /// is what the projection above exists to avoid.
+    /// </remarks>
+    private static string Reference(int number) => $"S{number}";
+
     private static string Length(TimeSpan span)
     {
         if (span < TimeSpan.FromMinutes(1))

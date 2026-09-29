@@ -627,6 +627,42 @@ public class TicketTests
         Assert.Empty(await finder.FindAsync("S1", new HashSet<string>()));
     }
 
+    /// <summary>
+    /// A promise broken and then kept late is still a promise broken.
+    /// </summary>
+    /// <remarks>
+    /// The count beside the navigation link clears the moment somebody answers, which is the whole
+    /// point of it — and the queue's heading was made of that number alone, so it announced
+    /// "everybody who has asked has been answered in time" on a desk where every single answer had
+    /// been late. A late answer is still an answer and stops being counted, so the heading needs
+    /// the other figure too.
+    /// </remarks>
+    [Fact]
+    public async Task A_promise_broken_and_then_kept_late_is_still_counted_as_broken()
+    {
+        await using var fixture = await DatabaseFixture.CreateAsync();
+        var anna = await AColleague(fixture, "Anna Wanjiru");
+
+        fixture.Clock.Now = Nine;
+        var late = await Raise(fixture, anna, "Nobody can log in", TicketPriority.Blocking);
+        var prompt = await Raise(fixture, anna, "How do I export?", TicketPriority.Asking);
+
+        // One answered five hours in against a four-hour promise, one answered straight away.
+        fixture.Clock.Now = Nine.AddHours(5);
+        await Service(fixture).ReplyAsync(late.Id, "Sorry for the delay.", anna);
+
+        fixture.Clock.Now = Nine.AddHours(5).AddMinutes(1);
+        await Service(fixture).ReplyAsync(prompt.Id, "File, then Export.", anna);
+
+        await using var context = fixture.NewContext();
+        var queries = new SupportQueries(context);
+
+        // Nobody is waiting, so the number beside the link is clear — and it is not the whole story.
+        Assert.Equal(0, await queries.UnansweredAsync(fixture.Clock.Now));
+        Assert.Equal(1, await queries.AnsweredLateAsync());
+        Assert.Equal(2, await queries.HowManyAsync());
+    }
+
     private static Ticket Blocking() => Ticket.Raise(
         1,
         "Nobody can log in",

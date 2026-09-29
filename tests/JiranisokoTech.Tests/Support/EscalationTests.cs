@@ -36,6 +36,9 @@ public class EscalationTests
     private static readonly DateTimeOffset Nine =
         new(2026, 9, 21, 9, 0, 0, TimeSpan.FromHours(3));
 
+    /// <summary>An author for the pure-domain cases, which need no database.</summary>
+    private static readonly Guid Anna = Guid.CreateVersion7();
+
     [Fact]
     public async Task A_promise_still_being_kept_escalates_to_nobody()
     {
@@ -77,6 +80,56 @@ public class EscalationTests
 
         Assert.Contains("escalated", await Sweep(fixture).RunAsync());
         Assert.NotEmpty(await NoticesAsync(fixture));
+    }
+
+    /// <summary>
+    /// A ticket the firm can act on is escalated even while others have nobody to tell.
+    /// </summary>
+    /// <remarks>
+    /// The starvation this arrangement exists to prevent. Fifty untellable tickets at the front of
+    /// a fifty-row batch would mean the one the firm could act on was never reached — so the
+    /// untellable ones are left out, and this proves the tellable one still goes out beside them.
+    /// </remarks>
+    [Fact]
+    public async Task An_assigned_ticket_is_escalated_even_beside_ones_nobody_can_be_told_about()
+    {
+        await using var fixture = await DatabaseFixture.CreateAsync();
+
+        Guid anna, brian;
+
+        await using (var context = fixture.NewContext())
+        {
+            var one = Employee.Hire("Anna Wanjiru", fixture.Clock.Today, null, "Designer");
+            var two = Employee.Hire("Brian Kimani", fixture.Clock.Today, null, "Engineer");
+
+            context.Employees.AddRange(one, two);
+            await context.SaveChangesAsync();
+
+            (anna, brian) = (one.Id, two.Id);
+        }
+
+        fixture.Clock.Now = Nine;
+
+        // Three nobody has picked up, and one that Brian has.
+        for (var i = 0; i < 3; i++)
+        {
+            await ATicketAsync(fixture, anna);
+        }
+
+        var his = await ATicketAsync(fixture, anna);
+        await Service(fixture).AssignAsync(his.Id, brian);
+
+        fixture.Clock.Now = Nine.AddHours(5);
+
+        var said = await Sweep(fixture).RunAsync();
+
+        Assert.Contains("One missed promise was escalated", said);
+        Assert.Contains("3 more have nobody to tell about them", said);
+
+        // Brian heard, and nobody heard about the other three.
+        var told = await NoticesAsync(fixture);
+
+        Assert.Equal(brian, Assert.Single(told).ForEmployeeId);
     }
 
     /// <summary>
@@ -285,16 +338,21 @@ public class EscalationTests
     }
 
     /// <summary>
-    /// With nobody at all to tell, the ticket is left unmarked so it can be escalated later.
+    /// With nobody to tell, the sweep says so and leaves the ticket for later.
     /// </summary>
     /// <remarks>
-    /// The one case where not marking it is the right answer. A firm with no department heads and
-    /// no reporting lines is a firm whose escalations reach nobody — and marking the ticket would
-    /// turn that into silence that looks like success, with the sweep reporting a job done for
-    /// ever afterwards. Left unmarked, it escalates the moment somebody records a head.
+    /// Two things have to be true at once here, and the first attempt at this got the second wrong.
+    ///
+    /// The ticket is not marked, so it escalates the moment somebody records a head — marking it
+    /// would turn "our escalations reach nobody" into silence that looks like success, with the job
+    /// history reporting work done for ever afterwards. And it is left OUT of the batch, because
+    /// the batch is fifty rows ordered by how late they are: fifty untellable ones at the front
+    /// would push every ticket the firm could act on out of every sweep. Excluding them without
+    /// counting them would be the silence again, so the sentence the sweep returns says how many
+    /// there are.
     /// </remarks>
     [Fact]
-    public async Task With_nobody_to_tell_the_ticket_is_left_for_the_next_sweep()
+    public async Task With_nobody_to_tell_the_sweep_says_so_and_leaves_the_ticket()
     {
         await using var fixture = await DatabaseFixture.CreateAsync();
 
@@ -313,7 +371,7 @@ public class EscalationTests
 
         fixture.Clock.Now = Nine.AddHours(5);
 
-        Assert.Contains("nobody to tell", await Sweep(fixture).RunAsync());
+        Assert.Contains("nobody to tell about them", await Sweep(fixture).RunAsync());
         Assert.Empty(await NoticesAsync(fixture));
 
         await using (var context = fixture.NewContext())
@@ -323,6 +381,153 @@ public class EscalationTests
 
             Assert.Null(stored.EscalatedAt);
         }
+    }
+
+    /// <summary>
+    /// <b>A requester who had to chase is escalated about too.</b>
+    /// </summary>
+    /// <remarks>
+    /// The hole this section shipped with, found by reading rather than by anything failing.
+    ///
+    /// The sweep and the count beside the navigation link both asked "has nobody answered yet",
+    /// which they read from <see cref="Ticket.FirstRespondedAt"/> — and that is set exactly once,
+    /// on purpose, so that a customer coming back cannot improve the number measuring how fast the
+    /// firm answers. The consequence was that a ticket answered, chased, and then left was
+    /// invisible to both, for ever. <b>The one person who had to chase was the one the desk's
+    /// alarms could not see.</b>
+    ///
+    /// Fixed with a second clock rather than by spoiling the first: AnswerOwedBy says when the
+    /// answer currently owed is due and is null when none is, and every query about lateness reads
+    /// that. The first-response figure is untouched, which the last assertion here insists on.
+    /// </remarks>
+    [Fact]
+    public async Task A_requester_who_came_back_and_was_left_waiting_is_escalated_about()
+    {
+        await using var fixture = await DatabaseFixture.CreateAsync();
+        var firm = await AFirmAsync(fixture);
+
+        fixture.Clock.Now = Nine;
+        var ticket = await ATicketAsync(fixture, firm.Anna);
+
+        // Answered in an hour, well inside the four-hour promise.
+        fixture.Clock.Now = Nine.AddHours(1);
+        await Service(fixture).ReplyAsync(ticket.Id, "We can see it.", firm.Anna);
+
+        fixture.Clock.Now = Nine.AddHours(2);
+        Assert.Contains("still standing", await Sweep(fixture).RunAsync());
+
+        // A week later they say it is happening again, and nobody answers.
+        fixture.Clock.Now = Nine.AddDays(7);
+        await Service(fixture).TheySaidAsync(ticket.Id, "It is back.");
+
+        fixture.Clock.Now = Nine.AddDays(7).AddHours(5);
+
+        Assert.Contains("One missed promise", await Sweep(fixture).RunAsync());
+        Assert.Single(await NoticesAsync(fixture));
+
+        await using var context = fixture.NewContext();
+        var stored = await context.Tickets.AsNoTracking().SingleAsync(one => one.Id == ticket.Id);
+
+        // The record of how fast the firm answered the first time does not move.
+        Assert.Equal(Nine.AddHours(1), stored.FirstRespondedAt);
+        Assert.False(stored.ResponseOverdue(fixture.Clock.Now));
+
+        // And the answer owed now is measured from when they came back.
+        Assert.Equal(Nine.AddDays(7), stored.AwaitingSince);
+        Assert.Equal(Nine.AddDays(7).AddHours(4), stored.AnswerOwedBy);
+    }
+
+    /// <summary>
+    /// A reopened ticket nobody answers again is escalated about.
+    /// </summary>
+    /// <remarks>
+    /// The other route back into the queue, and it had the same hole for the same reason.
+    /// </remarks>
+    [Fact]
+    public async Task A_reopened_ticket_nobody_answers_again_is_escalated_about()
+    {
+        await using var fixture = await DatabaseFixture.CreateAsync();
+        var firm = await AFirmAsync(fixture);
+
+        fixture.Clock.Now = Nine;
+        var ticket = await ATicketAsync(fixture, firm.Anna);
+
+        fixture.Clock.Now = Nine.AddHours(1);
+        await Service(fixture).ResolveAsync(ticket.Id, "Renewed the certificate.", firm.Anna);
+
+        fixture.Clock.Now = Nine.AddDays(2);
+        await Service(fixture).ReopenAsync(ticket.Id, "They rang: still failing.", firm.Anna);
+
+        fixture.Clock.Now = Nine.AddDays(2).AddHours(5);
+
+        Assert.Contains("One missed promise", await Sweep(fixture).RunAsync());
+        Assert.Single(await NoticesAsync(fixture));
+    }
+
+    /// <summary>
+    /// Answering clears what is owed and leaves the escalation on the record.
+    /// </summary>
+    /// <remarks>
+    /// Two opposite decisions in one place. What is owed is cleared, because it has been given.
+    /// The escalation mark is not, because somebody was told about a promise that was broken and
+    /// answering does not undo that — and the ticket page shows it, so whoever picks it up next
+    /// knows the conversation about it started elsewhere.
+    /// </remarks>
+    [Fact]
+    public async Task Answering_clears_what_is_owed_and_leaves_the_escalation_recorded()
+    {
+        await using var fixture = await DatabaseFixture.CreateAsync();
+        var firm = await AFirmAsync(fixture);
+
+        fixture.Clock.Now = Nine;
+        var ticket = await ATicketAsync(fixture, firm.Anna);
+
+        fixture.Clock.Now = Nine.AddHours(5);
+        await Sweep(fixture).RunAsync();
+
+        await Service(fixture).ReplyAsync(ticket.Id, "Sorry for the delay.", firm.Anna);
+
+        await using var context = fixture.NewContext();
+        var stored = await context.Tickets.AsNoTracking().SingleAsync(one => one.Id == ticket.Id);
+
+        Assert.Null(stored.AnswerOwedBy);
+        Assert.Null(stored.AwaitingSince);
+        Assert.Equal(Nine.AddHours(5), stored.EscalatedAt);
+
+        // And it stays out of the count, which is the whole point of that count clearing.
+        await using var again = fixture.NewContext();
+        Assert.Equal(0, await new SupportQueries(again).UnansweredAsync(fixture.Clock.Now));
+    }
+
+    /// <summary>
+    /// Reopening refuses a reason it cannot keep, and changes nothing when it does.
+    /// </summary>
+    /// <remarks>
+    /// The reason used to be trimmed and length-checked inside the Note call on the last line,
+    /// after Status and ResolvedAt had already been written — so a reason over a thousand
+    /// characters left the aggregate reopened in memory with no line in the thread saying why, and
+    /// whether that reached the database depended on whether the caller happened to save
+    /// afterwards.
+    /// </remarks>
+    [Fact]
+    public void Reopening_with_a_reason_it_cannot_keep_leaves_the_ticket_alone()
+    {
+        var ticket = Ticket.Raise(
+            1, "Nobody can log in", "Since eight this morning.", TicketPriority.Blocking,
+            Requester.Colleague, Guid.CreateVersion7(), Nine);
+
+        ticket.Resolve("Renewed it.", Anna, Nine.AddHours(1));
+
+        Assert.Throws<ArgumentException>(
+            () => ticket.Reopen(new string('x', 1_001), Anna, Nine.AddHours(2)));
+
+        Assert.True(ticket.IsResolved);
+        Assert.Equal(Nine.AddHours(1), ticket.ResolvedAt);
+        Assert.Null(ticket.AnswerOwedBy);
+
+        Assert.Throws<ArgumentException>(() => ticket.Reopen("   ", Anna, Nine.AddHours(2)));
+
+        Assert.True(ticket.IsResolved);
     }
 
     private static Task<Ticket> ATicketAsync(DatabaseFixture fixture, Guid requester) =>

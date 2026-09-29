@@ -107,23 +107,26 @@ else
                             this page worth reporting. "Answered in 20 min" is a fact about
                             the firm keeping its word; "3 hr late" is the same fact failing.
                         *@
-                        @if (row.FirstRespondedAt is { } answered)
+                        @if (row.AnswerOwedBy is not { } owed)
                         {
+                            @*
+                                Nothing is owed, so what is worth showing is the record: how long
+                                the firm took the first time. A ticket answered and then chased is
+                                not in this branch — it owes an answer again, which is the case the
+                                first version of this column could not see.
+                            *@
                             <span class="subtle">
-                                answered in @Length(answered - Raised(row))
+                                answered in @Length(
+                                    (row.FirstRespondedAt ?? Now) - Raised(row))
                             </span>
                         }
-                        else if (row.ResponseOverdue)
+                        else if (row.AnswerOverdue)
                         {
-                            <span class="pill pill--danger">
-                                @Length(Now - row.RespondBy) late
-                            </span>
+                            <span class="pill pill--danger">@Length(Now - owed) late</span>
                         }
                         else
                         {
-                            <span class="subtle">
-                                within @Length(row.RespondBy - Now)
-                            </span>
+                            <span class="subtle">within @Length(owed - Now)</span>
                         }
                     </td>
                     <td>
@@ -261,6 +264,16 @@ else
 
     private int Unanswered { get; set; }
 
+    /// <summary>How many promises were broken and then kept late.</summary>
+    private int AnsweredLate { get; set; }
+
+    /// <summary>How many have ever been raised, which is the only honest "nothing yet".</summary>
+    /// <remarks>
+    /// Named for the question rather than for the verb, because <c>Raised</c> is already the
+    /// helper that works a ticket's arrival back out of its stored promise.
+    /// </remarks>
+    private int EverAsked { get; set; }
+
     private string? Refusal { get; set; }
 
     private DateTimeOffset Now => Clock.Now;
@@ -272,20 +285,35 @@ else
         [.. Requesters.Where(one => one.Kind == Requester.ClientContact)];
 
     /// <summary>
-    /// The count that means something, which is not the number of open tickets.
+    /// What the desk is actually doing, in one sentence.
     /// </summary>
     /// <remarks>
-    /// Open tickets go up when the firm is busy and down when it is quiet, and a headline made
-    /// of that number reports the weather. This one reports whether the firm is keeping the only
-    /// promise it made.
+    /// Not the number of open tickets: that goes up when the firm is busy and down when it is
+    /// quiet, so a headline made of it reports the weather.
+    ///
+    /// <b>Two numbers rather than one, because one of them lies in both directions.</b> The count
+    /// of people waiting past their promise clears the moment somebody answers, which is exactly
+    /// what makes it worth putting beside the navigation link — and it meant this heading said
+    /// "everybody who has asked has been answered in time" on a desk where every single answer had
+    /// been late, because a late answer is still an answer and stops being counted. So the promises
+    /// already broken and kept late are counted too, and the sentence only claims a clean record
+    /// when there is one.
+    ///
+    /// The "nobody has asked" case reads a total rather than the rows on screen. It used to read
+    /// the rows, which are filtered — so choosing "Resolved" on a desk with nothing resolved yet
+    /// announced that nobody had ever asked for anything.
     /// </remarks>
     private string Headline =>
-        Unanswered switch
+        (Waiting: Unanswered, Late: AnsweredLate, Ever: EverAsked) switch
         {
-            0 when Rows.Count == 0 => "Nobody has asked for anything yet.",
-            0 => "Everybody who has asked has been answered in time.",
-            1 => "One person has been waiting longer than they were promised.",
-            var many => $"{many} people have been waiting longer than they were promised.",
+            (0, 0, 0) => "Nobody has asked for anything yet.",
+            (0, 0, _) => "Every promise the firm has made here has been kept.",
+            (0, 1, _) => "Nobody is waiting past a promise. One was answered late.",
+            (0, var late, _) =>
+                $"Nobody is waiting past a promise. {late} were answered late.",
+            (1, _, _) => "One person has been waiting longer than they were promised.",
+            var (many, _, _) =>
+                $"{many} people have been waiting longer than they were promised.",
         };
 
     private string Nothing => Show switch
@@ -303,6 +331,8 @@ else
         Rows = await Queries.QueueAsync(Now, Wanted());
         Requesters = await Queries.RequestersAsync();
         Unanswered = await Queries.UnansweredAsync(Now);
+        AnsweredLate = await Queries.AnsweredLateAsync();
+        EverAsked = await Queries.HowManyAsync();
     }
 
     /// <summary>Which status the filter is asking for, or all of them.</summary>

@@ -180,6 +180,8 @@ public sealed class Ticket : Entity, IAuditable
         RespondBy = at + respond;
         ResolveBy = at + resolve;
 
+        Waiting(at);
+
         /*
          * The opening message carries no author, because it is the requester's own words —
          * typed in by whoever took the call. Audience.Requester so that it reads as part of the
@@ -296,6 +298,44 @@ public sealed class Ticket : Entity, IAuditable
     public DateTimeOffset? ResolvedAt { get; private set; }
 
     /// <summary>
+    /// Since when somebody has been waiting for the answer currently owed, or nothing.
+    /// </summary>
+    /// <remarks>
+    /// <b>The second clock, and it exists because the first one could only be broken once.</b>
+    ///
+    /// <see cref="RespondBy"/> is the promise made when the ticket arrived and
+    /// <see cref="FirstRespondedAt"/> is set exactly once, on purpose: the number measuring how
+    /// fast the firm answers must not be improved by a customer having to come back. But those two
+    /// together are what the escalation sweep and the navigation's count were reading, and that
+    /// left a hole with a name — <b>the one requester who had to chase was the one the desk's
+    /// alarms could not see.</b> Reply, come back a week later, and the ticket is open, unanswered,
+    /// and invisible to everything that looks for a broken promise, for ever, because
+    /// FirstRespondedAt is not null.
+    ///
+    /// So this says who is waiting now. It is set when the ticket is raised, cleared the moment
+    /// somebody says something to them, and set again when they come back — by their own reply or
+    /// by a reopening. Null is the ordinary resting state of a ticket that has been answered and
+    /// means the firm owes nothing at this moment.
+    /// </remarks>
+    public DateTimeOffset? AwaitingSince { get; private set; }
+
+    /// <summary>
+    /// When the answer currently owed is due, or nothing when none is owed.
+    /// </summary>
+    /// <remarks>
+    /// Stored for the same reason <see cref="RespondBy"/> is stored, and it is the column every
+    /// query about lateness now reads: one comparison against one indexed column, which a
+    /// predicate built from a priority and an interval could not be.
+    ///
+    /// It is the same target the firm promised at the start, measured from when this wait began.
+    /// Not a fresh promise of the firm's choosing and not the original deadline either: a client
+    /// who comes back on Friday is owed an answer within the window their priority buys, counted
+    /// from Friday, and telling them it was already due on Tuesday would be arithmetic about a
+    /// question they had not yet asked.
+    /// </remarks>
+    public DateTimeOffset? AnswerOwedBy { get; private set; }
+
+    /// <summary>
     /// When somebody senior was told that this promise had been missed.
     /// </summary>
     /// <remarks>
@@ -309,8 +349,12 @@ public sealed class Ticket : Entity, IAuditable
     /// firm then believes it has one.
     ///
     /// Null is the ordinary state and means only that nobody has been told, which includes every
-    /// ticket answered in time. It is not a flag for "late": <see cref="ResponseOverdue"/>
-    /// answers that, from the promise, without a column.
+    /// ticket answered in time. It is not a flag for "late": <see cref="AnswerOverdue"/> answers
+    /// that, from a stored promise, without needing this.
+    ///
+    /// Cleared whenever a fresh wait begins — raised, they came back, reopened, or the priority
+    /// corrected — because each of those is a promise that has not been broken yet, and a mark
+    /// left over from the last one would mean nobody is told about this one.
     /// </remarks>
     public DateTimeOffset? EscalatedAt { get; private set; }
 
@@ -326,9 +370,26 @@ public sealed class Ticket : Entity, IAuditable
 
     public bool IsResolved => Status == TicketStatus.Resolved;
 
-    /// <summary>Nobody has said anything to them, and the time to do it has gone.</summary>
+    /// <summary>
+    /// The firm never answered the first time, and the time to do it has gone.
+    /// </summary>
+    /// <remarks>
+    /// A fact about the firm's record rather than about today's queue, which is why it reads
+    /// <see cref="FirstRespondedAt"/> and not <see cref="AnswerOwedBy"/>. It stays true for ever
+    /// once it is true, because the firm was late and later answering does not undo that. What is
+    /// owed right now is <see cref="AnswerOverdue"/>.
+    /// </remarks>
     public bool ResponseOverdue(DateTimeOffset now) =>
         FirstRespondedAt is null && now > RespondBy;
+
+    /// <summary>Somebody is waiting for an answer and the time to give it has gone.</summary>
+    /// <remarks>
+    /// The one the desk acts on. True for a ticket nobody has ever answered and equally for one
+    /// that was answered, came back, and has been sitting since — which is the case the first
+    /// clock alone could not see.
+    /// </remarks>
+    public bool AnswerOverdue(DateTimeOffset now) =>
+        AnswerOwedBy is { } owed && now > owed;
 
     /// <summary>It is not settled, and the time to settle it has gone.</summary>
     public bool ResolutionOverdue(DateTimeOffset now) => !IsResolved && now > ResolveBy;
@@ -356,6 +417,13 @@ public sealed class Ticket : Entity, IAuditable
 
         FirstRespondedAt ??= at;
 
+        /*
+         * Nobody is waiting now, and this is the only thing that clears it. Saying something to
+         * the person who asked is the whole act the section is arranged around — an internal note
+         * does not reach this method, which is why it cannot stop this clock either.
+         */
+        Answered();
+
         if (Status != TicketStatus.Resolved)
         {
             Status = waitingOnThem ? TicketStatus.WithRequester : TicketStatus.Open;
@@ -381,6 +449,13 @@ public sealed class Ticket : Entity, IAuditable
             Status = TicketStatus.Open;
             ResolvedAt = null;
         }
+
+        /*
+         * They are waiting again, from now. This is the case the second clock was added for: a
+         * ticket answered once and then chased is owed another answer, and before this it was
+         * invisible to the sweep and to the count beside the navigation link.
+         */
+        Waiting(at);
     }
 
     public void Assign(Guid? employeeId) => AssigneeId = employeeId;
@@ -431,14 +506,24 @@ public sealed class Ticket : Entity, IAuditable
         RespondBy = RaisedAt + respond;
         ResolveBy = RaisedAt + resolve;
 
+        // And what is owed now, from when this wait began rather than from when it arrived.
+        if (AwaitingSince is { } since)
+        {
+            AnswerOwedBy = since + respond;
+        }
+
         /*
          * The escalation is forgotten, because it was about a promise that no longer exists.
          *
          * Both directions matter. Moving a ticket down to a question means the four hours it was
          * escalated for were never owed, and leaving the mark would hide that; moving one up to
          * blocking means a promise that was being kept is now missed, and leaving the mark would
-         * mean nobody is ever told. The cost is that toggling the priority can escalate the same
-         * ticket twice — which is visible, because every change writes the line below.
+         * mean nobody is ever told.
+         *
+         * The cost is precise rather than general: correcting a ticket UPWARDS after it has
+         * already been escalated escalates it a second time, because the shorter promise is still
+         * missed. Downwards does not, because the longer one is not. It is visible either way,
+         * because every change writes the line below.
          */
         EscalatedAt = null;
 
@@ -479,10 +564,27 @@ public sealed class Ticket : Entity, IAuditable
             throw new InvalidOperationException($"{Reference} is not resolved.");
         }
 
+        /*
+         * The reason is checked before anything moves. It used to be trimmed and length-checked
+         * inside the Note call on the last line, after Status and ResolvedAt had already been
+         * written — so a blank reason, or one over a thousand characters, left the aggregate
+         * reopened in memory with no line in the thread saying why. Whether that reached the
+         * database depended on whether the caller happened to save afterwards, which is the worst
+         * kind of "depends".
+         */
+        var because = Text(why, nameof(why), 1_000);
+
         Status = TicketStatus.Open;
         ResolvedAt = null;
 
-        Note(Text(why, nameof(why), 1_000), byEmployeeId, at);
+        /*
+         * Waiting again, from now. A reopened ticket is one somebody chased, so an answer is owed
+         * within the window their priority buys — counted from the chase and not from the original
+         * arrival, which is a deadline about a question they had not yet asked.
+         */
+        Waiting(at);
+
+        Note(because, byEmployeeId, at);
     }
 
     /// <summary>
@@ -519,6 +621,33 @@ public sealed class Ticket : Entity, IAuditable
                 $"{Reference} is already being dealt with as a piece of work. Add to that "
                 + $"rather than raising a second one for the same request ({already}).");
         }
+    }
+
+    /// <summary>
+    /// Somebody is waiting from now, so a fresh answer is owed and the escalation is forgotten.
+    /// </summary>
+    /// <remarks>
+    /// The escalation mark is cleared here rather than at each call site, because every one of the
+    /// three — raised, they came back, reopened — starts a promise that has not yet been broken,
+    /// and a mark left over from the last one would mean nobody is ever told about this one.
+    /// </remarks>
+    private void Waiting(DateTimeOffset at)
+    {
+        AwaitingSince = at;
+        AnswerOwedBy = at + TargetsFor(Priority).Respond;
+        EscalatedAt = null;
+    }
+
+    /// <summary>Nothing is owed at this moment.</summary>
+    /// <remarks>
+    /// The escalation mark is deliberately NOT cleared here. It records that somebody was told
+    /// about a promise that was broken, which answering does not undo — and the page shows it so
+    /// that whoever picks the ticket up next knows the conversation about it started elsewhere.
+    /// </remarks>
+    private void Answered()
+    {
+        AwaitingSince = null;
+        AnswerOwedBy = null;
     }
 
     private static string Said(TicketPriority priority) => priority switch

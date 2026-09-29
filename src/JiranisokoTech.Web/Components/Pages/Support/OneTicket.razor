@@ -91,23 +91,34 @@ else
                     @Ticket.ResolveBy.ToLocalTime().ToString("d MMM HH:mm").
                 </span>
             }
+            @if (Ticket.AnswerOwedBy is { } again)
+            {
+                @*
+                    They have come back since, so another answer is owed — and that is a different
+                    sentence from the first-response figure above it, which is a fact about the
+                    firm's record and does not move.
+                *@
+                <strong>
+                    They have since said something else, and an answer is owed by
+                    @again.ToLocalTime().ToString("d MMM HH:mm").
+                </strong>
+            }
         </p>
     }
-    else if (Ticket.ResponseOverdue(Now))
+    else if (Ticket.AnswerOverdue(Now))
     {
         <p class="refusal" role="note">
-            <strong>Nobody has said anything to @Who yet</strong>, and the firm promised an answer
-            by @Ticket.RespondBy.ToLocalTime().ToString("d MMM HH:mm") — that was
-            @Length(Now - Ticket.RespondBy) ago. An internal note is not an answer; only saying
-            something to them stops this clock, which is the point of it.
+            <strong>@Who is waiting for an answer</strong>, and one was owed by
+            @Ticket.AnswerOwedBy!.Value.ToLocalTime().ToString("d MMM HH:mm") — that was
+            @Length(Now - Ticket.AnswerOwedBy!.Value) ago. An internal note is not an answer; only
+            saying something to them stops this clock, which is the point of it.
         </p>
     }
-    else
+    else if (Ticket.AnswerOwedBy is { } owed)
     {
         <p class="instructions">
-            Nobody has said anything to @Who yet. The firm promised an answer by
-            @Ticket.RespondBy.ToLocalTime().ToString("d MMM HH:mm"), which is in
-            @Length(Ticket.RespondBy - Now).
+            @Who is waiting. An answer is owed by @owed.ToLocalTime().ToString("d MMM HH:mm"),
+            which is in @Length(owed - Now).
         </p>
     }
 
@@ -498,13 +509,13 @@ else
         set => _settle = value ?? new WordsInput();
     }
 
-    private WordsInput _again = new();
+    private ReasonInput _again = new();
 
     [SupplyParameterFromForm(FormName = "reopen")]
-    private WordsInput Again
+    private ReasonInput Again
     {
         get => _again;
-        set => _again = value ?? new WordsInput();
+        set => _again = value ?? new ReasonInput();
     }
 
     private AssigneeInput _hand = new();
@@ -628,7 +639,7 @@ else
         async ticket =>
         {
             await Service.ReopenAsync(ticket.Id, Again.Text, Mine());
-            Again = new WordsInput();
+            Again = new ReasonInput();
         },
         "Back in the queue.");
 
@@ -774,6 +785,23 @@ else
     {
         [Required(ErrorMessage = "There is nothing to record.")]
         [StringLength(10_000)]
+        public string Text { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// A line rather than a paragraph, matched to what the aggregate accepts.
+    /// </summary>
+    /// <remarks>
+    /// A thousand, because <c>Ticket.Reopen</c> refuses more. This used to share the ten-thousand
+    /// character model the messages use, so a long reason passed the page's own validation, was
+    /// refused by the domain, and came back as a sentence at the top of the screen with nothing
+    /// beside the box that caused it — which reads as the page having a general objection rather
+    /// than as "that is too long".
+    /// </remarks>
+    private sealed class ReasonInput
+    {
+        [Required(ErrorMessage = "Say why it is open again.")]
+        [StringLength(1_000, ErrorMessage = "A line or two. This is a note, not the answer.")]
         public string Text { get; set; } = string.Empty;
     }
 

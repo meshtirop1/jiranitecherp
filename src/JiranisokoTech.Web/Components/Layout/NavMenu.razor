@@ -542,7 +542,8 @@
     /// Not a count of open tickets, for the reason the incidents count is of open incidents only:
     /// a number here that does not clear trains people to ignore the one that matters. This one
     /// clears the moment somebody says anything to whoever asked, which is exactly the act it
-    /// exists to provoke.
+    /// exists to provoke — and it counts again if they come back and are left waiting, which the
+    /// first version of it could not see because it read the first-response time.
     /// </remarks>
     private int Waiting { get; set; }
 

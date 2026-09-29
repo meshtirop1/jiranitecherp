@@ -235,10 +235,16 @@ public class SchedulerTests
         var wiring = File.ReadAllText(Path.Combine(
             Root(), "src", "JiranisokoTech.Infrastructure", "ServiceCollectionExtensions.cs"));
 
+        /*
+         * Matched on the interface as well as the name, because a registration of the concrete
+         * type alone is exactly the fault this test exists to catch: the scheduler resolves
+         * IRecurringJob, so AddScoped<PruneJobHistory>() puts the job in the container and never
+         * runs it. The namespace-qualified form is allowed because several of these are registered
+         * that way, and nothing else in the file can produce the same two tokens.
+         */
         var unregistered = Jobs()
             .Select(job => job.GetType().Name)
-            .Where(name => !wiring.Contains($"IRecurringJob, {name}>", StringComparison.Ordinal)
-                && !wiring.Contains($".{name}>", StringComparison.Ordinal))
+            .Where(name => !Registered(wiring, name))
             .ToList();
 
         Assert.True(
@@ -276,6 +282,18 @@ public class SchedulerTests
 
         return (IRecurringJob)constructor.Invoke(nothing);
     }
+
+    /// <summary>
+    /// Whether the wiring registers this job behind the interface the scheduler resolves.
+    /// </summary>
+    /// <remarks>
+    /// The name may be qualified — <c>Infrastructure.Support.EscalateMissedPromises</c> — so the
+    /// match is on the interface followed by anything and then the type name and its closing
+    /// angle bracket. A registration of the bare type does not match, which is the point.
+    /// </remarks>
+    private static bool Registered(string wiring, string name) =>
+        System.Text.RegularExpressions.Regex.IsMatch(
+            wiring, @"IRecurringJob,\s*[\w\.]*\b" + System.Text.RegularExpressions.Regex.Escape(name) + @"\s*>");
 
     private static string Root()
     {

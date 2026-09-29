@@ -46,7 +46,8 @@ public sealed record TicketRow(
     string? Assignee,
     DateTimeOffset RespondBy,
     DateTimeOffset? FirstRespondedAt,
-    bool ResponseOverdue);
+    DateTimeOffset? AnswerOwedBy,
+    bool AnswerOverdue);
 
 /// <summary>Somebody a ticket can be raised for.</summary>
 /// <remarks>
@@ -141,6 +142,7 @@ public sealed class SupportQueries(AppDbContext database)
                 one.RequesterId,
                 one.RespondBy,
                 one.FirstRespondedAt,
+                one.AnswerOwedBy,
                 Client = database.Clients
                     .Where(client => client.Id == one.ClientId)
                     .Select(client => client.Name)
@@ -191,7 +193,8 @@ public sealed class SupportQueries(AppDbContext database)
                 row.Assignee,
                 row.RespondBy,
                 row.FirstRespondedAt,
-                row.FirstRespondedAt is null && now > row.RespondBy)),
+                row.AnswerOwedBy,
+                row.AnswerOwedBy is { } owed && now > owed)),
         ];
     }
 
@@ -207,10 +210,31 @@ public sealed class SupportQueries(AppDbContext database)
     public Task<int> UnansweredAsync(
         DateTimeOffset now, CancellationToken cancellationToken = default) =>
         database.Tickets.CountAsync(
-            one => one.FirstRespondedAt == null
-                && one.Status != TicketStatus.Resolved
-                && one.RespondBy < now,
+            one => one.AnswerOwedBy != null && one.AnswerOwedBy < now,
             cancellationToken);
+
+    /// <summary>
+    /// How many promises the firm has broken and then kept late.
+    /// </summary>
+    /// <remarks>
+    /// The other half of an honest headline. The count above clears the moment somebody answers,
+    /// which is the point of it — but a page that showed only that number said "everybody who has
+    /// asked has been answered in time" on a desk where every single answer had been late, because
+    /// a late answer is still an answer and stops being counted.
+    ///
+    /// The first response only. A ticket chased twice and answered late each time is one broken
+    /// promise here, because the figure people compare month to month is how often the firm misses
+    /// the first answer, and counting every subsequent wait would make a busy month look like a
+    /// bad one.
+    /// </remarks>
+    public Task<int> AnsweredLateAsync(CancellationToken cancellationToken = default) =>
+        database.Tickets.CountAsync(
+            one => one.FirstRespondedAt != null && one.FirstRespondedAt > one.RespondBy,
+            cancellationToken);
+
+    /// <summary>How many have ever been raised, so an empty desk can say so.</summary>
+    public Task<int> HowManyAsync(CancellationToken cancellationToken = default) =>
+        database.Tickets.CountAsync(cancellationToken);
 
     /// <summary>Everybody a ticket can be raised for.</summary>
     public async Task<List<PossibleRequester>> RequestersAsync(

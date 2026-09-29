@@ -200,8 +200,11 @@ public sealed class SubjectAccessExport(AppDbContext database)
             one.Status,
             one.RaisedAt,
             one.RespondBy,
+            one.ResolveBy,
             one.FirstRespondedAt,
+            one.AnswerOwedBy,
             one.ResolvedAt,
+            one.EscalatedAt,
             Conversation = one.AsTheySeeIt.Select(said => new { said.At, said.Text }),
             Documents = files
                 .Where(file => file.OwnerId == one.Id)
