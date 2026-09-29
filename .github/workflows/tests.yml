@@ -38,6 +38,16 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      # The backup tests run docker/backup.sh and docker/restore.sh against the service above,
+      # and pg_dump refuses a server newer than itself — so the client is installed, not
+      # assumed from whatever the runner image carries this month, and its version printed so
+      # that a mismatch is the first thing in the log rather than a puzzle in a test's output.
+      - name: PostgreSQL client for the backup tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+          pg_dump --version
+
       # Without --no-incremental a build reports only what it recompiled, and a warning in a
       # project it considers unchanged goes unseen. CLAUDE.md has the history.
       - run: dotnet build JiranisokoTech.slnx --no-incremental -warnaserror

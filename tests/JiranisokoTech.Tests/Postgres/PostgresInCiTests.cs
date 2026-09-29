@@ -29,6 +29,11 @@ public class PostgresInCiTests
         Assert.Contains("TEST_POSTGRES:", workflow);
         Assert.Contains("dotnet test", workflow);
 
+        // And the PostgreSQL client, without which the backup tests would fail on pg_dump —
+        // they fail rather than skip, since a restore test that quietly stopped running is the
+        // outcome section 88 warns about.
+        Assert.Contains("postgresql-client", workflow);
+
         // And the image is built, which runs the suite against the trimmed source.
         Assert.Contains("docker build --file docker/Dockerfile", workflow);
     }

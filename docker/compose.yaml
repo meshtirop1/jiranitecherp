@@ -189,6 +189,79 @@ services:
       timeout: 3s
       retries: 5
 
+  # Section 88. Not a long-running service: the host's scheduler starts it, it writes one
+  # backup and exits, and its exit status is the only report it gives — so a timer that
+  # watches the status is what makes a failure visible. See docs/backups.md.
+  #
+  #     docker compose run --rm backup
+  #
+  # The database's own image, not a smaller one with a PostgreSQL client in it. pg_dump
+  # refuses to dump a server newer than itself, so a client image left one major version
+  # behind turns every nightly backup into an error the day the database is upgraded; this
+  # image and db's move together because they are the same line.
+  backup:
+    logging: *logging
+    image: postgres:18-alpine
+    profiles: ["backup"]
+    entrypoint: ["sh", "/scripts/backup.sh"]
+    environment:
+      PGHOST: db
+      PGDATABASE: ${POSTGRES_DB:-jiranisokotech}
+      PGUSER: ${POSTGRES_USER:-jiranisokotech}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      BACKUP_TO: /backups/data
+      KEYS_BACKUP_TO: /backups/keys
+      RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    volumes:
+      # Run with sh rather than executed, so the script needs no executable bit — which a
+      # checkout on Windows does not keep.
+      - ./backup.sh:/scripts/backup.sh:ro
+      # Read-only. A backup has no business writing to what it backs up, and a script
+      # mistake that did would be writing to the only copy.
+      - documents:/documents:ro
+      - cvs:/cvs:ro
+      - keys:/keys:ro
+      # Two host directories, never one: the key ring decrypts every second factor and
+      # webhook secret the database holds, so a single copy holding both undoes the
+      # encryption. backup.sh refuses to run if these turn out to be the same place.
+      - ${BACKUP_DIRECTORY:-/var/backups/jiranisokotech/data}:/backups/data
+      - ${KEYS_BACKUP_DIRECTORY:-/var/backups/jiranisokotech-keys}:/backups/keys
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # The same, the other way. Given the backup to restore as arguments, paths inside this
+  # container; docs/disaster-recovery.md has the whole procedure, which starts with stopping
+  # web so that nothing writes while this does.
+  #
+  #     docker compose run --rm restore /backups/data/<stamp> /backups/keys/<stamp>
+  #
+  # The volumes are writable here, which is why this is a separate service rather than an
+  # option on backup: the nightly job can then never be the thing that overwrites them.
+  restore:
+    logging: *logging
+    image: postgres:18-alpine
+    profiles: ["restore"]
+    entrypoint: ["sh", "/scripts/restore.sh"]
+    environment:
+      PGHOST: db
+      PGDATABASE: ${POSTGRES_DB:-jiranisokotech}
+      PGUSER: ${POSTGRES_USER:-jiranisokotech}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # Not PGDATABASE: that is the one being replaced, and it cannot be dropped while
+      # this is connected to it. Every PostgreSQL cluster has a database called postgres.
+      MAINTENANCE_DATABASE: postgres
+    volumes:
+      - ./restore.sh:/scripts/restore.sh:ro
+      - documents:/documents
+      - cvs:/cvs
+      - keys:/keys
+      - ${BACKUP_DIRECTORY:-/var/backups/jiranisokotech/data}:/backups/data:ro
+      - ${KEYS_BACKUP_DIRECTORY:-/var/backups/jiranisokotech-keys}:/backups/keys:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
 # A fixed range for the containers' own network, so that the one address range the
 # application should believe X-Forwarded-For from can be written down in advance: with the
 # bundled proxy, PROXY_NETWORK is this range. Chosen well away from Docker's own default

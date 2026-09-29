@@ -28,7 +28,7 @@ the evidence for each and the gaps named. The section-by-section status is in
 | ◐ | 14 | Desktop, tablet and mobile | As above; there is no automated check across widths, only the checks made by hand. |
 | ✅ | 15 | Fast and professional | Every read path measured against a million rows — see [performance](performance.md). |
 | ✅ | 16 | Errors are understandable and actionable | A refusal is a sentence on the page saying what to do; an unexpected error shows a reference that matches a trace in the logs. The end-to-end tests fail on the page's own sentence. |
-| ✅ | 17 | Production-ready | Docker, a proxy with automatic HTTPS, migrations at start, health and readiness, JSON logs, retention, CI that builds the image. Backups (section 88) are not done, which the deployment guide says. |
+| ✅ | 17 | Production-ready | Docker, a proxy with automatic HTTPS, migrations at start, health and readiness, JSON logs, retention, CI that builds the image, and nightly backups whose restore the suite runs against PostgreSQL ([backups.md](backups.md)). |
 | ✅ | 18 | No fake functionality | Where something does not exist the screen says so — the sessions paragraph on the security page is the example. |
 | ✅ | 19 | No TODO placeholders | None in the source. |
 | ✅ | 20 | No frontend pretending to a backend | Pages call the services that enforce the rules; `EnforcementTests` fails the build for a permission nothing checks, and the workflow tests post the real forms. |

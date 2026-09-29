@@ -199,7 +199,13 @@ suite, so an image whose tests fail is never produced. Production and staging wr
 `/health` and `/ready` answer different questions. Full detail in
 [deployment.md](deployment.md) and every setting in [configuration.md](configuration.md).
 
-Backups and disaster recovery (sections 88–89) are not done.
+Backups (section 88) are a `backup` service in the same compose file, on the database's own
+image so `pg_dump` always matches the server: a nightly dump and archives of the attachments
+and CVs, with the key ring written to a separate destination, verified by checksum before
+they count, and restored by the suite against PostgreSQL on every push. There is no replica
+and no write-ahead-log archive, so recovery is to the last nightly backup — up to a day of
+work, which [disaster-recovery.md](disaster-recovery.md) states along with the procedure for
+each kind of loss. [backups.md](backups.md) has the schedule and the restore.
 
 ## Testing strategy
 
