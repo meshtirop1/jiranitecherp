@@ -24,6 +24,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\JiranisokoTech.Infrastructure\JiranisokoTech.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\JiranisokoTech.Web\JiranisokoTech.Web.csproj" />
+    <!--
+      The demonstration seed. Referenced so DemoDataTests can build the same container the
+      tool builds: a test that stood up a different one would be testing a seed nobody runs.
+    -->
+    <ProjectReference Include="..\..\tools\JiranisokoTech.DemoData\JiranisokoTech.DemoData.csproj" />
   </ItemGroup>
 
 </Project>

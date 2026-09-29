@@ -57,11 +57,26 @@ public sealed class DatabaseFixture : IAsyncDisposable
     /// an assertion cannot be satisfied by the change tracker holding the object
     /// it was just handed. What is asserted is what reached the database.
     /// </remarks>
-    public TestDbContext NewContext() =>
+    public TestDbContext NewContext() => NewContext(Clock, User);
+
+    /// <summary>
+    /// The same database, read and written as somebody else, at some other time.
+    /// </summary>
+    /// <remarks>
+    /// The context is where the audit trail is captured and where its timestamps come from, so a
+    /// caller that needs the trail to say a particular name — or to be spread over a year — has to
+    /// hand its own clock and actor to the CONTEXT and not only to the services above it.
+    ///
+    /// Added for the demonstration seed, whose whole point is eighteen months of history written by
+    /// a named actor. Its first test asserted an empty trail and a trail stamped all at once, and
+    /// both were this: the fixture's own clock and user, quietly, because there was no way to pass
+    /// anything else.
+    /// </remarks>
+    public TestDbContext NewContext(IClock clock, ICurrentUser user) =>
         new(
             new DbContextOptionsBuilder<TestDbContext>().UseSqlite(_connection).Options,
-            Clock,
-            User);
+            clock,
+            user);
 
     public async ValueTask DisposeAsync() => await _connection.DisposeAsync();
 }

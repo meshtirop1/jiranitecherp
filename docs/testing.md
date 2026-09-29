@@ -106,6 +106,12 @@ once; the test's own remarks say how.
 | `RelationalPatternTests` | the Razor pattern that broke the SDK's build |
 | `RetentionTests` | a bulk delete from the audit trail outside the retention sweep |
 | `ConfigurationTests`, `DeploymentTests`, `DocumentationTests` | a variable compose reads that is undocumented, a proxy misconfigured, a broken link |
+| `DeploymentTests` | and a project in the solution with no COPY line in the image, which fails `restore` inside the image only while every local build stays green |
+| `SelfServiceTests` | a role that works here and cannot do something everybody does |
+| `AttachmentKindTests` | a kind of attachment one of the three switches over it has no answer for |
+| `NoticeWordingTests`, `SearchHeadingTests` | a kind of notice or search result the page has no words for |
+| `ChatDestinationTests` | a kind of outbound destination nothing is registered to send to |
+| `DemoDataTests` | demonstration data that has stopped being marked, or a history written by a clock that did not travel |
 
 ## What SQLite hides
 

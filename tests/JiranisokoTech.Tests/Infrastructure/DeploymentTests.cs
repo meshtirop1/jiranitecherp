@@ -185,6 +185,59 @@ public class DeploymentTests
         return match.Groups["body"].Value;
     }
 
+    /// <summary>
+    /// Every project in the solution has a line in the image's restore layer.
+    /// </summary>
+    /// <remarks>
+    /// <b>This exists because the omission is silent in the worst possible way.</b> The Dockerfile
+    /// copies each <c>.csproj</c> by name before copying the source, so that editing a
+    /// <c>.cs</c> file reuses the restore layer. A project added to the solution and not to that
+    /// list makes <c>dotnet restore</c> fail <em>inside the image only</em> — and
+    /// <c>compose up --build</c> then goes on serving the previous image rather than stopping. The
+    /// local build stays green, the whole suite stays green, and the browser shows yesterday's
+    /// application, so every conclusion drawn from it is wrong.
+    ///
+    /// It has happened once, when the measurement harness was added, and CLAUDE.md records it as a
+    /// trap. The second tools project is exactly the occasion for it to happen again, which is why
+    /// this was written before that project had any code in it.
+    ///
+    /// Read out of the solution file rather than from a list, so a fourth project is covered by
+    /// having been added rather than by somebody remembering this test.
+    /// </remarks>
+    [RepositoryFact]
+    public void Every_project_in_the_solution_is_copied_into_the_image()
+    {
+        var solution = File.ReadAllText(Path.Combine(Root, "JiranisokoTech.slnx"));
+        var image = Unix(File.ReadAllText(Path.Combine(Root, "docker", "Dockerfile")));
+
+        var missing = new List<string>();
+
+        foreach (Match project in Regex.Matches(solution, @"Path=""(?<path>[^""]+\.csproj)"""))
+        {
+            var path = project.Groups["path"].Value;
+            var folder = path[..path.LastIndexOf('/')];
+
+            /*
+             * Matched on the directory and a wildcard, which is the form every line in that layer
+             * uses — COPY src/JiranisokoTech.Web/*.csproj src/JiranisokoTech.Web/. Matching the
+             * file name would pass for a line that copied the project somewhere else, and the
+             * destination is the half that has to be right.
+             */
+            if (!image.Contains($"COPY {folder}/*.csproj {folder}/", StringComparison.Ordinal))
+            {
+                missing.Add(path);
+            }
+        }
+
+        Assert.True(
+            missing.Count == 0,
+            "These projects are in the solution and have no COPY line in the image's restore "
+            + "layer, so `dotnet restore` fails inside the image while every local build and "
+            + "the whole suite stay green, and compose goes on serving the previous image:\n  "
+            + string.Join("\n  ", missing)
+            + "\n\nAdd a line beside the others in docker/Dockerfile.");
+    }
+
     /// <summary>The same text, with every line ending an LF.</summary>
     private static string Unix(string text) =>
         text.Replace("\r\n", "\n").Replace("\r", "\n");
