@@ -131,12 +131,15 @@ public class PermissionTests
     /// expensive, because it locks out the majority of the staff.
     ///
     /// Interviewer is exempt: it is designed to be worn alongside another role,
-    /// and that role carries these.
+    /// and that role carries these. So is Auditor, for the opposite reason: the
+    /// usual auditor does not work here, and an external account that could log
+    /// hours or claim expenses would be a way into the payroll for somebody who
+    /// is not on it. Staff who audit wear it alongside their own role.
     /// </remarks>
     [Fact]
     public void Everybody_who_works_here_can_log_time_ask_for_leave_and_claim_expenses()
     {
-        foreach (var role in Roles.All.Where(role => role != Roles.Interviewer))
+        foreach (var role in Roles.All.Where(role => role is not (Roles.Interviewer or Roles.Auditor)))
         {
             var held = Roles.PermissionsFor(role);
 
@@ -209,6 +212,67 @@ public class PermissionTests
     /// The tasks.view_own mistake in another costume: a permission to change a
     /// thing, held by somebody with no permission to open the page it is on.
     /// </remarks>
+    /// <summary>
+    /// The other two places where one pair of hands must not hold both halves.
+    /// </summary>
+    /// <remarks>
+    /// Written when eleven roles were added at once, several of them in finance, because the
+    /// three pairs tested above were the only ones any test watched. Ordering and receiving:
+    /// somebody holding both can record goods that never came. Running the payroll and paying
+    /// it: somebody holding both can agree their own figures and send the money.
+    /// </remarks>
+    [Theory]
+    [InlineData(Permissions.PurchasesOrder, Permissions.PurchasesReceive)]
+    [InlineData(Permissions.PayrollRun, Permissions.PayrollPay)]
+    [InlineData(Permissions.PrivacyRespond, Permissions.PrivacyErase)]
+    public void Two_halves_of_one_act_are_not_the_same_hands(string one, string other)
+    {
+        var both = Roles.All
+            .Where(role => role is not (Roles.Owner or Roles.Administrator))
+            .Where(role => Roles.PermissionsFor(role).Contains(one)
+                && Roles.PermissionsFor(role).Contains(other))
+            .ToList();
+
+        Assert.Empty(both);
+    }
+
+    /// <summary>
+    /// Every role the brief names exists, or is absent for a reason written down.
+    /// </summary>
+    /// <remarks>
+    /// Section 5 lists eighteen. The system had seven, and nothing said so anywhere a reader
+    /// would look. The two absences are argued on <see cref="Roles"/>.
+    /// </remarks>
+    [Fact]
+    public void The_roles_the_brief_names_exist()
+    {
+        string[] brief =
+        [
+            Roles.Owner, Roles.Administrator, Roles.HumanResources, Roles.Recruiter,
+            Roles.FinanceManager, Roles.Accountant, Roles.ProjectManager,
+            Roles.EngineeringManager, Roles.TechLead, Roles.Developer, Roles.QaEngineer,
+            Roles.DevOpsEngineer, Roles.Designer, Roles.Sales, Roles.Support, Roles.Auditor,
+        ];
+
+        Assert.All(brief, role => Assert.Contains(role, Roles.All));
+    }
+
+    /// <summary>An auditor changes nothing.</summary>
+    /// <remarks>
+    /// Checked by the shape of the name rather than a list, so a write permission added next
+    /// year and granted to the auditor by habit fails here without anybody updating the test.
+    /// </remarks>
+    [Fact]
+    public void An_auditor_only_reads()
+    {
+        var writes = Roles.PermissionsFor(Roles.Auditor)
+            .Where(permission => !permission.EndsWith(".view", StringComparison.Ordinal)
+                && !permission.EndsWith(".view_all", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.Empty(writes);
+    }
+
     [Fact]
     public void Nobody_can_agree_a_contract_they_cannot_read()
     {

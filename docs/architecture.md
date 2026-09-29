@@ -112,8 +112,27 @@ the database cannot disagree about what a role grants.
 - `EnforcementTests` fails the build for a permission that is granted and checked nowhere,
   because that is a capability somebody has been given and cannot use.
 
-Section 5's gaps — seven roles against the brief's eighteen, no roles editable from the
-screen, no team- or record-level grants — are in the checklist.
+Eighteen roles are declared: sixteen of the brief's list, plus department head and
+interviewer. The two missing are argued on `Roles` — "super administrator" is the owner,
+since with one firm there is nothing above it to administer, and "client" waits for a client
+portal, because a role that opens nothing is an account that cannot be used. Tests hold the
+separations the roles were built around: approving and paying a claim, drafting and sending
+an invoice, agreeing a contract and invoicing against it, ordering and receiving goods,
+running and paying the payroll, deciding and carrying out an erasure — no role below the top
+holds both halves of any of them.
+
+**Grants below the firm are relationships, not rows.** The brief lists organisation,
+department, project, team and record scope. Here the permission says what kind of act it is
+and reach says which records: the projects somebody leads or is on, the people who report
+to them, their own claims. That covers the department, project, team and record cases
+without a table of per-record grants, which is what makes "who can see this invoice" a
+question somebody can still answer.
+
+**Roles are not edited on screen, on purpose.** The matrix is in code so the seeder, the
+policies, the tests and the roles page all read the same thing; a matrix editable at run
+time would be one the tests could no longer vouch for, and the separations above would hold
+only until somebody ticked a box. A firm that needs a new role asks for one in the code, and
+the tests check it.
 
 ## Integration strategy
 

@@ -220,7 +220,12 @@ else
         () => held
             ? Administration.RevokeAsync(Id, role)
             : Administration.GrantAsync(Id, role),
-        held ? $"{Say(role)} taken away." : $"{Say(role)} granted.");
+        held ? $"{Sentence(Say(role))} taken away." : $"{Sentence(Say(role))} granted.");
+
+    // The role names are lower case because they are identifiers, and a confirmation that
+    // opens "hr granted." reads as a typo.
+    private static string Sentence(string words) =>
+        words.Length == 0 ? words : char.ToUpperInvariant(words[0]) + words[1..];
 
     private Task Unlock() => Run(() => Administration.UnlockAsync(Id), "They can sign in again.");
 

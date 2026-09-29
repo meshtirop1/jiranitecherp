@@ -640,6 +640,40 @@ public static class Roles
     public const string Developer = "developer";
     public const string Interviewer = "interviewer";
 
+    /*
+     * The rest of the brief's list. Two of its names are deliberately absent. "Super
+     * Administrator" is the owner: with multi-tenancy out of scope there is no platform above
+     * the firm for a super administrator to administer, and two roles holding everything is
+     * one role with two names. "Client" waits for the client portal, because a role that opens
+     * nothing is an account somebody has been given and cannot use.
+     */
+    public const string FinanceManager = "finance_manager";
+    public const string Accountant = "accountant";
+    public const string Auditor = "auditor";
+    public const string Recruiter = "recruiter";
+    public const string EngineeringManager = "engineering_manager";
+    public const string TechLead = "tech_lead";
+    public const string QaEngineer = "qa_engineer";
+    public const string DevOpsEngineer = "devops_engineer";
+    public const string Designer = "designer";
+    public const string Sales = "sales";
+    public const string Support = "support";
+
+    /// <summary>
+    /// What everybody who works here does for themselves.
+    /// </summary>
+    /// <remarks>
+    /// Written once for the roles added after the first seven, which each repeat it in full
+    /// with the reasoning beside it. Logging hours, asking for leave, claiming money back and
+    /// asking the firm to buy something are not privileges; a role without them describes
+    /// somebody who does not work here.
+    /// </remarks>
+    private static readonly string[] SelfService =
+    [
+        Permissions.TimeLogOwn, Permissions.LeaveAsk, Permissions.ExpensesClaim,
+        Permissions.PurchasesRequest, Permissions.GoalsView, Permissions.TeamsView,
+    ];
+
     public static IReadOnlyDictionary<string, IReadOnlyList<string>> Matrix { get; } =
         new Dictionary<string, IReadOnlyList<string>>
         {
@@ -951,6 +985,198 @@ public static class Roles
                 // through the system asks in a corridor, and the record of what the firm spends
                 // and why is lost.
                 Permissions.PurchasesRequest,
+            ],
+
+            /*
+             * Where money leaves the firm. The finance manager pays what somebody else
+             * approved — claims, supplier bills, the payroll HR agreed — and sends the invoices
+             * somebody else drafted. Deliberately not expenses.approve, invoices.manage or
+             * contracts.manage: each is the other half of a pair where one pair of hands
+             * holding both could authorise its own payment or invent the authority for its own
+             * bill. Not purchases.receive either, for the goods-that-never-came reason on it.
+             */
+            [FinanceManager] =
+            [
+                .. SelfService,
+                Permissions.DepartmentsView, Permissions.EmployeesView, Permissions.UsersView,
+                Permissions.AccountingView, Permissions.AccountingManage,
+                Permissions.InvoicesView, Permissions.InvoicesSend,
+                Permissions.ContractsView, Permissions.ClientsView,
+                Permissions.VendorsView, Permissions.VendorsManage,
+                Permissions.PurchasesView, Permissions.PurchasesOrder, Permissions.PurchasesPay,
+                Permissions.ExpensesViewAll, Permissions.ExpensesPay,
+                Permissions.PayrollView, Permissions.PayrollPay,
+                Permissions.ApprovalsDecide,
+                Permissions.AuditView, Permissions.ReportsView,
+            ],
+
+            /*
+             * Keeps the books and drafts the bills. Records rather than releases: nothing an
+             * accountant can do on their own sends money out or a demand for it to a client,
+             * which is what makes it safe to give the role to somebody part-time or external.
+             */
+            [Accountant] =
+            [
+                .. SelfService,
+                Permissions.AccountingView, Permissions.AccountingManage,
+                Permissions.InvoicesView, Permissions.InvoicesManage,
+                Permissions.ContractsView, Permissions.ClientsView, Permissions.VendorsView,
+                Permissions.PurchasesView, Permissions.ExpensesViewAll, Permissions.PayrollView,
+                Permissions.ReportsView,
+            ],
+
+            /*
+             * Reads everything that is evidence, changes nothing, and has no self-service,
+             * because the usual auditor does not work here. The security centre is included:
+             * the access reviews it keeps are among the first things an audit asks for. Salary
+             * terms on the staff record are not — the payroll it can read already shows what
+             * was paid, and what somebody agreed to be paid is HR's.
+             */
+            [Auditor] =
+            [
+                Permissions.AuditView, Permissions.SecurityView, Permissions.ReportsView,
+                Permissions.UsersView, Permissions.EmployeesView, Permissions.EmployeesViewAll,
+                Permissions.DepartmentsView, Permissions.TeamsView,
+                Permissions.AccountingView, Permissions.InvoicesView, Permissions.ContractsView,
+                Permissions.ClientsView, Permissions.VendorsView, Permissions.PurchasesView,
+                Permissions.ExpensesViewAll, Permissions.PayrollView,
+                Permissions.TimeViewAll, Permissions.LeaveViewAll,
+                Permissions.ProjectsViewAll, Permissions.TasksViewAll,
+                Permissions.ReposView, Permissions.IncidentsView, Permissions.PlatformView,
+                Permissions.AssetsView, Permissions.RequisitionsView,
+            ],
+
+            /*
+             * Runs the pipeline and does not make the hire. Moving somebody from applied to
+             * interviewed to offered is the recruiter's work; the decision to hire is
+             * applications.hire, and it stays with HR, who then holds the contract.
+             */
+            [Recruiter] =
+            [
+                .. SelfService,
+                Permissions.DepartmentsView, Permissions.EmployeesView,
+                Permissions.RequisitionsView, Permissions.PostingsManage,
+                Permissions.CandidatesView, Permissions.ApplicationsManage,
+                Permissions.InterviewsSchedule, Permissions.InterviewsView,
+                Permissions.ScorecardsSubmit,
+                Permissions.ReportsView,
+            ],
+
+            /*
+             * The head of the engineering department, in everything but the money: the board,
+             * the releases, the repositories and the platform, and the hours and absence of the
+             * people who report to them. No accounting, vendors or expenses approval, which is
+             * what separates this from department_head — a firm that wants both gives both.
+             */
+            [EngineeringManager] =
+            [
+                .. SelfService,
+                Permissions.DepartmentsView, Permissions.EmployeesView, Permissions.UsersView,
+                Permissions.TeamsManage, Permissions.GoalsManage,
+                Permissions.ProjectsViewAll,
+                Permissions.TasksViewAll, Permissions.TasksViewOwn, Permissions.TasksCreate,
+                Permissions.TasksAssign, Permissions.TasksReview, Permissions.TasksDeploy,
+                Permissions.PlanningManage,
+                Permissions.ReposView, Permissions.ReposManage, Permissions.ReposDeliveries,
+                Permissions.ReleasesDeclare,
+                Permissions.IncidentsView, Permissions.IncidentsRaise, Permissions.IncidentsRun,
+                Permissions.PlatformView, Permissions.PlatformManage, Permissions.FlagsSet,
+                Permissions.AssetsView,
+                Permissions.ApprovalsDecide,
+                Permissions.RequisitionsCreate, Permissions.RequisitionsView,
+                Permissions.CandidatesView, Permissions.InterviewsSchedule,
+                Permissions.InterviewsView, Permissions.ScorecardsSubmit,
+                Permissions.TimeViewAll, Permissions.TimeApprove,
+                Permissions.LeaveViewAll, Permissions.LeaveApprove,
+                Permissions.ReportsView,
+            ],
+
+            /*
+             * An engineer who also reviews and sets work. Review, not release: saying work is
+             * good enough is the lead's, and sending it to clients stays with whoever answers
+             * for the version. Technical interviews are theirs, so they can open the candidate
+             * they are scoring.
+             */
+            [TechLead] =
+            [
+                .. SelfService,
+                Permissions.ProjectsViewMember,
+                Permissions.TasksViewAll, Permissions.TasksViewOwn, Permissions.TasksCreate,
+                Permissions.TasksUpdateOwn, Permissions.TasksSubmit, Permissions.TasksReview,
+                Permissions.ReposView, Permissions.ReposDeliveries,
+                Permissions.IncidentsView, Permissions.IncidentsRaise, Permissions.IncidentsRun,
+                Permissions.PlatformView, Permissions.FlagsSet,
+                Permissions.CandidatesView, Permissions.InterviewsView,
+                Permissions.ScorecardsSubmit,
+            ],
+
+            /*
+             * Raises what they find and signs off what they tested, which is tasks.review:
+             * the step between "submitted" and "ready to release" is where testing happens.
+             */
+            [QaEngineer] =
+            [
+                .. SelfService,
+                Permissions.ProjectsViewMember,
+                Permissions.TasksViewOwn, Permissions.TasksCreate,
+                Permissions.TasksUpdateOwn, Permissions.TasksSubmit, Permissions.TasksReview,
+                Permissions.ReposView,
+                Permissions.IncidentsView, Permissions.IncidentsRaise,
+                Permissions.PlatformView,
+            ],
+
+            /*
+             * Keeps the platform register and the repository connections, and runs incidents
+             * because they are usually the one already in the console. Not tasks.deploy: the
+             * pipeline is theirs, the decision to release through it is not.
+             */
+            [DevOpsEngineer] =
+            [
+                .. SelfService,
+                Permissions.ProjectsViewMember,
+                Permissions.TasksViewOwn, Permissions.TasksUpdateOwn, Permissions.TasksSubmit,
+                Permissions.ReposView, Permissions.ReposManage, Permissions.ReposDeliveries,
+                Permissions.IncidentsView, Permissions.IncidentsRaise, Permissions.IncidentsRun,
+                Permissions.PlatformView, Permissions.PlatformManage, Permissions.FlagsSet,
+                Permissions.AssetsView,
+            ],
+
+            // Works on the board like an engineer, and sees the incidents their screens are in.
+            [Designer] =
+            [
+                .. SelfService,
+                Permissions.ProjectsViewMember,
+                Permissions.TasksViewOwn, Permissions.TasksUpdateOwn, Permissions.TasksSubmit,
+                Permissions.ReposView,
+                Permissions.IncidentsView, Permissions.IncidentsRaise,
+            ],
+
+            /*
+             * Owns the client relationship and agrees the contract. Not invoices.manage: the
+             * person who agreed what a client may be charged is not also the person who
+             * charges them, which is the contract-and-invoice rule the other roles keep.
+             */
+            [Sales] =
+            [
+                .. SelfService,
+                Permissions.ClientsView, Permissions.ClientsManage,
+                Permissions.ContractsView, Permissions.ContractsManage,
+                Permissions.InvoicesView, Permissions.ProjectsViewAll,
+                Permissions.ReportsView,
+            ],
+
+            /*
+             * Hears it first from the client, so raises the incident or the work item, and can
+             * look up which client and project it is about. There is no help desk yet (section
+             * 26); until there is, this is what support work in this system consists of.
+             */
+            [Support] =
+            [
+                .. SelfService,
+                Permissions.ClientsView, Permissions.ProjectsViewAll,
+                Permissions.TasksViewOwn, Permissions.TasksCreate,
+                Permissions.IncidentsView, Permissions.IncidentsRaise,
+                Permissions.PlatformView,
             ],
 
             [Interviewer] =
