@@ -16,6 +16,9 @@ public sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outbox
         builder.Property(message => message.Error).HasMaxLength(2000);
         builder.Property(message => message.OccurredAt).IsRequired();
 
+        // Three rule ids at most — the automation engine stops a chain deeper than that.
+        builder.Property(message => message.Causation).HasMaxLength(400);
+
         /*
          * The dispatcher's only query: the oldest messages not yet sent.
          *

@@ -568,6 +568,32 @@ public static class Permissions
     public const string ApprovalsDecide = "approvals.decide";
     public const string ReportsView = "reports.view";
 
+    // --- automation --------------------------------------------------------
+
+    /// <summary>
+    /// Read the automation rules and what each one has done.
+    /// </summary>
+    /// <remarks>
+    /// Wider than writing them, because the people whose processes the shipped rules run — HR
+    /// for joiners, the delivery and engineering managers for projects, sales for clients —
+    /// should be able to see what is being done in their name and why a work item appeared.
+    /// The auditor reads it because a rule's history is evidence of what the system did on its
+    /// own.
+    /// </remarks>
+    public const string AutomationView = "automation.view";
+
+    /// <summary>
+    /// Write, change and switch rules on and off.
+    /// </summary>
+    /// <remarks>
+    /// The owner and administrators only, and the reason is that a rule acts as the firm rather
+    /// than as whoever wrote it: it raises work on any project, tells any role, and sends
+    /// signed notifications to the webhook subscriptions. Somebody who could write rules could
+    /// therefore do all of that without holding any of the permissions each act needs by hand,
+    /// which makes it an administrative permission whatever it looks like.
+    /// </remarks>
+    public const string AutomationManage = "automation.manage";
+
     /// <summary>Every declared permission, in declaration order.</summary>
     public static IReadOnlyList<string> All { get; } =
     [
@@ -619,6 +645,8 @@ public static class Permissions
         PlatformView, PlatformManage, FlagsSet,
 
         ApprovalsDecide, ReportsView,
+
+        AutomationView, AutomationManage,
     ];
 }
 
@@ -761,6 +789,10 @@ public static class Roles
                 Permissions.LeaveViewAll, Permissions.LeaveApprove,
                 Permissions.TimeViewAll,
 
+                // What the automation rules do in this role's name, and why a piece of work
+                // appeared on somebody's list. Read, not written: see automation.manage.
+                Permissions.AutomationView,
+
                 Permissions.AuditView, Permissions.ReportsView,
             ],
 
@@ -870,6 +902,10 @@ public static class Roles
                 Permissions.LeaveViewAll, Permissions.LeaveApprove,
                 Permissions.ExpensesViewAll, Permissions.ExpensesApprove,
 
+                // What the automation rules do in this role's name, and why a piece of work
+                // appeared on somebody's list. Read, not written: see automation.manage.
+                Permissions.AutomationView,
+
                 Permissions.AuditView, Permissions.ReportsView,
             ],
 
@@ -939,6 +975,10 @@ public static class Roles
                 // authority for its own invoice.
                 Permissions.ContractsView,
 
+                // What the automation rules do in this role's name, and why a piece of work
+                // appeared on somebody's list. Read, not written: see automation.manage.
+                Permissions.AutomationView,
+
                 Permissions.AuditView, Permissions.ReportsView,
             ],
 
@@ -1007,6 +1047,10 @@ public static class Roles
                 Permissions.ExpensesViewAll, Permissions.ExpensesPay,
                 Permissions.PayrollView, Permissions.PayrollPay,
                 Permissions.ApprovalsDecide,
+                // What the automation rules do in this role's name, and why a piece of work
+                // appeared on somebody's list. Read, not written: see automation.manage.
+                Permissions.AutomationView,
+
                 Permissions.AuditView, Permissions.ReportsView,
             ],
 
@@ -1044,6 +1088,7 @@ public static class Roles
                 Permissions.ProjectsViewAll, Permissions.TasksViewAll,
                 Permissions.ReposView, Permissions.IncidentsView, Permissions.PlatformView,
                 Permissions.AssetsView, Permissions.RequisitionsView,
+                Permissions.AutomationView,
             ],
 
             /*
@@ -1088,6 +1133,11 @@ public static class Roles
                 Permissions.InterviewsView, Permissions.ScorecardsSubmit,
                 Permissions.TimeViewAll, Permissions.TimeApprove,
                 Permissions.LeaveViewAll, Permissions.LeaveApprove,
+
+                // What the automation rules do in this role's name, and why a piece of work
+                // appeared on somebody's list. Read, not written: see automation.manage.
+                Permissions.AutomationView,
+
                 Permissions.ReportsView,
             ],
 
@@ -1162,6 +1212,11 @@ public static class Roles
                 Permissions.ClientsView, Permissions.ClientsManage,
                 Permissions.ContractsView, Permissions.ContractsManage,
                 Permissions.InvoicesView, Permissions.ProjectsViewAll,
+
+                // What the automation rules do in this role's name, and why a piece of work
+                // appeared on somebody's list. Read, not written: see automation.manage.
+                Permissions.AutomationView,
+
                 Permissions.ReportsView,
             ],
 

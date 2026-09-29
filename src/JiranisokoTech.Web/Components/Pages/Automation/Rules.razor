@@ -1,0 +1,254 @@
+@page "/automation"
+@using System.ComponentModel.DataAnnotations
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Automation
+@using JiranisokoTech.Domain.Automation
+@using JiranisokoTech.Infrastructure.Automation
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.AutomationView)]
+@inject AutomationService Engine
+@inject AutomationQueries Queries
+@inject NavigationManager Navigation
+
+<PageTitle>Automation — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Automation</h1>
+</div>
+
+<p class="instructions">
+    Rules the firm has written for itself: <strong>when</strong> something happens, <strong>if</strong>
+    what it says holds, <strong>then</strong> do these things. A rule acts as the firm, not as
+    whoever wrote it, and every run is kept below with what it did and what it was refused.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<AuthorizeView Policy="@Managing" Context="mayManage">
+    <EditForm Model="Input" method="post" OnValidSubmit="Write" FormName="write" class="panel stack">
+        <DataAnnotationsValidator />
+
+        <h2>Write a rule</h2>
+
+        <label>
+            <span>What it is for</span>
+            <InputText @bind-Value="Input.Name" placeholder="Tell finance about large invoices" />
+            <ValidationMessage For="() => Input.Name" />
+        </label>
+
+        <label>
+            <span>When</span>
+            <InputSelect @bind-Value="Input.Trigger">
+                <option value="">Choose what fires it…</option>
+                @foreach (var area in Triggers.All.GroupBy(one => one.Area))
+                {
+                    <optgroup label="@area.Key">
+                        @foreach (var trigger in area)
+                        {
+                            <option value="@trigger.Name">@trigger.Label</option>
+                        }
+                    </optgroup>
+                }
+            </InputSelect>
+            <ValidationMessage For="() => Input.Trigger" />
+            <span class="subtle">
+                Fixed once written: the conditions and actions are phrased in what this event
+                carries.
+            </span>
+        </label>
+
+        <label>
+            <span>Why it exists <span class="subtle">(optional)</span></span>
+            <InputTextArea @bind-Value="Input.Description" rows="2" />
+        </label>
+
+        <button type="submit">Write it, switched off</button>
+    </EditForm>
+</AuthorizeView>
+
+<h2>Rules</h2>
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">No rules yet.</p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Automation rules</caption>
+        <thead>
+            <tr>
+                <th scope="col">Rule</th>
+                <th scope="col">When</th>
+                <th scope="col">Does</th>
+                <th scope="col">State</th>
+                <th scope="col">Last fired</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Rows)
+            {
+                <tr class="@(row.IsOn ? null : "row--closed")">
+                    <td>
+                        <a href="/automation/@row.Id">@row.Name</a>
+                        @if (row.IsTemplate)
+                        {
+                            <span class="subtle">shipped with the application</span>
+                        }
+                    </td>
+                    <td>@(Triggers.Find(row.Trigger)?.Label ?? row.Trigger)</td>
+                    <td class="subtle">
+                        @Said(row.Conditions, "condition"), @Said(row.Actions, "action")@(row.DelayMinutes > 0 ? $", after {Delay(row.DelayMinutes)}" : "")
+                    </td>
+                    <td>
+                        @if (row.IsOn)
+                        {
+                            <span class="pill pill--done">On</span>
+                        }
+                        else
+                        {
+                            <span class="pill pill--quiet">Off</span>
+                        }
+                        @if (row.Failing > 0)
+                        {
+                            <span class="pill pill--danger">@row.Failing failing</span>
+                        }
+                    </td>
+                    <td>
+                        @if (row.LastMatchedAt is { } at)
+                        {
+                            @at.ToString("d MMM yyyy HH:mm")
+                        }
+                        else
+                        {
+                            <span class="subtle">Never</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<h2>What the rules have done</h2>
+
+<p class="subtle">The newest @AutomationQueries.MostRuns runs, across every rule.</p>
+
+@if (Runs.Count == 0)
+{
+    <p class="empty">No rule has fired yet.</p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Recent automation runs</caption>
+        <thead>
+            <tr>
+                <th scope="col">When</th>
+                <th scope="col">Rule</th>
+                <th scope="col">On</th>
+                <th scope="col">State</th>
+                <th scope="col">Why</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var run in Runs)
+            {
+                <tr>
+                    <td>@run.MatchedAt.ToString("d MMM HH:mm")</td>
+                    <td><a href="/automation/@run.RuleId">@run.RuleName</a></td>
+                    <td class="subtle">@run.Summary</td>
+                    <td>
+                        <span class="pill @Words.PillFor(run.Status)">@Words.For(run.Status)</span>
+                    </td>
+                    <td class="subtle">@run.Error</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private const string Managing = PermissionClaim.PolicyPrefix + Permissions.AutomationManage;
+
+    private WriteInput _input = new();
+
+    [SupplyParameterFromForm(FormName = "write")]
+    private WriteInput Input
+    {
+        get => _input;
+        set => _input = value ?? new WriteInput();
+    }
+
+    private List<RuleRow> Rows { get; set; } = [];
+
+    private List<AutomationRun> Runs { get; set; } = [];
+
+    private string? Refusal { get; set; }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Rows = await Queries.RulesAsync();
+        Runs = await Queries.RunsAsync();
+    }
+
+    private async Task Write()
+    {
+        Refusal = null;
+
+        try
+        {
+            var rule = await Engine.WriteAsync(Input.Name, Input.Trigger, Input.Description);
+
+            // Straight to it: a rule with no actions does nothing, and leaving somebody on the
+            // list to find it again is how one stays that way.
+            Navigation.NavigateTo($"/automation/{rule.Id}", forceLoad: true);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidOperationException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    private static string Said(int count, string what) =>
+        count == 1 ? $"1 {what}" : $"{count} {what}s";
+
+    /// <summary>A delay as somebody would say it.</summary>
+    /// <remarks>
+    /// Written with comparisons rather than a relational pattern, because Razor reads a less-than
+    /// sign at the start of a switch arm inside a code block as the opening of an element.
+    /// </remarks>
+    internal static string Delay(int minutes)
+    {
+        const int day = 24 * 60;
+
+        if (minutes >= day && minutes % day == 0)
+        {
+            return $"{minutes / day} day(s)";
+        }
+
+        return minutes >= 60 && minutes % 60 == 0
+            ? $"{minutes / 60} hour(s)"
+            : $"{minutes} minute(s)";
+    }
+
+    private sealed class WriteInput
+    {
+        [Required(ErrorMessage = "Say what the rule is for. In a year it is the only clue.")]
+        [StringLength(200)]
+        public string Name { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Choose what fires it.")]
+        public string Trigger { get; set; } = string.Empty;
+
+        [StringLength(2000)]
+        public string? Description { get; set; }
+    }
+}

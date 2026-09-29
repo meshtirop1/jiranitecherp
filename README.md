@@ -25,6 +25,7 @@ kept flattering.
 | [docs/deployment.md](docs/deployment.md) | putting it on a host, HTTPS, updating, health |
 | [docs/configuration.md](docs/configuration.md) | every setting and environment variable |
 | [docs/git-integration.md](docs/git-integration.md) | connecting code hosts |
+| [docs/automation.md](docs/automation.md) | the WHEN / IF / THEN rules, the ones shipped, and their limits |
 | [docs/performance.md](docs/performance.md) | what was measured at volume |
 | [docs/conformance.md](docs/conformance.md) | the brief's principles, module structure and definition of done, rule by rule |
 | [docs/privacy.md](docs/privacy.md) | what is held about people, why, for how long, and their rights |

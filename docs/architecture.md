@@ -43,8 +43,6 @@ consequences, several of which have cost real time.
 Nothing about the shape needs to change to finish the brief. What is missing is modules, not
 layers:
 
-- **Automation** (section 31): a rule store and an evaluator subscribing to the same outbox
-  the fixed handlers use today, so that a rule is data rather than a class.
 - **AI** (sections 36–37): see *AI architecture* below.
 - **Support and knowledge** (sections 25–26): ordinary modules on the existing pattern.
 - **A CLI** (section 50): a client of the public API, holding no rules of its own — the API
@@ -76,8 +74,8 @@ to forget. Core data is relational: no JSON columns hold anything a query needs 
 The same folder names run through all four projects, so a feature can be followed from its
 domain rules to its page: People, Recruitment, Work, Engineering, Platform, Assets, Clients
 and Business, Contracts, Money and Accounting, Payroll, Procurement, Vendors, Incidents,
-Documents, Notices, Approvals, Audit, Integrations, Privacy, Settings. Section 79 lists
-Automation, AI, Support and Knowledge as well; they do not exist yet.
+Documents, Notices, Approvals, Audit, Integrations, Privacy, Settings, Automation. Section
+79 lists AI, Support and Knowledge as well; they do not exist yet.
 
 ## Authentication strategy
 
@@ -161,7 +159,9 @@ at least once; handlers are written to be safe run twice.
 
 Handlers are how modules react to each other without depending on each other: a departure
 releases the leaver's open work; a merged pull request moves the work it names to review.
-They are code today. A rule a person can write is section 31, not built.
+Those are code. A rule a person writes on the rules page is data, matched and carried out
+by two handlers on the same outbox, so it is retried and set aside exactly as they are; see
+[automation.md](automation.md).
 
 ## Background jobs
 
@@ -169,9 +169,10 @@ Inside the web process, as hosted services — there is no separate worker:
 
 - the **outbox dispatcher**, the **webhook processor** and the **outbound sender**, each a
   queue in the database claimed with a lease;
-- the **scheduler**, running seven recurring jobs: lapsing qualifications, expiring
-  contracts, expiring agreements, expiring certificates and domains, recurring expenses, and
-  pruning old job runs and failed sign-ins. It schedules from each job's last recorded run,
+- the **scheduler**, running ten recurring jobs: lapsing qualifications, expiring
+  contracts, expiring agreements, expiring certificates and domains, recurring expenses,
+  applying the retention periods, pruning old job runs and failed sign-ins, and for the
+  automation rules, starting delayed runs and announcing overdue invoices. It schedules from each job's last recorded run,
   so a deploy does not rerun everything.
 
 Every run is recorded and shown on `/settings/machinery`, where a job can be run now. The

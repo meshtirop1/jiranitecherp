@@ -30,6 +30,15 @@ public enum NoticeKind
 
     /// <summary>Something you own is broken.</summary>
     IncidentRaised = 4,
+
+    /// <summary>One of the firm's automation rules has something to tell you.</summary>
+    /// <remarks>
+    /// Its own kind, so that somebody who finds a rule noisy can stop it emailing them without
+    /// also silencing the work handed to them — and so the notice says plainly that a rule,
+    /// not a colleague, sent it. The same rule is behind this as behind the others: the event
+    /// the rule fired on already existed, and the rule is somebody deciding who should hear.
+    /// </remarks>
+    Automation = 5,
 }
 
 /// <summary>

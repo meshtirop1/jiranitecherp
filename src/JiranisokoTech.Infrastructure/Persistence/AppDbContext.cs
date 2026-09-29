@@ -415,6 +415,16 @@ public class AppDbContext(
     public DbSet<Domain.Payroll.StatutoryRates> StatutoryRates =>
         Set<Domain.Payroll.StatutoryRates>();
 
+    /*
+     * Section 31. The rules are audited, with their conditions and actions; the runs are not,
+     * because a run is itself the system's record of what it did.
+     */
+    public DbSet<Domain.Automation.AutomationRule> AutomationRules =>
+        Set<Domain.Automation.AutomationRule>();
+
+    public DbSet<Domain.Automation.AutomationRun> AutomationRuns =>
+        Set<Domain.Automation.AutomationRun>();
+
     public override int SaveChanges() =>
         SaveChangesAsync().GetAwaiter().GetResult();
 
@@ -511,7 +521,7 @@ public class AppDbContext(
                 KeyOf(entry),
                 now,
                 currentUser.Id,
-                currentUser.Name,
+                ActorName,
                 before,
                 after));
         }
@@ -520,6 +530,19 @@ public class AppDbContext(
 
         return recorded;
     }
+
+    /// <summary>
+    /// Who to name on an audit entry.
+    /// </summary>
+    /// <remarks>
+    /// Whoever is signed in, and otherwise the automation rule whose action this is. A rule
+    /// acts with nobody signed in — from the outbox, on a background thread — so without this
+    /// every work item a rule raised and every checklist line it added would sit in the trail
+    /// with no actor at all, indistinguishable from a migration. The rule is named rather than
+    /// the person who wrote it, because the rule is what decided, and the rule's own history
+    /// says who wrote and changed it.
+    /// </remarks>
+    private string? ActorName => currentUser.Name ?? Automation.Causation.Current?.Actor;
 
     /// <summary>
     /// Record a role given to or taken from an account.
@@ -778,7 +801,8 @@ public class AppDbContext(
         Outbox.Add(new OutboxMessage(
             domainEvent.GetType().Name,
             JsonSerializer.Serialize(domainEvent, domainEvent.GetType(), JsonOptions),
-            domainEvent.OccurredAt));
+            domainEvent.OccurredAt,
+            Automation.Causation.Stamp));
 
     /// <summary>
     /// Move every raised domain event onto the outbox, in this transaction.
@@ -794,10 +818,13 @@ public class AppDbContext(
         {
             foreach (var domainEvent in entity.Events)
             {
+                // Stamped with the rules that led here, which is what lets a rule recognise
+                // its own work coming back to it. See OutboxMessage.Causation.
                 Outbox.Add(new OutboxMessage(
                     domainEvent.GetType().Name,
                     JsonSerializer.Serialize(domainEvent, domainEvent.GetType(), JsonOptions),
-                    domainEvent.OccurredAt));
+                    domainEvent.OccurredAt,
+                    Automation.Causation.Stamp));
             }
 
             // Cleared once written. An entity that stays tracked across two

@@ -1,3 +1,4 @@
+using JiranisokoTech.Domain.Automation;
 using JiranisokoTech.Domain.Clients;
 using JiranisokoTech.Domain.Recruitment;
 using JiranisokoTech.Domain.Contracts;
@@ -311,5 +312,31 @@ public static class Words
         ClientStatus.Dormant => "Dormant",
         ClientStatus.Former => "Former",
         _ => status.ToString(),
+    };
+
+    /// <remarks>
+    /// "Held back" rather than "Suppressed", because the question somebody opens a rule's
+    /// history to answer is why it did not do anything, and "suppressed" sounds like a fault.
+    /// </remarks>
+    public static string For(AutomationRunStatus status) => status switch
+    {
+        AutomationRunStatus.Waiting => "Waiting out its delay",
+        AutomationRunStatus.Queued => "About to run",
+        AutomationRunStatus.Done => "Done",
+        AutomationRunStatus.DoneWithRefusals => "Done, with refusals",
+        AutomationRunStatus.Retrying => "Failed, will retry",
+        AutomationRunStatus.GaveUp => "Gave up",
+        AutomationRunStatus.Suppressed => "Held back",
+        AutomationRunStatus.Cancelled => "Cancelled",
+        _ => status.ToString(),
+    };
+
+    public static string PillFor(AutomationRunStatus status) => status switch
+    {
+        AutomationRunStatus.Done => "pill--done",
+        AutomationRunStatus.DoneWithRefusals or AutomationRunStatus.Waiting => "pill--wait",
+        AutomationRunStatus.Queued => "pill--running",
+        AutomationRunStatus.Retrying or AutomationRunStatus.GaveUp => "pill--danger",
+        _ => "pill--quiet",
     };
 }

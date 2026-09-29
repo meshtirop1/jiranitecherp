@@ -217,7 +217,21 @@ public sealed class OutboxDispatcher(
 
         try
         {
-            await InvokeHandlersAsync(rebuilt, type, cancellationToken);
+            /*
+             * The message's own chain of automation rules, made ambient for its handlers. A
+             * rule matching this event reads it to refuse its own work coming back, and
+             * anything a handler saves carries it onward — so a loop through a fixed handler
+             * in between (a rule raises work, a handler reacts, the rule fires again) is still
+             * a loop the engine can see. Cleared before the message is marked, so the
+             * dispatcher's own bookkeeping is not attributed to anything.
+             */
+            using (Automation.Causation.Enter(new Automation.Cause(
+                message.Id,
+                Domain.Automation.AutomationRun.Parse(message.Causation),
+                Actor: null)))
+            {
+                await InvokeHandlersAsync(rebuilt, type, cancellationToken);
+            }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
