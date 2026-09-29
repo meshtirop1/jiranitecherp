@@ -591,6 +591,50 @@ public static class Permissions
     /// </remarks>
     public const string IncidentsRun = "incidents.run";
 
+    // --- when somebody asks for help ---------------------------------------
+
+    /// <summary>
+    /// Read the queue and any ticket on it, internal remarks included.
+    /// </summary>
+    /// <remarks>
+    /// Wide on purpose, with the argument incidents.view already makes: a record somebody cannot
+    /// look at is a record they ask about in a channel, and the answer they get is out of date.
+    ///
+    /// The difference from an incident is that there IS something here that could be sensitive —
+    /// the words that leave the building — and the answer to that is a separate permission to
+    /// write them rather than a narrower readership. A firm where only some people may see what
+    /// a client asked is a firm where the person who could have answered never knew.
+    /// </remarks>
+    public const string SupportView = "support.view";
+
+    /// <summary>
+    /// Raise a ticket, and write a remark on one for colleagues.
+    /// </summary>
+    /// <remarks>
+    /// Held by everybody who works here, beside logging hours and claiming expenses. A colleague
+    /// who cannot raise a ticket about their own broken laptop asks in a corridor, and the firm
+    /// loses the record of what keeps breaking.
+    ///
+    /// Writing an inside note is the same authority rather than a greater one: it is a remark to
+    /// colleagues on a record they can all already read.
+    /// </remarks>
+    public const string SupportAsk = "support.ask";
+
+    /// <summary>
+    /// Answer the person who asked, and everything that follows from it.
+    /// </summary>
+    /// <remarks>
+    /// Separate from support.ask because words that leave the building are a different authority
+    /// from words that stay inside — the same split purchases.request and purchases.order make,
+    /// and privacy.respond and privacy.erase.
+    ///
+    /// The grant worth arguing with is the one that is absent: a developer holds support.view
+    /// and support.ask and not this. A developer deliberately does not hold clients.view, so a
+    /// developer who could reply to a client would be writing to somebody whose record they
+    /// cannot open. They do the work; whoever speaks to the client answers the ticket.
+    /// </remarks>
+    public const string SupportRun = "support.run";
+
     // --- approvals and reporting -------------------------------------------
     public const string ApprovalsDecide = "approvals.decide";
     public const string ReportsView = "reports.view";
@@ -668,6 +712,8 @@ public static class Permissions
         TeamsView, TeamsManage,
         AnnouncementsPost,
         KnowledgeWrite,
+
+        SupportView, SupportAsk, SupportRun,
         GoalsView, GoalsManage, GoalsViewAll,
 
         PayrollView, PayrollRun, PayrollPay, PayrollRates,
@@ -756,12 +802,22 @@ public static class Roles
     /// What everybody who works here does for themselves.
     /// </summary>
     /// <remarks>
-    /// Written once for the roles added after the first seven, which each repeat it in full
-    /// with the reasoning beside it. Logging hours, asking for leave, claiming money back and
-    /// asking the firm to buy something are not privileges; a role without them describes
-    /// somebody who does not work here.
+    /// Logging hours, asking for leave, claiming money back and asking the firm to buy
+    /// something are not privileges; a role without them describes somebody who does not work
+    /// here.
+    ///
+    /// <b>This used to say that the first seven roles repeated it in full with the reasoning
+    /// beside it, and treated that as deliberate.</b> It was true on the day it was written and
+    /// then the array grew twice — knowledge.write in section 25, support.view and support.ask
+    /// in section 26 — and neither addition reached those four. So a developer, a project
+    /// manager, a department head and whoever runs HR could not write an article and could not
+    /// open the help desk, while the project manager had been granted the permission to answer
+    /// a client on a ticket they could not read. Nothing failed, because what was wrong was an
+    /// absence in a list nobody diffs.
+    ///
+    /// Public so that <c>SelfServiceTests</c> can diff it, which is now the thing that does.
     /// </remarks>
-    private static readonly string[] SelfService =
+    public static IReadOnlyList<string> SelfService { get; } =
     [
         Permissions.TimeLogOwn, Permissions.LeaveAsk, Permissions.ExpensesClaim,
         Permissions.PurchasesRequest, Permissions.GoalsView, Permissions.TeamsView,
@@ -773,6 +829,13 @@ public static class Roles
          * stays in one person's head.
          */
         Permissions.KnowledgeWrite,
+
+        /*
+         * Section 26. Reading the queue and asking for help are held by everybody, for the
+         * reason incidents.view is: a record fewer people can see is one people ask about in a
+         * corridor instead. Answering the person who asked is a separate grant and is not here.
+         */
+        Permissions.SupportView, Permissions.SupportAsk,
     ];
 
     public static IReadOnlyDictionary<string, IReadOnlyList<string>> Matrix { get; } =
@@ -847,15 +910,18 @@ public static class Roles
                 Permissions.ApplicationsHire, Permissions.InterviewsSchedule,
                 Permissions.InterviewsView,
 
-                // Everybody who works here logs hours, asks for leave and
-                // claims money back. These are not privileges; a role without
-                // them describes somebody who does not work here.
-                Permissions.TimeLogOwn, Permissions.LeaveAsk, Permissions.ExpensesClaim,
-
-                // And asks the firm to buy things, for the same reason. Somebody who cannot ask
-                // through the system asks in a corridor, and the record of what the firm spends
-                // and why is lost.
-                Permissions.PurchasesRequest,
+                /*
+                 * Everything everybody who works here does for themselves: logging hours,
+                 * asking for leave, claiming money back, asking the firm to buy something,
+                 * reading their own goals, writing down how a thing is done, and opening the
+                 * help desk.
+                 *
+                 * Spread rather than listed, and that is the fix for a real fault. This role
+                 * used to name the first four by hand with the reasoning beside them, which was
+                 * fine until the array grew — and then twice in one day it grew and this role
+                 * did not. See SelfServiceTests, which now fails the build for it.
+                 */
+                .. SelfService,
 
                 // Leave is HR's book to keep, and hours are how absence is
                 // reconciled against it.
@@ -966,15 +1032,18 @@ public static class Roles
                 Permissions.CandidatesView, Permissions.InterviewsSchedule,
                 Permissions.InterviewsView, Permissions.ScorecardsSubmit,
 
-                // Everybody who works here logs hours, asks for leave and
-                // claims money back. These are not privileges; a role without
-                // them describes somebody who does not work here.
-                Permissions.TimeLogOwn, Permissions.LeaveAsk, Permissions.ExpensesClaim,
-
-                // And asks the firm to buy things, for the same reason. Somebody who cannot ask
-                // through the system asks in a corridor, and the record of what the firm spends
-                // and why is lost.
-                Permissions.PurchasesRequest,
+                /*
+                 * Everything everybody who works here does for themselves: logging hours,
+                 * asking for leave, claiming money back, asking the firm to buy something,
+                 * reading their own goals, writing down how a thing is done, and opening the
+                 * help desk.
+                 *
+                 * Spread rather than listed, and that is the fix for a real fault. This role
+                 * used to name the first four by hand with the reasoning beside them, which was
+                 * fine until the array grew — and then twice in one day it grew and this role
+                 * did not. See SelfServiceTests, which now fails the build for it.
+                 */
+                .. SelfService,
 
                 // A head signs off their team's hours, absence and spending.
                 // Not payment: that is the office's job, and a head who could
@@ -1030,15 +1099,25 @@ public static class Roles
 
                 Permissions.PlatformView, Permissions.FlagsSet,
 
-                // Everybody who works here logs hours, asks for leave and
-                // claims money back. These are not privileges; a role without
-                // them describes somebody who does not work here.
-                Permissions.TimeLogOwn, Permissions.LeaveAsk, Permissions.ExpensesClaim,
+                /*
+                 * Section 26. A project manager already holds clients.view and already
+                 * speaks to the client about the work, so answering their tickets is the
+                 * same conversation rather than a new authority.
+                 */
+                Permissions.SupportRun,
 
-                // And asks the firm to buy things, for the same reason. Somebody who cannot ask
-                // through the system asks in a corridor, and the record of what the firm spends
-                // and why is lost.
-                Permissions.PurchasesRequest,
+                /*
+                 * Everything everybody who works here does for themselves: logging hours,
+                 * asking for leave, claiming money back, asking the firm to buy something,
+                 * reading their own goals, writing down how a thing is done, and opening the
+                 * help desk.
+                 *
+                 * Spread rather than listed, and that is the fix for a real fault. This role
+                 * used to name the first four by hand with the reasoning beside them, which was
+                 * fine until the array grew — and then twice in one day it grew and this role
+                 * did not. See SelfServiceTests, which now fails the build for it.
+                 */
+                .. SelfService,
 
                 // A delivery manager bills the work, so they hold the clients
                 // and the draft invoices. Sending one is somebody else's.
@@ -1105,15 +1184,18 @@ public static class Roles
 
                 Permissions.PlatformView, Permissions.FlagsSet,
 
-                // Everybody who works here logs hours, asks for leave and
-                // claims money back. These are not privileges; a role without
-                // them describes somebody who does not work here.
-                Permissions.TimeLogOwn, Permissions.LeaveAsk, Permissions.ExpensesClaim,
-
-                // And asks the firm to buy things, for the same reason. Somebody who cannot ask
-                // through the system asks in a corridor, and the record of what the firm spends
-                // and why is lost.
-                Permissions.PurchasesRequest,
+                /*
+                 * Everything everybody who works here does for themselves: logging hours,
+                 * asking for leave, claiming money back, asking the firm to buy something,
+                 * reading their own goals, writing down how a thing is done, and opening the
+                 * help desk.
+                 *
+                 * Spread rather than listed, and that is the fix for a real fault. This role
+                 * used to name the first four by hand with the reasoning beside them, which was
+                 * fine until the array grew — and then twice in one day it grew and this role
+                 * did not. See SelfServiceTests, which now fails the build for it.
+                 */
+                .. SelfService,
             ],
 
             /*
@@ -1346,6 +1428,14 @@ public static class Roles
                 Permissions.TasksViewOwn, Permissions.TasksCreate,
                 Permissions.IncidentsView, Permissions.IncidentsRaise,
                 Permissions.PlatformView,
+
+                /*
+                 * Section 26, and the role the permission exists for. Answering a client
+                 * means writing something that leaves the building, and whoever does it
+                 * must be able to open the record of the person they are writing to —
+                 * which this role holds and a developer deliberately does not.
+                 */
+                Permissions.SupportRun,
             ],
 
             [Interviewer] =
@@ -1360,6 +1450,23 @@ public static class Roles
 
     public static IReadOnlyList<string> All { get; } = Matrix.Keys.ToList();
 
+    /// <summary>
+    /// What a role holds, each permission once.
+    /// </summary>
+    /// <remarks>
+    /// Distinct, because a role legitimately names the same permission twice: once by spreading
+    /// <see cref="SelfService"/>, because everybody who works here holds it, and once on a line
+    /// of its own where the role has a reason of its own — a department head reads goals because
+    /// everybody reads their own, and also because they write their team's. Both sentences are
+    /// worth keeping, so the list de-duplicates on the way out rather than being edited until it
+    /// says each thing once.
+    ///
+    /// It matters here and nowhere else. <c>RoleSeeder</c> turns this into role claims, and
+    /// handing it the same permission twice is at best two identical rows and at worst a unique
+    /// index refusing the seed on start-up.
+    /// </remarks>
     public static IReadOnlyList<string> PermissionsFor(string role) =>
-        Matrix.TryGetValue(role, out var permissions) ? permissions : [];
+        Matrix.TryGetValue(role, out var permissions)
+            ? [.. permissions.Distinct(StringComparer.Ordinal)]
+            : [];
 }

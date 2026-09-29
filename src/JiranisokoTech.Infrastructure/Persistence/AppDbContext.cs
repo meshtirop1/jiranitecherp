@@ -390,6 +390,16 @@ public class AppDbContext(
         Set<Domain.Privacy.PrivacyRequest>();
 
     /// <summary>
+    /// Requests from people, and what the firm said back.
+    /// </summary>
+    /// <remarks>
+    /// Section 26. Beside the incidents rather than among them, because the two answer different
+    /// questions: an incident is the firm's statement that something of its own is broken, and a
+    /// ticket is one named person's request with a promise attached.
+    /// </remarks>
+    public DbSet<Domain.Support.Ticket> Tickets => Set<Domain.Support.Ticket>();
+
+    /// <summary>
     /// What the firm knows, written down.
     /// </summary>
     /// <remarks>

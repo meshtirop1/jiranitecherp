@@ -296,6 +296,17 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OverviewQueries>();
 
         /*
+         * The help desk. Section 26, and the service takes WorkService rather than a repository
+         * because the one thing it does that needs another aggregate is raising a real piece of
+         * work — which must get its number, its transitions and its permissions from there
+         * rather than growing a second board here.
+         */
+        services.AddScoped<Application.Support.ISupportRepository,
+            Infrastructure.Support.SupportRepository>();
+        services.AddScoped<Application.Support.SupportService>();
+        services.AddScoped<Infrastructure.Support.SupportQueries>();
+
+        /*
          * The knowledge base. Section 25, and the queries are separate from the service because
          * the list shows forty summaries and must never load forty bodies to do it.
          */
@@ -338,6 +349,15 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRecurringJob, PruneSignInHistory>();
         services.AddScoped<IRecurringJob, RaiseRecurringExpenses>();
         services.AddScoped<IRecurringJob, ApplyRetention>();
+
+        /*
+         * Section 26's escalation, and the one job here whose subject is a promise to somebody
+         * outside the firm rather than a date on one of the firm's own records. It is also the
+         * only one that runs oftener than hourly apart from the automation release — see the
+         * remark on its Every.
+         */
+        services.AddScoped<IRecurringJob, Infrastructure.Support.EscalateMissedPromises>();
+
         services.AddHostedService<Scheduler>();
         services.AddScoped<JobQueries>();
 

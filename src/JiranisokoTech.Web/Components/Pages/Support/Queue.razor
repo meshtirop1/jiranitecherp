@@ -1,0 +1,450 @@
+@page "/support"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Support
+@using JiranisokoTech.Domain.Support
+@using JiranisokoTech.Infrastructure.Support
+@using JiranisokoTech.Infrastructure.People
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.SupportView)]
+@inject SupportService Service
+@inject SupportQueries Queries
+@inject PeopleQueries People
+@inject NavigationManager Navigation
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    Section 26. Somebody asked for help, and the firm owes them an answer.
+
+    The order is the order the promises run out in, not the order things were typed. That is the
+    whole decision behind the page: a queue sorted newest first makes the oldest unanswered
+    request the hardest one to see, which is exactly backwards.
+
+    The heading counts what nobody has answered in time and nothing else. A count of open tickets
+    goes up whenever the firm is busy and says nothing about whether it is keeping its word.
+
+    Statically rendered, like every other page here. Raising a ticket is one form that posts, and
+    that is also what makes the raise path testable.
+*@
+
+<PageTitle>Help desk — Jiranisoko Delivery</PageTitle>
+
+<div class="page-head">
+    <h1>Help desk</h1>
+    <p class="subtle">@Headline</p>
+</div>
+
+<p class="instructions">
+    One request from one named person, with a clock on it. A ticket is not a piece of work — when
+    the answer turns out to be "we will change something", it raises a real work item and keeps
+    the number, so the board stays the one place work lives.
+</p>
+
+@if (Refusal is not null)
+{
+    <p class="refusal" role="alert">@Refusal</p>
+}
+
+<form method="get" class="filters" data-narrow-submit>
+    <label>
+        <span>Showing</span>
+        <select name="show">
+            <option value="" selected="@(Show is null)">Waiting on us</option>
+            <option value="them" selected="@(Show == "them")">Waiting on them</option>
+            <option value="resolved" selected="@(Show == "resolved")">Resolved</option>
+            <option value="all" selected="@(Show == "all")">Everything</option>
+        </select>
+    </label>
+
+    <button type="submit">Show</button>
+
+    @if (Show is not null)
+    {
+        <a class="filters__clear" href="/support">Clear</a>
+    }
+</form>
+
+@if (Rows.Count == 0)
+{
+    <p class="empty">@Nothing</p>
+}
+else
+{
+    <table class="grid">
+        <caption class="visually-hidden">Tickets</caption>
+        <thead>
+            <tr>
+                <th scope="col">Ticket</th>
+                <th scope="col">Who asked</th>
+                <th scope="col">How much it matters</th>
+                <th scope="col">Where it is</th>
+                <th scope="col">Answer owed</th>
+                <th scope="col">Being answered by</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Rows)
+            {
+                <tr class="@(row.Status == TicketStatus.Resolved ? "row--closed" : null)">
+                    <td>
+                        <a href="/support/@row.Number"><strong>@row.Reference</strong></a>
+                        <span class="subtle">@row.Subject</span>
+                    </td>
+                    <td>
+                        @row.Who
+                        @if (row.Client is { } client)
+                        {
+                            <br />
+                            <span class="subtle">@client</span>
+                        }
+                    </td>
+                    <td><span class="pill @PillFor(row.Priority)">@Means(row.Priority)</span></td>
+                    <td><span class="pill @PillFor(row.Status)">@Say(row.Status)</span></td>
+                    <td>
+                        @*
+                            Two different sentences, and the difference is the only number on
+                            this page worth reporting. "Answered in 20 min" is a fact about
+                            the firm keeping its word; "3 hr late" is the same fact failing.
+                        *@
+                        @if (row.FirstRespondedAt is { } answered)
+                        {
+                            <span class="subtle">
+                                answered in @Length(answered - Raised(row))
+                            </span>
+                        }
+                        else if (row.ResponseOverdue)
+                        {
+                            <span class="pill pill--danger">
+                                @Length(Now - row.RespondBy) late
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="subtle">
+                                within @Length(row.RespondBy - Now)
+                            </span>
+                        }
+                    </td>
+                    <td>
+                        @if (row.Assignee is { } who)
+                        {
+                            @who
+                        }
+                        else
+                        {
+                            @*
+                                Said rather than dashed. "Nobody has picked this up" is the
+                                one sentence on the row somebody can act on immediately.
+                            *@
+                            <span class="subtle">nobody yet</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<AuthorizeView Policy="@Asking" Context="permitted">
+    <EditForm Model="Input" method="post" OnValidSubmit="Raise" FormName="raise"
+              class="panel stack">
+        <DataAnnotationsValidator />
+
+        <h2>Somebody asked for something</h2>
+
+        <p class="subtle">
+            Typed in by whoever took the call. The opening message is recorded as the requester's
+            own words rather than as a note about them, because that is what it is — and because
+            a ticket whose first line is somebody's summary of a complaint is a ticket that gets
+            answered on the summary.
+        </p>
+
+        <label>
+            <span>Who asked</span>
+            <InputSelect @bind-Value="Input.Who">
+                <option value="">Choose somebody</option>
+
+                @if (Colleagues.Count > 0)
+                {
+                    <optgroup label="Here">
+                        @foreach (var one in Colleagues)
+                        {
+                            <option value="@one.Posted">@one.Name</option>
+                        }
+                    </optgroup>
+                }
+
+                @if (Contacts.Count > 0)
+                {
+                    @*
+                        One flat list in two groups rather than two cascading selects. A cascade
+                        needs a round trip, and a round trip is the only thing that would make
+                        this page interactive — which would in turn make this form unpostable by
+                        a test.
+                    *@
+                    <optgroup label="Clients">
+                        @foreach (var one in Contacts)
+                        {
+                            <option value="@one.Posted">@one.Name — @one.Client</option>
+                        }
+                    </optgroup>
+                }
+            </InputSelect>
+            <ValidationMessage For="() => Input.Who" />
+        </label>
+
+        <label>
+            <span>What they asked about</span>
+            <InputText @bind-Value="Input.Subject"
+                       placeholder="Cannot log in to the despatch board" />
+            <ValidationMessage For="() => Input.Subject" />
+            <span class="subtle">
+                This is what they will quote back, alongside the reference.
+            </span>
+        </label>
+
+        <label>
+            <span>What they said</span>
+            <InputTextArea rows="6" @bind-Value="Input.Body" />
+            <ValidationMessage For="() => Input.Body" />
+        </label>
+
+        <label>
+            <span>How much it matters</span>
+            <InputSelect @bind-Value="Input.Priority">
+                @foreach (var level in Levels)
+                {
+                    <option value="@level">@Means(level)</option>
+                }
+            </InputSelect>
+            <span class="subtle">
+                Said in terms of what they cannot do, not as a number. @Promise(Input.Priority)
+            </span>
+        </label>
+
+        <button type="submit">Raise it</button>
+
+        <p class="subtle">
+            <strong>This tells nobody.</strong> It writes the request down and starts the clock.
+            Whoever is going to answer it finds it here, or is told however this firm tells
+            people — a button that looked like it emailed the requester and did not would be the
+            worst control on this page.
+        </p>
+    </EditForm>
+</AuthorizeView>
+
+@code {
+    private const string Asking = PermissionClaim.PolicyPrefix + Permissions.SupportAsk;
+
+    private static readonly TicketPriority[] Levels =
+        [TicketPriority.Blocking, TicketPriority.Slowing, TicketPriority.Asking];
+
+    [SupplyParameterFromQuery(Name = "show")]
+    private string? Show { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private RaiseInput _input = new();
+
+    [SupplyParameterFromForm(FormName = "raise")]
+    private RaiseInput Input
+    {
+        get => _input;
+        set => _input = value ?? new RaiseInput();
+    }
+
+    private List<TicketRow> Rows { get; set; } = [];
+
+    private List<PossibleRequester> Requesters { get; set; } = [];
+
+    private int Unanswered { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private DateTimeOffset Now => Clock.Now;
+
+    private List<PossibleRequester> Colleagues =>
+        [.. Requesters.Where(one => one.Kind == Requester.Colleague)];
+
+    private List<PossibleRequester> Contacts =>
+        [.. Requesters.Where(one => one.Kind == Requester.ClientContact)];
+
+    /// <summary>
+    /// The count that means something, which is not the number of open tickets.
+    /// </summary>
+    /// <remarks>
+    /// Open tickets go up when the firm is busy and down when it is quiet, and a headline made
+    /// of that number reports the weather. This one reports whether the firm is keeping the only
+    /// promise it made.
+    /// </remarks>
+    private string Headline =>
+        Unanswered switch
+        {
+            0 when Rows.Count == 0 => "Nobody has asked for anything yet.",
+            0 => "Everybody who has asked has been answered in time.",
+            1 => "One person has been waiting longer than they were promised.",
+            var many => $"{many} people have been waiting longer than they were promised.",
+        };
+
+    private string Nothing => Show switch
+    {
+        "resolved" => "Nothing has been resolved yet.",
+        "them" => "Nothing is waiting on anybody outside.",
+        "all" => "Nobody has asked for anything yet.",
+        _ => "Nothing is waiting on us.",
+    };
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Rows = await Queries.QueueAsync(Now, Wanted());
+        Requesters = await Queries.RequestersAsync();
+        Unanswered = await Queries.UnansweredAsync(Now);
+    }
+
+    /// <summary>Which status the filter is asking for, or all of them.</summary>
+    private TicketStatus? Wanted() => Show switch
+    {
+        "them" => TicketStatus.WithRequester,
+        "resolved" => TicketStatus.Resolved,
+        "all" => null,
+        _ => TicketStatus.Open,
+    };
+
+    private async Task Raise()
+    {
+        Refusal = null;
+
+        if (!PossibleRequester.TryRead(Input.Who, out var kind, out var requester))
+        {
+            Refusal = "Choose who asked. A ticket with no requester is a note to nobody.";
+
+            return;
+        }
+
+        try
+        {
+            /*
+             * The client is taken from the chosen contact rather than from a second select. A
+             * ticket belongs to the client relationship, and asking twice would let the two
+             * answers disagree — a contact at one client filed against another.
+             */
+            var chosen = Requesters.FirstOrDefault(
+                one => one.Kind == kind && one.Id == requester);
+
+            var ticket = await Service.RaiseAsync(
+                Input.Subject, Input.Body, Input.Priority, kind, requester, chosen?.ClientId);
+
+            Navigation.NavigateTo($"/support/{ticket.Number}");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException)
+        {
+            Refusal = exception.Message;
+            await LoadAsync();
+        }
+    }
+
+    /// <summary>
+    /// When it was raised, worked back out of the stored promise.
+    /// </summary>
+    /// <remarks>
+    /// The row does not carry the raised time, and this column is the only place it is wanted —
+    /// so it comes back from the promise and the target rather than from a seventh column on a
+    /// projection three hundred rows wide. The two are stored together at the moment the ticket
+    /// is raised, so the subtraction is exact and not an estimate.
+    /// </remarks>
+    private static DateTimeOffset Raised(TicketRow row) =>
+        row.RespondBy - Ticket.TargetsFor(row.Priority).Respond;
+
+    private static string Promise(TicketPriority priority)
+    {
+        var (respond, resolve) = Ticket.TargetsFor(priority);
+
+        return $"The firm answers within {Length(respond)} and settles it within "
+            + $"{Length(resolve)}.";
+    }
+
+    /// <summary>
+    /// A duration said the way a person would say it.
+    /// </summary>
+    /// <remarks>
+    /// The same shape the incidents page uses, and for the same reason: the only thing anybody
+    /// does with these numbers is compare them to what was promised, and "4.25 hours" is harder
+    /// to do that with than "4 hr".
+    /// </remarks>
+    private static string Length(TimeSpan span)
+    {
+        if (span < TimeSpan.Zero)
+        {
+            return "no time";
+        }
+
+        if (span < TimeSpan.FromMinutes(1))
+        {
+            return "under a minute";
+        }
+
+        if (span < TimeSpan.FromHours(1))
+        {
+            return $"{(int)span.TotalMinutes} min";
+        }
+
+        if (span < TimeSpan.FromDays(1))
+        {
+            var hours = (int)span.TotalHours;
+            var minutes = span.Minutes;
+
+            return minutes == 0 ? $"{hours} hr" : $"{hours} hr {minutes} min";
+        }
+
+        return $"{(int)span.TotalDays} days";
+    }
+
+    private static string Means(TicketPriority priority) => priority switch
+    {
+        TicketPriority.Blocking => "cannot work",
+        TicketPriority.Slowing => "working the long way round",
+        _ => "wants to know something",
+    };
+
+    private static string Say(TicketStatus status) => status switch
+    {
+        TicketStatus.Open => "With us",
+        TicketStatus.WithRequester => "With them",
+        _ => "Resolved",
+    };
+
+    private static string PillFor(TicketPriority priority) => priority switch
+    {
+        TicketPriority.Blocking => "pill--danger",
+        TicketPriority.Slowing => "pill--wait",
+        _ => "pill--quiet",
+    };
+
+    private static string PillFor(TicketStatus status) => status switch
+    {
+        TicketStatus.Open => "pill--running",
+        TicketStatus.WithRequester => "pill--wait",
+        _ => "pill--done",
+    };
+
+    private sealed class RaiseInput
+    {
+        [Required(ErrorMessage = "Choose who asked.")]
+        public string? Who { get; set; }
+
+        [Required(ErrorMessage = "Say in a line what they asked about.")]
+        [StringLength(300)]
+        public string Subject { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Write down what they actually said.")]
+        [StringLength(10_000)]
+        public string Body { get; set; } = string.Empty;
+
+        public TicketPriority Priority { get; set; } = TicketPriority.Slowing;
+    }
+}

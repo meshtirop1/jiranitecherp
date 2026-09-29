@@ -199,6 +199,22 @@
                 </AuthorizeView>
 
                 @*
+                    Beside the incidents, because the pair is the two ways the firm finds out
+                    something is wrong: one is the firm noticing and the other is somebody
+                    telling it. The count is of promises already broken and not of open tickets
+                    — open tickets go up whenever the firm is busy, and a number in the
+                    navigation that moves with the weather is one people stop reading.
+                *@
+                <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.SupportView)"
+                               Context="support">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="support" data-shortcut="h">
+                            Help desk@(Waiting > 0 ? $" ({Waiting})" : "")
+                        </NavLink>
+                    </div>
+                </AuthorizeView>
+
+                @*
                     Next to the board deliberately. The repositories are where
                     the work on that board actually happens, and what arrives
                     from them is the evidence the board is telling the truth.
@@ -521,6 +537,15 @@
     /// </remarks>
     private int Happening { get; set; }
 
+    /// <summary>How many people have been waiting longer than the firm promised.</summary>
+    /// <remarks>
+    /// Not a count of open tickets, for the reason the incidents count is of open incidents only:
+    /// a number here that does not clear trains people to ignore the one that matters. This one
+    /// clears the moment somebody says anything to whoever asked, which is exactly the act it
+    /// exists to provoke.
+    /// </remarks>
+    private int Waiting { get; set; }
+
     /// <summary>
     /// Counted in a scope of its own, which is not an optimisation.
     /// </summary>
@@ -548,6 +573,18 @@
         Happening = await scope.ServiceProvider
             .GetRequiredService<JiranisokoTech.Infrastructure.Incidents.IncidentQueries>()
             .OpenAsync();
+
+        /*
+         * Sequentially, in the same scope, for the reason spelt out below: the layout's scope
+         * holds one DbContext like any other, and two of these awaited in parallel would be the
+         * same race that put the incidents count in a scope of its own.
+         */
+        Waiting = await scope.ServiceProvider
+            .GetRequiredService<JiranisokoTech.Infrastructure.Support.SupportQueries>()
+            .UnansweredAsync(
+                scope.ServiceProvider
+                    .GetRequiredService<JiranisokoTech.Application.Abstractions.IClock>()
+                    .Now);
 
         /*
          * In the same scope, and after the count above rather than beside it. Both read the

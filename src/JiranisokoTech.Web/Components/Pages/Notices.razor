@@ -243,13 +243,24 @@ else
         await LoadAsync();
     }
 
+    /*
+     * Every kind is named, and the fallback says nothing about what happened.
+     *
+     * It used to fall through to "Incident" and "Something you own is broken", with
+     * IncidentRaised relying on that rather than having an arm — which meant the next kind added
+     * to the enum would be labelled an incident on this page, in the danger colour, on a screen
+     * people read to find out whether something is on fire. NoticeWordingTests now walks the
+     * enum and fails the build for a kind that reaches the line below.
+     */
     private static string Said(NoticeKind kind) => kind switch
     {
         NoticeKind.WorkGiven => "Work",
         NoticeKind.WorkTaken => "Work",
         NoticeKind.RequestSettled => "Decision",
+        NoticeKind.IncidentRaised => "Incident",
         NoticeKind.Automation => "Rule",
-        _ => "Incident",
+        NoticeKind.PromiseMissed => "Help desk",
+        _ => Unnamed,
     };
 
     private static string Means(NoticeKind kind) => kind switch
@@ -257,14 +268,36 @@ else
         NoticeKind.WorkGiven => "You are given a piece of work",
         NoticeKind.WorkTaken => "A piece of work leaves your list",
         NoticeKind.RequestSettled => "Something you asked for is decided",
+        NoticeKind.IncidentRaised => "Something you own is broken",
         NoticeKind.Automation => "One of the firm's automation rules tells you something",
-        _ => "Something you own is broken",
+        NoticeKind.PromiseMissed => "Somebody has waited longer for an answer than we promised",
+        _ => Unnamed,
     };
 
     private static string PillFor(NoticeKind kind) => kind switch
     {
         NoticeKind.IncidentRaised => "pill--danger",
+        NoticeKind.PromiseMissed => "pill--danger",
         NoticeKind.RequestSettled => "pill--active",
         _ => "pill--quiet",
     };
+
+    /// <summary>
+    /// What this page has no words for, which is a sentence nobody should ever read.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately useless. A fallback that guesses — and this one guessed "Incident" — is worse
+    /// than one that admits it does not know, because the guess is read as a fact about what
+    /// happened. NoticeWordingTests fails the build before anybody sees it.
+    /// </remarks>
+    private const string Unnamed = "Something happened";
+
+    /// <summary>The words for a kind, or nothing where none were written.</summary>
+    /// <remarks>
+    /// Exposed only so the meta-test can ask, the same way Search.WordsFor is. It answers null
+    /// for a kind that would fall through to the placeholder above.
+    /// </remarks>
+    public static (string? Heading, string? Meaning) WordsFor(NoticeKind kind) =>
+        (Said(kind) is var said && said == Unnamed ? null : said,
+            Means(kind) is var means && means == Unnamed ? null : means);
 }

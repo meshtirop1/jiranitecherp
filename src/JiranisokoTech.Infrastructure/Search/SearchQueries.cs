@@ -39,6 +39,20 @@ public enum ResultKind
     /// types a word into the box they already use and the article is sitting in the results.
     /// </remarks>
     Article = 8,
+
+    /// <summary>
+    /// Somebody's request for help.
+    /// </summary>
+    /// <remarks>
+    /// Section 26, and the one kind here somebody searches for by its reference rather than by
+    /// its words. A client reads "S412" down a telephone, and the person holding the telephone
+    /// types it into the box they already have open — so the reference is matched as well as the
+    /// subject. The bare number finds it too once there are two digits of it: the box
+    /// refuses a one-character term, because one character matches half the database — which
+    /// is why the prefixed form is the one printed on the page. "S1" can be searched for and
+    /// "1" cannot, so the prefix is what makes the firm's first few tickets findable at all.
+    /// </remarks>
+    Ticket = 9,
 }
 
 public sealed record SearchResult(ResultKind Kind, Guid Id, string Title, string? Detail, string Href);
@@ -317,7 +331,55 @@ public sealed class SearchQueries(AppDbContext database, Reaches reaches)
             article.Summary,
             $"/knowledge/{article.Key}")));
 
+        if (permissions.Contains(Permissions.SupportView))
+        {
+            /*
+             * The subject and the reference, and never the messages.
+             *
+             * Two reasons, and the second is the one that matters. A thread runs to ten thousand
+             * characters a line, so matching it would return every ticket that mentions the word
+             * in passing ranked no better than the one about it — the same argument that keeps an
+             * article's body out of this. But a ticket's lines also have an audience: some were
+             * said to colleagues and some went to a client. A search result is a fragment torn
+             * out of its context, and this box has no way to carry "who was this said to" into
+             * the result — so the safe thing is that it never shows those words at all.
+             */
+            var reference = Reference(cleaned);
+
+            var tickets = await database.Tickets
+                .AsNoTracking()
+                .Where(ticket => ticket.Subject.ToLower().Contains(cleaned)
+                    || (reference != null && ticket.Number == reference))
+                .OrderByDescending(ticket => ticket.Number)
+                .Take(PerGroup)
+                .Select(ticket => new { ticket.Id, ticket.Number, ticket.Subject })
+                .ToListAsync(cancellationToken);
+
+            found.AddRange(tickets.Select(ticket => new SearchResult(
+                ResultKind.Ticket,
+                ticket.Id,
+                $"S{ticket.Number} {ticket.Subject}",
+                null,
+                $"/support/{ticket.Number}")));
+        }
+
         return found;
+    }
+
+    /// <summary>
+    /// The ticket number in what somebody typed, if there is one.
+    /// </summary>
+    /// <remarks>
+    /// Accepts "S412" and "412" both, because the prefix is something a person reads out and not
+    /// something they reliably type. Computed here in C# rather than in the query: a cast inside
+    /// the Where clause would have to run against every row, and a reference nobody typed must
+    /// not turn a cheap subject match into a table scan.
+    /// </remarks>
+    private static int? Reference(string term)
+    {
+        var digits = term.StartsWith('s') ? term[1..] : term;
+
+        return int.TryParse(digits, out var number) && number > 0 ? number : null;
     }
 
     /// <summary>InProgress reads as "In progress" to somebody who is not a programmer.</summary>

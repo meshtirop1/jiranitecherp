@@ -43,6 +43,30 @@ public sealed class AttachmentRepository(AppDbContext database) : IAttachmentRep
                 database.Employees.AnyAsync(one => one.Id == ownerId, cancellationToken),
             AttachedTo.Contract =>
                 database.Contracts.AnyAsync(one => one.Id == ownerId, cancellationToken),
+
+            /*
+             * A photograph hangs off the employee it is of, which is why this arm and the one
+             * above it look the same and are not the same question. Photo and Employee are
+             * separate kinds because the permission to read them differs — a face is not a
+             * personnel file — and only the reading differs. The owner is the same row.
+             *
+             * <b>Both of these were missing, and the cost was that nobody in this firm could
+             * upload a staff photograph.</b> AttachAsync asks this before it writes anything,
+             * the default arm below throws an ArgumentOutOfRangeException, and both photograph
+             * forms catch ArgumentException — so every attempt answered "Unknown attachment
+             * kind.", which reads as a complaint about the file somebody had just chosen. The
+             * tests that cover photographs build the row with Attachment.Of directly and so
+             * never asked. AttachmentKindTests now walks the enum and fails the build for the
+             * next missing arm.
+             */
+            AttachedTo.Photo =>
+                database.Employees.AnyAsync(one => one.Id == ownerId, cancellationToken),
+            AttachedTo.Agreement =>
+                database.Agreements.AnyAsync(one => one.Id == ownerId, cancellationToken),
+
+            AttachedTo.Ticket =>
+                database.Tickets.AnyAsync(one => one.Id == ownerId, cancellationToken),
+
             _ => throw new ArgumentOutOfRangeException(
                 nameof(kind), kind, "Unknown attachment kind."),
         };

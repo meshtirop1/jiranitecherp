@@ -1,0 +1,803 @@
+@page "/support/{Number:int}"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Application.Support
+@using JiranisokoTech.Domain.Documents
+@using JiranisokoTech.Domain.Support
+@using JiranisokoTech.Infrastructure.Support
+@*
+    Load-bearing. <Attached> lives under Components/Pages/Documents, and _Imports.razor reaches
+    only Components and Components.Layout — so without this line Razor cannot resolve the tag,
+    emits it as an unknown HTML element, and the browser drops it. The whole attachments section
+    of the client page was invisible for weeks for exactly this reason, with nothing failing.
+    ComponentsInScopeTests now fails the build for it.
+*@
+@using JiranisokoTech.Web.Components.Pages.Documents
+@using JiranisokoTech.Infrastructure.People
+@using JiranisokoTech.Infrastructure.Work
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.SupportView)]
+@inject SupportService Service
+@inject SupportQueries Queries
+@inject PeopleQueries People
+@inject WorkQueries Board
+@inject JiranisokoTech.Application.Abstractions.IClock Clock
+
+@*
+    One request, the conversation about it, and the promise the firm made.
+
+    Section 26. The page is arranged around a distinction rather than around a record: every line
+    in the thread either went to the person who asked or stayed inside, and which of the two it
+    was decides what leaves the building. So there are two forms rather than one form with a
+    checkbox, they sit behind different permissions, and the thread marks each line three ways
+    over — see the .said rules in app.css for why three.
+
+    Statically rendered. Every control posts and re-renders, which is what lets a test press the
+    reply button and assert that the clock stopped.
+*@
+
+<PageTitle>@(Ticket is null ? "Ticket" : Ticket.Reference) — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/support">Help desk</a></nav>
+
+@if (Ticket is null)
+{
+    <p class="empty">
+        There is no ticket with that number. The help desk is <a href="/support">here</a>.
+    </p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@Ticket.Reference @Ticket.Subject</h1>
+        <p class="subtle">
+            <span class="pill @PillFor(Ticket.Status)">@Say(Ticket.Status)</span>
+            <span class="pill @PillFor(Ticket.Priority)">@Means(Ticket.Priority)</span>
+            <span class="subtle">
+                @Who asked, @Ticket.RaisedAt.ToLocalTime().ToString("d MMM yyyy HH:mm")
+            </span>
+        </p>
+    </div>
+
+    @if (Refusal is not null)
+    {
+        <p class="refusal" role="alert">@Refusal</p>
+    }
+
+    @if (Done is not null)
+    {
+        <p class="done" role="status">@Done</p>
+    }
+
+    @*
+        The promise, above the conversation rather than in the facts at the bottom. It is the
+        one thing on this page with a deadline on it, and somebody who has to scroll past a
+        thread to find out whether they are late will not find out.
+    *@
+    @if (Ticket.FirstRespondedAt is { } answered)
+    {
+        <p class="instructions">
+            Answered @Length(answered - Ticket.RaisedAt) after it arrived, against a promise of
+            @Length(Ticket.RespondBy - Ticket.RaisedAt).
+            @if (answered > Ticket.RespondBy)
+            {
+                <strong>That was late.</strong>
+            }
+            @if (!Ticket.IsResolved)
+            {
+                <span>
+                    It is still open, and due to be settled by
+                    @Ticket.ResolveBy.ToLocalTime().ToString("d MMM HH:mm").
+                </span>
+            }
+        </p>
+    }
+    else if (Ticket.ResponseOverdue(Now))
+    {
+        <p class="refusal" role="note">
+            <strong>Nobody has said anything to @Who yet</strong>, and the firm promised an answer
+            by @Ticket.RespondBy.ToLocalTime().ToString("d MMM HH:mm") — that was
+            @Length(Now - Ticket.RespondBy) ago. An internal note is not an answer; only saying
+            something to them stops this clock, which is the point of it.
+        </p>
+    }
+    else
+    {
+        <p class="instructions">
+            Nobody has said anything to @Who yet. The firm promised an answer by
+            @Ticket.RespondBy.ToLocalTime().ToString("d MMM HH:mm"), which is in
+            @Length(Ticket.RespondBy - Now).
+        </p>
+    }
+
+    <section class="standing">
+        <h2>The conversation</h2>
+
+        <ol class="thread">
+            @foreach (var line in Ticket.Messages)
+            {
+                <li class="said @(line.Audience == Audience.Requester ? "said--out" : "")">
+                    <p class="said__who">@Attribution(line)</p>
+                    <p class="said__text">@line.Text</p>
+                </li>
+            }
+        </ol>
+    </section>
+
+    @*
+        The files, under the conversation rather than above it, because a screenshot only means
+        anything once you have read what somebody said about it.
+
+        There is no private attachment here. The thread has an audience and a file does not —
+        anybody who may read the desk may open any file on it — and that is said on the page
+        rather than left for somebody to assume the other way round.
+    *@
+    <section class="standing">
+        <h2>Files</h2>
+
+        <Attached Kind="AttachedTo.Ticket" OwnerId="Ticket.Id" ManagePolicy="@Attaching"
+                  Empty="Nothing is attached. A photograph of the screen is usually the fastest
+                         way to settle what is actually happening." />
+
+        <p class="subtle">
+            Anybody who can read the help desk can open these. If something must not be seen by
+            the whole firm, it does not belong on a ticket.
+        </p>
+    </section>
+
+    @*
+        A note is open to anybody who can read the desk, which is everybody who works here. That
+        is deliberate: the developer who knows why the despatch board rejects that one login is
+        the person whose sentence belongs in this thread, and putting it behind the permission
+        that lets somebody write to a client would mean they tell somebody in a chat instead and
+        the ticket never learns it.
+    *@
+    <EditForm Model="Inside" method="post" OnValidSubmit="Note" FormName="note"
+              class="panel stack">
+        <DataAnnotationsValidator />
+
+        <h2>Say something to the others</h2>
+
+        <p class="subtle">
+            Stays here. It does not answer @Who and does not stop the clock — see the note above
+            about why that is not a convenience.
+        </p>
+
+        <label>
+            <span>What you want them to know</span>
+            <InputTextArea rows="4" @bind-Value="Inside.Text" />
+            <ValidationMessage For="() => Inside.Text" />
+        </label>
+
+        <button type="submit" class="button--quiet">Add the note</button>
+    </EditForm>
+
+    <AuthorizeView Policy="@Running" Context="answering">
+        @if (!Ticket.IsResolved)
+        {
+            <EditForm Model="Out" method="post" OnValidSubmit="Reply" FormName="reply"
+                      class="panel stack">
+                <DataAnnotationsValidator />
+
+                <h2>Answer @Who</h2>
+
+                <p class="subtle">
+                    <strong>These words leave the building.</strong> They go into the thread as
+                    something said to @Who, and the first time it happens it is what the firm's
+                    response time is measured by. Nothing here sends an email — the letter is
+                    written and sent however this firm writes letters, and a button that claimed
+                    otherwise would be worse than no button.
+                </p>
+
+                <label>
+                    <span>What to tell them</span>
+                    <InputTextArea rows="6" @bind-Value="Out.Text" />
+                    <ValidationMessage For="() => Out.Text" />
+                </label>
+
+                <label class="inline">
+                    <InputCheckbox @bind-Value="Out.WaitingOnThem" />
+                    <span>This needs something back from them</span>
+                </label>
+
+                <span class="subtle">
+                    Moves the ticket to "with them". It does not pause anything: a clock that
+                    stopped whenever somebody moved a ticket to "with the requester" would be
+                    stopped by moving tickets to "with the requester".
+                </span>
+
+                <button type="submit">Send it</button>
+            </EditForm>
+
+            <EditForm Model="Back" method="post" OnValidSubmit="TheySaid" FormName="they-said"
+                      class="panel stack">
+                <DataAnnotationsValidator />
+
+                <h2>What @Who said back</h2>
+
+                <p class="subtle">
+                    Their words, typed in by whoever heard them, and it puts the ticket back with
+                    us. It carries no author on purpose — a firm whose first contact is a
+                    telephone call has no account for the caller, and inventing one would put a
+                    stranger in the audit trail.
+                </p>
+
+                <label>
+                    <span>What they said</span>
+                    <InputTextArea rows="4" @bind-Value="Back.Text" />
+                    <ValidationMessage For="() => Back.Text" />
+                </label>
+
+                <button type="submit" class="button--quiet">Record it</button>
+            </EditForm>
+
+            <EditForm Model="Settle" method="post" OnValidSubmit="Resolve" FormName="resolve"
+                      class="panel stack">
+                <DataAnnotationsValidator />
+
+                <h2>Settle it</h2>
+
+                <p class="subtle">
+                    The answer is required and goes to @Who. A resolve button that closed a ticket
+                    without saying anything is the one control in a help desk that makes somebody
+                    certain they were ignored — and a month later it cannot be told apart from
+                    somebody clearing the queue before going on holiday.
+                </p>
+
+                <label>
+                    <span>The answer</span>
+                    <InputTextArea rows="5" @bind-Value="Settle.Text" />
+                    <ValidationMessage For="() => Settle.Text" />
+                </label>
+
+                <button type="submit">Answer and settle</button>
+            </EditForm>
+        }
+        else
+        {
+            <EditForm Model="Again" method="post" OnValidSubmit="Reopen" FormName="reopen"
+                      class="panel stack">
+                <DataAnnotationsValidator />
+
+                <h2>Put it back in the queue</h2>
+
+                <p class="subtle">
+                    Reopening does not give the firm a second first answer. The response time
+                    stays what it was, because the firm did answer once and that number must not
+                    be improved by the customer having to come back.
+                </p>
+
+                <label>
+                    <span>Why it is open again</span>
+                    <InputText @bind-Value="Again.Text"
+                               placeholder="They rang to say it is still happening" />
+                    <ValidationMessage For="() => Again.Text" />
+                </label>
+
+                <button type="submit" class="button--quiet">Reopen it</button>
+            </EditForm>
+        }
+
+        <EditForm Model="Hand" method="post" OnValidSubmit="Assign" FormName="assign"
+                  class="panel stack">
+            <h2>Who is answering it</h2>
+
+            <p class="subtle">
+                One name, and nobody is an ordinary answer — a ticket in a queue with nobody on
+                it is a fact about the queue, not a fault. Assigning tells nobody; it says on the
+                list who picked it up.
+            </p>
+
+            <div class="fields">
+                <label>
+                    <span>Being answered by</span>
+                    <InputSelect @bind-Value="Hand.AssigneeId">
+                        <option value="">Nobody</option>
+                        @foreach (var (id, name) in Names.OrderBy(one => one.Value))
+                        {
+                            <option value="@id">@name</option>
+                        }
+                    </InputSelect>
+                </label>
+            </div>
+
+            <button type="submit" class="button--quiet">Save</button>
+        </EditForm>
+
+        <EditForm Model="Matters" method="post" OnValidSubmit="Reprioritise" FormName="priority"
+                  class="panel stack">
+            <h2>How much it matters</h2>
+
+            <p class="subtle">
+                Changing this changes what was promised, and writes a line in the thread saying
+                so. Recomputed from when it arrived rather than from now, so correcting a
+                priority somebody typed wrongly gives the promise that should have been made —
+                not a fresh four hours starting from the correction.
+            </p>
+
+            <div class="fields">
+                <label>
+                    <span>What they cannot do</span>
+                    <InputSelect @bind-Value="Matters.Priority">
+                        @foreach (var level in Levels)
+                        {
+                            <option value="@level">@Means(level)</option>
+                        }
+                    </InputSelect>
+                </label>
+            </div>
+
+            <button type="submit" class="button--quiet">Change it</button>
+        </EditForm>
+
+        @if (Ticket.WorkItemId is { } already)
+        {
+            <p class="instructions">
+                This is being dealt with as
+                <a href="/work/@already">a piece of work</a>. Neither record drags the other:
+                deploying the work does not resolve this ticket, because nobody has told @Who
+                yet, and settling the ticket does not finish the work, because the fix may be a
+                week behind the answer.
+            </p>
+        }
+        else
+        {
+            @*
+                Raising work is a second authority, so it is a second gate inside this one. The
+                role that answers clients is not automatically the role that puts things on the
+                engineering board.
+            *@
+            <AuthorizeView Policy="@Creating" Context="planning">
+                <EditForm Model="AsWork" method="post" OnValidSubmit="MakeWork" FormName="as-work"
+                          class="panel stack">
+                    <h2>This needs something building</h2>
+
+                    <p class="subtle">
+                        Raises an ordinary work item on the board and keeps its number here. The
+                        ticket does not become the work: it goes on owing @Who an answer, which
+                        is the thing a board cannot hold. A blocking ticket comes through as high
+                        rather than as the one priority that stops everything — that decision
+                        belongs to somebody inside the firm looking at everything else running.
+                    </p>
+
+                    <div class="fields">
+                        <label>
+                            <span>On which project</span>
+                            <InputSelect @bind-Value="AsWork.ProjectId">
+                                <option value="">No project</option>
+                                @foreach (var project in Projects)
+                                {
+                                    <option value="@project.Id">@project.Name</option>
+                                }
+                            </InputSelect>
+                        </label>
+                    </div>
+
+                    <button type="submit">Raise the work</button>
+                </EditForm>
+            </AuthorizeView>
+        }
+    </AuthorizeView>
+
+    <dl class="facts">
+        <dt>Reference</dt>
+        <dd><code>@Ticket.Reference</code></dd>
+
+        <dt>Arrived</dt>
+        <dd>@Ticket.RaisedAt.ToLocalTime().ToString("d MMMM yyyy HH:mm")</dd>
+
+        <dt>Answer promised by</dt>
+        <dd>
+            @Ticket.RespondBy.ToLocalTime().ToString("d MMMM yyyy HH:mm")
+            @if (Ticket.ResponseOverdue(Now))
+            {
+                <span class="pill pill--danger">missed</span>
+            }
+        </dd>
+
+        <dt>Settled promised by</dt>
+        <dd>
+            @Ticket.ResolveBy.ToLocalTime().ToString("d MMMM yyyy HH:mm")
+            @if (Ticket.ResolutionOverdue(Now))
+            {
+                <span class="pill pill--danger">missed</span>
+            }
+        </dd>
+
+        @if (Ticket.EscalatedAt is { } escalated)
+        {
+            @*
+                Said on the page as well as in somebody's notices, because the person reading
+                this needs to know that the conversation about it has already started elsewhere —
+                otherwise the first they hear is being asked about a ticket they thought nobody
+                had noticed.
+            *@
+            <dt>Escalated</dt>
+            <dd>
+                @escalated.ToLocalTime().ToString("d MMMM yyyy HH:mm")
+                <span class="subtle">whoever answers for the desk was told</span>
+            </dd>
+        }
+
+        @if (Ticket.ResolvedAt is { } settled)
+        {
+            <dt>Settled</dt>
+            <dd>@settled.ToLocalTime().ToString("d MMMM yyyy HH:mm")</dd>
+        }
+
+        @if (Client is { } account)
+        {
+            <dt>Client</dt>
+            <dd>@account</dd>
+        }
+    </dl>
+}
+
+@code {
+    private const string Running = PermissionClaim.PolicyPrefix + Permissions.SupportRun;
+
+    private const string Creating = PermissionClaim.PolicyPrefix + Permissions.TasksCreate;
+
+    /// <summary>
+    /// Who may put a file on this ticket, which is everybody who works here.
+    /// </summary>
+    /// <remarks>
+    /// The same permission that raises one, and not the one that answers the requester. Putting a
+    /// screenshot on a ticket is evidence going into the record rather than words going out of the
+    /// building, and the developer who took the telephone call is exactly the person holding the
+    /// picture. It matches Documents.PermissionToAttach, which is the table that actually decides.
+    /// </remarks>
+    private const string Attaching = PermissionClaim.PolicyPrefix + Permissions.SupportAsk;
+
+    private static readonly TicketPriority[] Levels =
+        [TicketPriority.Blocking, TicketPriority.Slowing, TicketPriority.Asking];
+
+    [Parameter]
+    public int Number { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    [CascadingParameter]
+    private HttpContext? Request { get; set; }
+
+    private WordsInput _inside = new();
+
+    [SupplyParameterFromForm(FormName = "note")]
+    private WordsInput Inside
+    {
+        get => _inside;
+        set => _inside = value ?? new WordsInput();
+    }
+
+    private ReplyInput _out = new();
+
+    [SupplyParameterFromForm(FormName = "reply")]
+    private ReplyInput Out
+    {
+        get => _out;
+        set => _out = value ?? new ReplyInput();
+    }
+
+    private WordsInput _back = new();
+
+    [SupplyParameterFromForm(FormName = "they-said")]
+    private WordsInput Back
+    {
+        get => _back;
+        set => _back = value ?? new WordsInput();
+    }
+
+    private WordsInput _settle = new();
+
+    [SupplyParameterFromForm(FormName = "resolve")]
+    private WordsInput Settle
+    {
+        get => _settle;
+        set => _settle = value ?? new WordsInput();
+    }
+
+    private WordsInput _again = new();
+
+    [SupplyParameterFromForm(FormName = "reopen")]
+    private WordsInput Again
+    {
+        get => _again;
+        set => _again = value ?? new WordsInput();
+    }
+
+    private AssigneeInput _hand = new();
+
+    [SupplyParameterFromForm(FormName = "assign")]
+    private AssigneeInput Hand
+    {
+        get => _hand;
+        set => _hand = value ?? new AssigneeInput();
+    }
+
+    private PriorityInput _matters = new();
+
+    [SupplyParameterFromForm(FormName = "priority")]
+    private PriorityInput Matters
+    {
+        get => _matters;
+        set => _matters = value ?? new PriorityInput();
+    }
+
+    private ProjectInput _asWork = new();
+
+    [SupplyParameterFromForm(FormName = "as-work")]
+    private ProjectInput AsWork
+    {
+        get => _asWork;
+        set => _asWork = value ?? new ProjectInput();
+    }
+
+    private Ticket? Ticket { get; set; }
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private List<ProjectRow> Projects { get; set; } = [];
+
+    private string Who { get; set; } = "somebody";
+
+    private string? Client { get; set; }
+
+    private Guid? Me { get; set; }
+
+    private string? Refusal { get; set; }
+
+    private string? Done { get; set; }
+
+    private DateTimeOffset Now => Clock.Now;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        Me = Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
+
+        Ticket = await Service.ByNumberAsync(Number);
+        Names = await People.NamesAsync();
+        /*
+         * Only the projects that are running. Offering a finished or cancelled one would let a
+         * ticket raise work on a project nobody is booking time to, which is the sort of card
+         * that sits on the board for a year because it belongs to nothing.
+         */
+        Projects = await Board.ProjectsAsync(runningOnly: true);
+
+        if (Ticket is not { } ticket)
+        {
+            return;
+        }
+
+        (Who, Client) = await Queries.WhoAsync(ticket.From, ticket.RequesterId);
+
+        /*
+         * The two controls that show a stored value are filled only on a GET. Under static
+         * rendering every request is a new component instance, so a flag set on the first pass
+         * is false again on the POST and the seeding would run before the handler reads the
+         * model — which is how four pages came to report success while changing nothing. See
+         * FirstLook.
+         */
+        if (FirstLook.ThisTime(Request))
+        {
+            Hand = new AssigneeInput { AssigneeId = ticket.AssigneeId };
+            Matters = new PriorityInput { Priority = ticket.Priority };
+        }
+    }
+
+    private Task Note() => Act(
+        async ticket =>
+        {
+            await Service.NoteAsync(ticket.Id, Inside.Text, Mine());
+            Inside = new WordsInput();
+        },
+        "Noted. It stays here.");
+
+    private Task Reply() => Act(
+        async ticket =>
+        {
+            await Service.ReplyAsync(ticket.Id, Out.Text, Mine(), Out.WaitingOnThem);
+            Out = new ReplyInput();
+        },
+        "Recorded as said to them.");
+
+    private Task TheySaid() => Act(
+        async ticket =>
+        {
+            await Service.TheySaidAsync(ticket.Id, Back.Text);
+            Back = new WordsInput();
+        },
+        "Recorded, and the ticket is back with us.");
+
+    private Task Resolve() => Act(
+        async ticket =>
+        {
+            await Service.ResolveAsync(ticket.Id, Settle.Text, Mine());
+            Settle = new WordsInput();
+        },
+        "Answered and settled.");
+
+    private Task Reopen() => Act(
+        async ticket =>
+        {
+            await Service.ReopenAsync(ticket.Id, Again.Text, Mine());
+            Again = new WordsInput();
+        },
+        "Back in the queue.");
+
+    private Task Assign() => Act(
+        ticket => Service.AssignAsync(ticket.Id, Hand.AssigneeId),
+        "Saved.");
+
+    private Task Reprioritise() => Act(
+        ticket => Service.ReprioritiseAsync(ticket.Id, Matters.Priority, Mine()),
+        "Changed, and the thread says so.");
+
+    private Task MakeWork() => Act(
+        async ticket =>
+        {
+            var item = await Service.MakeWorkAsync(ticket.Id, Mine(), AsWork.ProjectId);
+
+            Done = $"Raised as work item #{item.Number}.";
+        },
+        "Raised on the board.");
+
+    /// <summary>
+    /// Run one of the forms and say what happened.
+    /// </summary>
+    /// <remarks>
+    /// Catching broadly, because these cross out of the domain and into the database. A handler
+    /// that caught only the domain's exceptions would take the page down on anything else and
+    /// leave the screen contradicting the row — which here means answering somebody twice.
+    /// </remarks>
+    private async Task Act(Func<Ticket, Task> work, string done)
+    {
+        Refusal = null;
+        Done = null;
+
+        if (Ticket is not { } ticket)
+        {
+            return;
+        }
+
+        try
+        {
+            await work(ticket);
+            Done ??= done;
+        }
+        catch (Exception exception)
+        {
+            Refusal = exception.Message;
+        }
+
+        Ticket = await Service.ByNumberAsync(Number);
+    }
+
+    /// <summary>
+    /// Whose name goes on what is about to be written.
+    /// </summary>
+    /// <remarks>
+    /// Refused rather than defaulted. Every one of these acts carries an author, and a message
+    /// in a client's thread signed by nobody is worse than a refusal — the refusal names the
+    /// administrative gap and can be fixed, while the message cannot be unsigned.
+    /// </remarks>
+    private Guid Mine() =>
+        Me ?? throw new InvalidOperationException(
+            "This sign-in is not linked to a staff record, so nothing can be written in your "
+            + "name. An administrator can link them on the People page.");
+
+    /// <summary>Who wrote a line, and who it was for.</summary>
+    /// <remarks>
+    /// The audience is said in words as well as drawn in colour, because this is the one thing
+    /// on the page where being wrong costs something. See the .said rules in app.css.
+    /// </remarks>
+    private string Attribution(TicketMessage line)
+    {
+        var when = line.At.ToLocalTime().ToString("d MMM HH:mm");
+
+        if (line.ByEmployeeId is not { } author)
+        {
+            return $"{Who} — {when}";
+        }
+
+        var name = Names.GetValueOrDefault(author) ?? "somebody no longer on the staff list";
+
+        return line.Audience == Audience.Requester
+            ? $"{name}, to {Who} — {when}"
+            : $"{name}, to the others here — {when}";
+    }
+
+    private static string Length(TimeSpan span)
+    {
+        if (span < TimeSpan.Zero)
+        {
+            return "no time";
+        }
+
+        if (span < TimeSpan.FromMinutes(1))
+        {
+            return "under a minute";
+        }
+
+        if (span < TimeSpan.FromHours(1))
+        {
+            return $"{(int)span.TotalMinutes} min";
+        }
+
+        if (span < TimeSpan.FromDays(1))
+        {
+            var hours = (int)span.TotalHours;
+            var minutes = span.Minutes;
+
+            return minutes == 0 ? $"{hours} hr" : $"{hours} hr {minutes} min";
+        }
+
+        return $"{(int)span.TotalDays} days";
+    }
+
+    private static string Means(TicketPriority priority) => priority switch
+    {
+        TicketPriority.Blocking => "cannot work",
+        TicketPriority.Slowing => "working the long way round",
+        _ => "wants to know something",
+    };
+
+    private static string Say(TicketStatus status) => status switch
+    {
+        TicketStatus.Open => "With us",
+        TicketStatus.WithRequester => "With them",
+        _ => "Resolved",
+    };
+
+    private static string PillFor(TicketPriority priority) => priority switch
+    {
+        TicketPriority.Blocking => "pill--danger",
+        TicketPriority.Slowing => "pill--wait",
+        _ => "pill--quiet",
+    };
+
+    private static string PillFor(TicketStatus status) => status switch
+    {
+        TicketStatus.Open => "pill--running",
+        TicketStatus.WithRequester => "pill--wait",
+        _ => "pill--done",
+    };
+
+    private sealed class WordsInput
+    {
+        [Required(ErrorMessage = "There is nothing to record.")]
+        [StringLength(10_000)]
+        public string Text { get; set; } = string.Empty;
+    }
+
+    private sealed class ReplyInput
+    {
+        [Required(ErrorMessage = "There is nothing to tell them.")]
+        [StringLength(10_000)]
+        public string Text { get; set; } = string.Empty;
+
+        public bool WaitingOnThem { get; set; }
+    }
+
+    private sealed class AssigneeInput
+    {
+        public Guid? AssigneeId { get; set; }
+    }
+
+    private sealed class PriorityInput
+    {
+        public TicketPriority Priority { get; set; } = TicketPriority.Slowing;
+    }
+
+    private sealed class ProjectInput
+    {
+        public Guid? ProjectId { get; set; }
+    }
+}

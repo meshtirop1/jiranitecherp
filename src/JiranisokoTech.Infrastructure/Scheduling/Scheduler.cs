@@ -39,8 +39,13 @@ public sealed class Scheduler(
     /// How often the loop wakes to see whether anything is due.
     /// </summary>
     /// <remarks>
-    /// A minute. Nothing here is due to the second — the shortest interval any job asks
-    /// for is an hour — and waking more often would spend a query on finding nothing.
+    /// A minute. Nothing here is due to the second — the shortest interval any job asks for is
+    /// five minutes — and waking more often would spend a query on finding nothing.
+    ///
+    /// This said "an hour" until section 26 was built, and it had been wrong since section 31:
+    /// the automation release asks for five minutes and the escalation sweep for thirty.
+    /// SchedulerTests now derives the bound from this tick over every job in the assembly, rather
+    /// than asserting an hour over a hand-written list of three that happened to exclude both.
     /// </remarks>
     private static readonly TimeSpan Tick = TimeSpan.FromMinutes(1);
 

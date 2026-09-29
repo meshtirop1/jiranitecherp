@@ -39,6 +39,22 @@ public enum NoticeKind
     /// the rule fired on already existed, and the rule is somebody deciding who should hear.
     /// </remarks>
     Automation = 5,
+
+    /// <summary>
+    /// The firm has not answered somebody it promised to answer.
+    /// </summary>
+    /// <remarks>
+    /// Section 26's escalation, and its own kind rather than reusing
+    /// <see cref="IncidentRaised"/> for the reason that one is its own kind: the two want
+    /// opposite reactions. An incident says something the firm runs is broken and everybody
+    /// should look; this says a person outside the room has been waiting longer than they were
+    /// told, and exactly one thing fixes it — somebody writing to them.
+    ///
+    /// Its own kind also means it can be muted on its own, and that is deliberate: the people
+    /// who need it are whoever answers for the person who did not reply, and everybody else
+    /// should be able to turn it off without silencing the work handed to them.
+    /// </remarks>
+    PromiseMissed = 6,
 }
 
 /// <summary>

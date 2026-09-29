@@ -1,9 +1,12 @@
 @using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
 @using JiranisokoTech.Application.Authorization
 @using JiranisokoTech.Application.Documents
 @using JiranisokoTech.Domain.Documents
+@using JiranisokoTech.Infrastructure.People
 @using Microsoft.AspNetCore.Authorization
 @inject DocumentService Files
+@inject PeopleQueries People
 @inject NavigationManager Navigation
 
 @*
@@ -144,8 +147,22 @@ else
             <span class="visually-hidden">A file</span>
             <input type="file" name="document" />
         </label>
-        <InputText @bind-Value="Attaching.Note" placeholder="What it is" />
-        <InputText @bind-Value="Attaching.Tags" placeholder="Tags" />
+        @*
+            Labelled, not only placeheld. A placeholder disappears the moment somebody types and
+            is read by nothing — and EveryPageOpensTests fails the build for an unlabelled control
+            on any page with a fixed address. These two escaped it for as long as this component's
+            only host was /clients/{Id:guid}, which that test skips because the route takes a
+            parameter. Two unlabelled boxes waiting for the first caller on a fixed address is not
+            a state to leave a shared component in.
+        *@
+        <label>
+            <span class="visually-hidden">What it is</span>
+            <InputText @bind-Value="Attaching.Note" placeholder="What it is" />
+        </label>
+        <label>
+            <span class="visually-hidden">Tags</span>
+            <InputText @bind-Value="Attaching.Tags" placeholder="Tags" />
+        </label>
         <button type="submit" class="button button--quiet">Attach</button>
     </EditForm>
 </AuthorizeView>
@@ -153,6 +170,9 @@ else
 @code {
     [CascadingParameter]
     private HttpContext? Request { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
 
     [Parameter]
     [EditorRequired]
@@ -281,8 +301,17 @@ else
         {
             await using var contents = file.OpenReadStream();
 
+            /*
+             * Whoever is signed in, and this used to be null on both paths here.
+             *
+             * Attachment.UploadedById exists and every hand-rolled upload screen fills it; the
+             * shared component did not, so a file attached through it had no uploader and the
+             * audit entry had nothing to name. On a client's contract that is untidy. On a
+             * screenshot attached to somebody's complaint it is the first question anybody asks.
+             */
             var attached = await Files.AttachAsync(
-                Kind, OwnerId, contents, file.FileName, file.Length, null, Attaching.Note);
+                Kind, OwnerId, contents, file.FileName, file.Length, await MineAsync(),
+                Attaching.Note);
 
             if (Attaching.Tags is { Length: > 0 })
             {
@@ -315,7 +344,7 @@ else
             await using var contents = file.OpenReadStream();
 
             await Files.AttachVersionAsync(
-                supersedes, contents, file.FileName, file.Length, null);
+                supersedes, contents, file.FileName, file.Length, await MineAsync());
 
             Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
         }
@@ -355,6 +384,27 @@ else
         {
             Refusal = exception.Message;
         }
+    }
+
+    /// <summary>
+    /// The staff record behind whoever is signed in, or nothing.
+    /// </summary>
+    /// <remarks>
+    /// Resolved here rather than taken as a parameter, deliberately. A parameter is a thing a
+    /// call site can forget, and forgetting it looks exactly like the fault this replaces — an
+    /// attachment with no uploader, which nothing anywhere complains about.
+    ///
+    /// Nothing is a real answer and not an error: a service account, or somebody whose record has
+    /// not been linked yet. An attachment with no uploader is worse than one with a name and much
+    /// better than a refusal, because the file is the thing somebody came here to keep.
+    /// </remarks>
+    private async Task<Guid?> MineAsync()
+    {
+        var user = (await AuthenticationState).User;
+
+        return Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var account)
+            ? await People.EmployeeForAccountAsync(account)
+            : null;
     }
 
     private sealed class AttachInput

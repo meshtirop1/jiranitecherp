@@ -55,10 +55,10 @@ per domain, with the same name in each layer.
 | Payroll | `Payroll` | ✅ |
 | Expenses | `Money` — claims, approved and paid with the rest of what leaves the firm | ✅ |
 | Procurement | `Procurement`, `Vendors` | ✅ |
-| Support | — | ☐ section 26 |
+| Support | `Support` — tickets, the promise clock, escalation | ✅ |
 | Incidents | `Incidents` | ✅ |
 | Documents | `Documents` | ✅ |
-| Knowledge | — | ☐ section 25 |
+| Knowledge | `Knowledge` — articles and their review dates | ✅ |
 | Notifications | `Notices`, `Mail` | ✅ |
 | Automation | `Automation`, `Scheduling`, `Messaging`, `Integrations` (outbound webhooks) | ◐ rules engine built; no deploy, approve or pay actions |
 | AI | `Ai` in Application and Infrastructure | ◐ assistant, project reading, recruitment drafts; see [ai](ai.md) |

@@ -131,6 +131,14 @@ public static class Documents
         // A face, not a personnel file. See the remarks on AttachedTo.Photo for why
         // this is the wide permission where Employee is the narrow one.
         AttachedTo.Photo => Permissions.EmployeesView,
+
+        /*
+         * Section 26. Whoever may read the help desk may open the files on it, and that is the
+         * whole rule — there is no private attachment. The thread has an audience and a file
+         * does not, because the download endpoint decides by the kind rather than by the row,
+         * so anything narrower here would be a promise this table cannot keep.
+         */
+        AttachedTo.Ticket => Permissions.SupportView,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown attachment kind."),
     };
 
@@ -149,6 +157,15 @@ public static class Documents
         AttachedTo.Contract => Permissions.ContractsManage,
         AttachedTo.Agreement => Permissions.ContractsManage,
         AttachedTo.Photo => Permissions.EmployeesManage,
+
+        /*
+         * support.ask rather than support.run, which is the narrower reading and the wrong one.
+         * Putting a screenshot on a ticket is the same act as writing an internal note — it is
+         * evidence going into the record, not words going out to the person who asked — and the
+         * developer who took the telephone call is exactly who has the picture. Everybody who
+         * works here holds support.ask, so this is open to the firm and to nobody outside it.
+         */
+        AttachedTo.Ticket => Permissions.SupportAsk,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown attachment kind."),
     };
 }

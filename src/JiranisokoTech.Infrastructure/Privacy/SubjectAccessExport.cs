@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using JiranisokoTech.Domain.Documents;
 using JiranisokoTech.Domain.Privacy;
+using JiranisokoTech.Domain.Support;
 using JiranisokoTech.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -147,7 +148,65 @@ public sealed class SubjectAccessExport(AppDbContext database)
             Offboarding = await database.Offboardings.AsNoTracking()
                 .Where(one => one.EmployeeId == id).ToListAsync(cancellationToken),
             Documents = await DocumentsAsync([AttachedTo.Employee, AttachedTo.Photo], id, cancellationToken),
+            SupportRequests = await SupportAsync(id, cancellationToken),
         };
+    }
+
+    /// <summary>
+    /// The help desk tickets this person raised, and what the firm said back to them.
+    /// </summary>
+    /// <remarks>
+    /// Section 26 arrived after this export and would have been silently missing from it: a
+    /// ticket carries somebody's name, their words and a promise made to them, which is exactly
+    /// the shape of thing section 55 exists to hand over. Nothing failed, because an export
+    /// cannot fail for leaving something out.
+    ///
+    /// <b>Only the half of the thread that was said to them.</b> An internal note is a
+    /// colleague's working remark about the request — "their own script is doing this, do not
+    /// say so yet" — and the whole of section 26 is arranged so that it never reaches the person
+    /// who asked. Putting it in here would make the subject access response the one route by
+    /// which it does, which is the opposite of what this file is for. That is a decision rather
+    /// than an oversight, and if the firm decides the other way the change is one line:
+    /// <c>Audience.Requester</c> becomes every audience.
+    ///
+    /// The files come back by ticket rather than by person, because an attachment's owner is the
+    /// ticket it hangs off and not the requester — so DocumentsAsync, which matches an owner
+    /// against one identifier, cannot find them.
+    /// </remarks>
+    private async Task<object> SupportAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var tickets = await database.Tickets.AsNoTracking()
+            .Where(one => one.From == Requester.Colleague && one.RequesterId == id)
+            .OrderBy(one => one.Number)
+            .ToListAsync(cancellationToken);
+
+        if (tickets.Count == 0)
+        {
+            return Array.Empty<object>();
+        }
+
+        var raised = tickets.Select(one => one.Id).ToList();
+
+        var files = await database.Attachments.AsNoTracking()
+            .Where(one => one.Kind == AttachedTo.Ticket && raised.Contains(one.OwnerId))
+            .Select(one => new { one.OwnerId, one.FileName, one.UploadedAt, one.SizeBytes })
+            .ToListAsync(cancellationToken);
+
+        return tickets.Select(one => new
+        {
+            one.Reference,
+            one.Subject,
+            one.Priority,
+            one.Status,
+            one.RaisedAt,
+            one.RespondBy,
+            one.FirstRespondedAt,
+            one.ResolvedAt,
+            Conversation = one.AsTheySeeIt.Select(said => new { said.At, said.Text }),
+            Documents = files
+                .Where(file => file.OwnerId == one.Id)
+                .Select(file => new { file.FileName, file.UploadedAt, file.SizeBytes }),
+        });
     }
 
     private async Task<object?> CandidateAsync(Guid id, CancellationToken cancellationToken)

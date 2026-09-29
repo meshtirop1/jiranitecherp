@@ -152,44 +152,51 @@ public class SchedulerTests
     }
 
     /// <summary>
-    /// Every job's interval is at least an hour.
+    /// No job asks to run more often than the scheduler wakes.
     /// </summary>
     /// <remarks>
-    /// The scheduler wakes once a minute, so a job asking for less would run late every
-    /// time and its history would be a list of near misses. Asserted rather than
-    /// documented, because the next job somebody adds is where it would be got wrong.
+    /// The loop wakes once a minute, so a job asking for less would run late every time and its
+    /// history would be a list of near misses.
+    ///
+    /// <b>This used to assert an hour, over a hand-written list of three jobs.</b> There are
+    /// eleven, and two of them ask for less than an hour: the automation release every five
+    /// minutes, and section 26's escalation sweep every thirty. Both are deliberate and both are
+    /// fine against a one-minute tick — but the test said "every job's interval is at least an
+    /// hour" and had been passing for months because neither of them was in its list, and
+    /// <c>Scheduler</c>'s own comment repeated the claim. A test that names its subjects tests
+    /// whatever was true on the day somebody wrote it down.
+    ///
+    /// So the set comes from the assembly and the bound is the real one: longer than the tick.
     /// </remarks>
     [Fact]
     public void No_job_asks_to_run_more_often_than_the_scheduler_wakes()
     {
-        IRecurringJob[] jobs =
-        [
-            new WarnAboutLapsingQualifications(null!, null!, null!),
-            new WarnAboutExpiringContracts(null!, null!, null!),
-            new PruneJobHistory(null!, null!),
-        ];
+        var tooOften = Jobs()
+            .Where(job => job.Every <= TimeSpan.FromMinutes(1))
+            .Select(job => $"  {job.GetType().Name} asks for {job.Every}")
+            .ToList();
 
-        Assert.All(jobs, job => Assert.True(job.Every >= TimeSpan.FromHours(1)));
+        Assert.True(
+            tooOften.Count == 0,
+            "The scheduler wakes once a minute, so these jobs would run late every time and "
+            + "their history would be a list of near misses:\n" + string.Join('\n', tooOften));
     }
 
     /// <summary>
     /// Every job has a name and says what it is for.
     /// </summary>
     /// <remarks>
-    /// The name keys the run history, so it has to be stable and unique — two jobs sharing
-    /// one would make each look as though it ran twice as often as it did. The description
-    /// is what the monitoring screen shows, and a job nobody can identify is one nobody
-    /// notices has stopped.
+    /// The name keys the run history, so it has to be stable and unique — two jobs sharing one
+    /// would make each look as though it ran twice as often as it did. The description is what
+    /// the monitoring screen shows, and a job nobody can identify is one nobody notices has
+    /// stopped.
     /// </remarks>
     [Fact]
     public void Every_job_is_named_and_described()
     {
-        IRecurringJob[] jobs =
-        [
-            new WarnAboutLapsingQualifications(null!, null!, null!),
-            new WarnAboutExpiringContracts(null!, null!, null!),
-            new PruneJobHistory(null!, null!),
-        ];
+        var jobs = Jobs();
+
+        Assert.NotEmpty(jobs);
 
         Assert.All(jobs, job =>
         {
@@ -197,8 +204,92 @@ public class SchedulerTests
             Assert.False(string.IsNullOrWhiteSpace(job.Description));
         });
 
-        Assert.Equal(
-            jobs.Length, jobs.Select(job => job.Name).Distinct(StringComparer.Ordinal).Count());
+        var shared = jobs
+            .GroupBy(job => job.Name, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => $"  {group.Key}: "
+                + string.Join(", ", group.Select(job => job.GetType().Name)))
+            .ToList();
+
+        Assert.True(
+            shared.Count == 0,
+            "These jobs share a name, so the run history cannot tell them apart and each looks "
+            + "as though it ran twice as often as it did:\n" + string.Join('\n', shared));
+    }
+
+    /// <summary>
+    /// Every job that exists is one the scheduler has been told about.
+    /// </summary>
+    /// <remarks>
+    /// The fault this catches is the one this codebase keeps producing and already has a test for
+    /// at two other levels: a capability built carefully, tested, and never wired to anything. A
+    /// job nobody registered runs never, its history stays empty, and the monitoring screen has no
+    /// row to be missing — so there is nothing anywhere to look wrong.
+    ///
+    /// Read out of the source rather than out of a container, because building the real container
+    /// needs a database and the question is about a line of registration code.
+    /// </remarks>
+    [Fact]
+    public void Every_job_that_exists_is_registered_with_the_scheduler()
+    {
+        var wiring = File.ReadAllText(Path.Combine(
+            Root(), "src", "JiranisokoTech.Infrastructure", "ServiceCollectionExtensions.cs"));
+
+        var unregistered = Jobs()
+            .Select(job => job.GetType().Name)
+            .Where(name => !wiring.Contains($"IRecurringJob, {name}>", StringComparison.Ordinal)
+                && !wiring.Contains($".{name}>", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.True(
+            unregistered.Count == 0,
+            "These recurring jobs are written and nothing has been told to run them, so they run "
+            + "never and the monitoring screen has no row to be missing: "
+            + string.Join(", ", unregistered));
+    }
+
+    /// <summary>
+    /// Every recurring job in the infrastructure assembly, built with nothing in it.
+    /// </summary>
+    /// <remarks>
+    /// Constructed with nulls, which is what the hand-written lists this replaced did too. It is
+    /// safe for exactly what is asked of them here: <c>Name</c>, <c>Description</c> and
+    /// <c>Every</c> are literals on every one of these, and nothing below calls <c>RunAsync</c>.
+    /// </remarks>
+    private static List<IRecurringJob> Jobs() =>
+        [.. typeof(Scheduler).Assembly
+            .GetTypes()
+            .Where(type => typeof(IRecurringJob).IsAssignableFrom(type)
+                && type is { IsAbstract: false, IsInterface: false })
+            .OrderBy(type => type.Name, StringComparer.Ordinal)
+            .Select(Empty)];
+
+    private static IRecurringJob Empty(Type type)
+    {
+        var constructor = type.GetConstructors().Single();
+
+        var nothing = constructor.GetParameters()
+            .Select(parameter => parameter.ParameterType.IsValueType
+                ? Activator.CreateInstance(parameter.ParameterType)
+                : null)
+            .ToArray();
+
+        return (IRecurringJob)constructor.Invoke(nothing);
+    }
+
+    private static string Root()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (directory is not null
+            && !File.Exists(Path.Combine(directory.FullName, "JiranisokoTech.slnx")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.NotNull(directory);
+
+        return directory!.FullName;
     }
 
     // --- the counters -------------------------------------------------------

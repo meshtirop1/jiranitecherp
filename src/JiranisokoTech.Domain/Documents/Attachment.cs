@@ -56,6 +56,28 @@ public enum AttachedTo
     /// and reusing either would have made it so — see section 17.
     /// </remarks>
     Agreement = 8,
+
+    /// <summary>
+    /// A file on somebody's request for help.
+    /// </summary>
+    /// <remarks>
+    /// Section 26. Nearly every real support request arrives with a photograph of a screen, and
+    /// a help desk that cannot hold one makes the first thing anybody sends the one thing the
+    /// record does not have.
+    ///
+    /// Its own kind rather than <see cref="Client"/>, even though most of these files come from
+    /// a client. A screenshot belongs to the one conversation it explains and not to the
+    /// relationship: filing it on the client would put it in a list beside the signed contracts,
+    /// where somebody opening the account a year later reads it as a document the firm keeps
+    /// rather than as evidence attached to a complaint that was settled.
+    ///
+    /// It carries no audience. The thread distinguishes what was said to the requester from what
+    /// was said inside, and a file has no such half — anybody who may read the desk may open any
+    /// file on it. That is the honest arrangement rather than the flattering one: a firm that
+    /// offered a private attachment here would be promising a guarantee this table cannot keep,
+    /// because the download endpoint asks the kind and not the row.
+    /// </remarks>
+    Ticket = 9,
 }
 
 /// <summary>

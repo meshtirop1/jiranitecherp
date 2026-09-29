@@ -36,6 +36,7 @@ namespace JiranisokoTech.Infrastructure.Automation;
 /// </remarks>
 public sealed class ActionPerformer(
     AppDbContext database,
+    People.PeopleQueries people,
     WorkService work,
     NoticeService notices,
     OnboardingService onboarding,
@@ -377,29 +378,15 @@ public sealed class ActionPerformer(
     /// nobody on exactly the occasion it exists for. The head of the department they are joining
     /// is who that manager answers to, and the right person to hear first.
     /// </remarks>
-    private async Task<List<Guid>> ManagerOfAsync(Guid person, CancellationToken cancellationToken)
-    {
-        var employee = await database.Employees.AsNoTracking()
-            .Where(one => one.Id == person)
-            .Select(one => new { one.ReportsToId, one.DepartmentId })
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (employee?.ReportsToId is { } manager)
-        {
-            return [manager];
-        }
-
-        if (employee?.DepartmentId is not { } department)
-        {
-            return [];
-        }
-
-        return await database.Departments.AsNoTracking()
-            .Where(one => one.Id == department && one.HeadEmployeeId != null
-                && one.HeadEmployeeId != person)
-            .Select(one => one.HeadEmployeeId!.Value)
-            .ToListAsync(cancellationToken);
-    }
+    /// <remarks>
+    /// The query moved to <c>PeopleQueries.WhoAnswersForAsync</c> when section 26's sweep for
+    /// missed promises needed the same answer. Two copies of "who is this person's manager" is
+    /// two answers the day somebody changes one, and the reasoning that used to live here — why
+    /// the department head is the fallback rather than nobody — went with it.
+    /// </remarks>
+    private Task<List<Guid>> ManagerOfAsync(
+        Guid person, CancellationToken cancellationToken) =>
+        people.WhoAnswersForAsync(person, cancellationToken);
 
     private static string Clip(string text, int longest) =>
         text.Length > longest ? text[..longest] : text;

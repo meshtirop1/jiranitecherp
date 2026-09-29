@@ -1922,3 +1922,56 @@ code.key {
     background: var(--surface);
     color: var(--ink);
 }
+
+/*
+ * A help desk thread, and the one distinction on the page that must never be ambiguous.
+ *
+ * Section 26 keeps two kinds of line in one list: what was said to the person who asked, and
+ * what colleagues said to each other about it. They have to sit in one list, because the order
+ * they were written in is the only thing that explains why the answer says what it says — and
+ * they have to be unmistakable, because the whole cost of getting it wrong falls in one
+ * direction. Reading a private note as a reply loses nothing; reading a reply as a private note
+ * means somebody writes their real opinion of a client into a message that has already left the
+ * building.
+ *
+ * So the difference is carried three ways over: a coloured edge, a ground, and a line of words
+ * above the text saying who it went to. One of them would be enough for somebody looking; three
+ * are there for somebody skimming at the end of a long day, which is when this mistake is made.
+ */
+.thread {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-width: 52rem;
+}
+
+.said {
+    padding: 0.6rem 0.85rem;
+    margin-bottom: 0.6rem;
+    border-left: 3px solid var(--line);
+    border-radius: 0 4px 4px 0;
+    background: var(--surface-sunken);
+}
+
+/*
+ * Said to the person who asked, or by them. The accent edge is the application's own blue,
+ * which everywhere else means "this is the thing you came here for" — and here it means "these
+ * words are outside the firm", which is the same warning read from the other side.
+ */
+.said--out {
+    border-left-color: var(--accent);
+    background: var(--surface);
+}
+
+.said__who {
+    margin: 0 0 0.3rem;
+    font-size: var(--text-xs);
+    color: var(--ink-quiet);
+}
+
+/* Somebody's own paragraphs, kept as they typed them, and a pasted URL must not widen the page. */
+.said__text {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}

@@ -228,6 +228,73 @@ public sealed class PeopleQueries(AppDbContext database)
         return roots.Select(root => Build(root, children)).ToList();
     }
 
+    /// <summary>
+    /// Who answers for this person: their manager, or the head of their department.
+    /// </summary>
+    /// <remarks>
+    /// The fallback is not a convenience. A reporting line is often unset for exactly the people
+    /// this question gets asked about — somebody hired last week, somebody moved between teams —
+    /// and "tell the manager" reaching nobody on those occasions would make every escalation
+    /// built on it silently do nothing.
+    ///
+    /// Never the person themselves. A head of department whose own promise was missed must not be
+    /// escalated to about it, because a notice from yourself about yourself is the one somebody
+    /// stops reading first.
+    ///
+    /// Lives here rather than beside its first caller because it has two: section 31's automation
+    /// action that notifies a manager, and section 26's sweep for missed promises. Two copies of
+    /// "who is this person's manager" is two answers the day somebody changes one.
+    /// </remarks>
+    public async Task<List<Guid>> WhoAnswersForAsync(
+        Guid person, CancellationToken cancellationToken = default)
+    {
+        var employee = await database.Employees
+            .AsNoTracking()
+            .Where(one => one.Id == person)
+            .Select(one => new { one.ReportsToId, one.DepartmentId })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (employee?.ReportsToId is { } manager && manager != person)
+        {
+            return [manager];
+        }
+
+        if (employee?.DepartmentId is not { } department)
+        {
+            return [];
+        }
+
+        return await database.Departments
+            .AsNoTracking()
+            .Where(one => one.Id == department
+                && one.HeadEmployeeId != null
+                && one.HeadEmployeeId != person)
+            .Select(one => one.HeadEmployeeId!.Value)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Everybody who heads a department, for the occasions that have no one person to tell.
+    /// </summary>
+    /// <remarks>
+    /// The fallback of last resort, and it is deliberately the smallest set that certainly
+    /// contains somebody who can act. There is no "support lead" anywhere in this schema and
+    /// inventing one would be a setting nobody configures — so an unanswered request with nobody
+    /// on it reaches the people who answer for the firm's departments, because it is a failure of
+    /// the desk rather than of a person.
+    ///
+    /// Active departments only: a head still recorded against a department the firm has closed is
+    /// not somebody with anything to do about today's queue.
+    /// </remarks>
+    public Task<List<Guid>> WhoHeadsADepartmentAsync(
+        CancellationToken cancellationToken = default) =>
+        database.Departments
+            .AsNoTracking()
+            .Where(one => one.IsActive && one.HeadEmployeeId != null)
+            .Select(one => one.HeadEmployeeId!.Value)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
     private static ChartNode Build(PersonRow person, Dictionary<Guid, List<PersonRow>> children) =>
         new(person, children.TryGetValue(person.Id, out var reports)
             ? reports.Select(report => Build(report, children)).ToList()
