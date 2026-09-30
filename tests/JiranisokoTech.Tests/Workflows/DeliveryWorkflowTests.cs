@@ -249,6 +249,41 @@ public static partial class DeliveryWorkflow
         var page = await (await developer.GetAsync($"/work/{item}")).Content.ReadAsStringAsync();
 
         Assert.Contains(Sha[..7], page);
+
+        /*
+         * Section 71's stream, on the one page in the suite where every kind of line it can draw
+         * has a real fact behind it: a move made through the board, a push, a pull request, a
+         * merge that arrived through the outbox, and a deployment. The unit tests word the
+         * sentences; this is the only thing that proves StoryFactsAsync's projection translates
+         * through the work item's copy-returning Comments and DoneWhen navigations, and that the
+         * component is in a folder Razor can resolve — a tag it cannot resolve is emitted as
+         * unknown HTML and dropped by the browser, which is how the client page's attachments
+         * section was a heading with nothing under it for weeks.
+         */
+        Assert.Contains("What has happened", page);
+        Assert.Contains("was merged.", page);
+        Assert.Contains("Reached production.", page);
+
+        /*
+         * And what the developer does NOT get. A Developer holds tasks.view_own and repos.view and
+         * not audit.view, so the moves — which for InReview, Blocked and Deployed exist in no
+         * column anywhere — are missing from their stream. The point of the assertion is the
+         * paragraph: a stream that silently omitted them would read as work nobody had ever moved.
+         */
+        Assert.DoesNotContain("Moved to in review.", page);
+        Assert.Contains("They are in the change trail, which", page);
+
+        /*
+         * The project manager holds all three, so the same page shows the moves and drops the
+         * paragraph. Read as a second person rather than by granting the developer another role,
+         * because the thing being checked is that the page answers to the permission and not that
+         * the sentence can be made to appear.
+         */
+        var reading = await (await manager.GetAsync($"/work/{item}")).Content.ReadAsStringAsync();
+
+        Assert.Contains("Moved to in review.", reading);
+        Assert.DoesNotContain("They are in the change trail, which", reading);
+        Assert.Contains($"/audit?type=WorkItem&amp;subject={item}", reading);
     }
 
     private static async Task DeliverAsync(ApplicationFactory factory, string kind, string payload, string id)

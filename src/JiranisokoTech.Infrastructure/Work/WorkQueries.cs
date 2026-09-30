@@ -227,7 +227,88 @@ public sealed class WorkQueries(AppDbContext database)
                 status => status,
                 status => items.Where(item => item.Status == status).ToList());
     }
+
+    /// <summary>
+    /// The dated facts the row itself holds, for a stream of what happened to one work item.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="ItemAsync"/> rather than folded into <c>WorkItemRow</c>, because
+    /// every screen that shows a work item reads that row — the board reads forty of them — and none
+    /// of them needs the comment and criteria timestamps. A row that carried two collections would
+    /// make the board pay for them.
+    ///
+    /// Three moments are stored on the row and three are not: <c>StartedAt</c> and
+    /// <c>CompletedAt</c> exist, and the moves to InReview, Blocked and Deployed have no column of
+    /// their own anywhere. Those come from the change trail instead, which is why a reader without
+    /// <c>audit.view</c> gets a shorter stream and is told so rather than left to assume the work
+    /// was never moved.
+    ///
+    /// Comment BODIES are deliberately not carried. The thread further down the same page already
+    /// prints every one of them in full, and a stream that repeated them would stop being a stream.
+    /// The line says somebody said something and when, and links to where it is.
+    ///
+    /// An empty record for an identifier that is not there, not null — the same choice
+    /// <c>DayOfWorkAsync</c> makes for an unclaimed handle. The caller has already established the
+    /// item exists by the time it asks this, so a null here would be a second thing to guard
+    /// against that cannot happen.
+    /// </remarks>
+    public async Task<WorkStoryFacts> StoryFactsAsync(
+        Guid id, CancellationToken cancellationToken = default)
+    {
+        var facts = await database.WorkItems
+            .AsNoTracking()
+            .Where(item => item.Id == id)
+            .Select(item => new
+            {
+                item.StartedAt,
+                item.CompletedAt,
+                item.Status,
+                Comments = item.Comments
+                    .Select(comment => new SaidRow(
+                        comment.ByEmployeeId, comment.At, comment.EditedAt))
+                    .ToList(),
+
+                /*
+                 * A criterion struck out for a reason is met without being ticked, so it has no
+                 * MetAt and cannot be dated. It is left off rather than dated on something else:
+                 * a line invented at the item's creation time would put a decision taken last
+                 * week at the top of the stream.
+                 */
+                Ticked = item.DoneWhen
+                    .Where(line => line.MetAt != null)
+                    .Select(line => new TickedRow(line.Text, line.MetAt!.Value, line.MetById))
+                    .ToList(),
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return facts is null
+            ? new WorkStoryFacts(null, null, WorkItemStatus.Todo, [], [])
+            : new WorkStoryFacts(
+                facts.StartedAt, facts.CompletedAt, facts.Status, facts.Comments, facts.Ticked);
+    }
 }
+
+/// <summary>Somebody wrote on the thread.</summary>
+public sealed record SaidRow(Guid ByEmployeeId, DateTimeOffset At, DateTimeOffset? EditedAt);
+
+/// <summary>A criterion somebody ticked, and when.</summary>
+public sealed record TickedRow(string Text, DateTimeOffset MetAt, Guid? MetById);
+
+/// <summary>
+/// What one work item's own row knows about when things happened to it.
+/// </summary>
+/// <remarks>
+/// <c>Status</c> is here because <c>CompletedAt</c> means two different things. <c>MoveTo</c>
+/// stamps it for Done AND for Cancelled, and the move from Done to Deployed deliberately leaves it
+/// at the acceptance moment. So a sentence worded off that column alone would tell every cancelled
+/// card it had been accepted.
+/// </remarks>
+public sealed record WorkStoryFacts(
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? CompletedAt,
+    WorkItemStatus Status,
+    IReadOnlyList<SaidRow> Comments,
+    IReadOnlyList<TickedRow> Ticked);
 
 public sealed record WorkItemRow(
     Guid Id,

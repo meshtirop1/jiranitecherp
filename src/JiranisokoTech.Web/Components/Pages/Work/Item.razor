@@ -8,6 +8,7 @@
 @using JiranisokoTech.Domain.Engineering
 @using JiranisokoTech.Infrastructure.Engineering
 @using JiranisokoTech.Infrastructure.Work
+@using JiranisokoTech.Infrastructure.Audit
 @using System.Security.Claims
 @using JiranisokoTech.Web.Authorization
 @using Microsoft.AspNetCore.Authorization
@@ -16,6 +17,7 @@
 @inject PeopleQueries People
 @inject WorkService Service
 @inject EngineeringQueries Engineering
+@inject AuditQueries Trail
 
 <PageTitle>@(Row?.Title ?? "Work") — Jiranisoko Delivery</PageTitle>
 
@@ -164,6 +166,26 @@ else
     </AuthorizeView>
 
     @*
+        Section 71's activity timeline, above the four tables it is drawn from.
+
+        This order is the argument: the stream is the answer to "what happened to this", and the
+        tables below are the evidence behind it. A reader who wants the branch a commit was on, or
+        the URL of a build log, goes down to the table; a reader who wants the story reads one
+        column and stops.
+
+        Guarded on Facts rather than on Row, because Facts is what the stream cannot be built
+        without and it is null until the read finishes. Everything else it takes is empty-initialised
+        and draws nothing.
+    *@
+    @if (Facts is { } story)
+    {
+        <Story Lines="@Streamed.For(story, Evidence, Changes, Names, Handles)"
+               Withheld="@Withheld"
+               Cut="@Cut"
+               TrailHref="@TrailHref" />
+    }
+
+    @*
         What the repositories say was done. The whole point of watching them:
         nobody wrote any of this, and the reference in a branch name is the only
         thing that put it here.
@@ -202,7 +224,7 @@ else
                 <p>
                     @if (Evidence.LatestBuild is { } latest)
                     {
-                        <span class="pill @Tone(latest.Outcome)">
+                        <span class="pill @Words.PillFor(latest.Outcome)">
                             @Words.For(latest.Outcome)
                         </span>
                     }
@@ -281,7 +303,7 @@ else
                                 <td><code>@commit.Short</code> @commit.Message</td>
                                 <td><code>@commit.Branch</code></td>
                                 <td>@commit.Author</td>
-                                <td>@commit.At.ToString("d MMM yyyy HH:mm")</td>
+                                <td>@commit.At.ToLocalTime().ToString("d MMM yyyy HH:mm")</td>
                             </tr>
                         }
                     </tbody>
@@ -322,7 +344,7 @@ else
                                 </td>
                                 <td><code>@build.Short</code></td>
                                 <td>
-                                    <span class="pill @Tone(build.Outcome)">
+                                    <span class="pill @Words.PillFor(build.Outcome)">
                                         @Words.For(build.Outcome)
                                     </span>
                                 </td>
@@ -390,11 +412,11 @@ else
                                 </td>
                                 <td><code>@deployment.Short</code></td>
                                 <td>
-                                    <span class="pill @Tone(deployment.State)">
+                                    <span class="pill @Words.PillFor(deployment.State)">
                                         @Words.For(deployment.State)
                                     </span>
                                 </td>
-                                <td>@deployment.At.ToString("d MMM yyyy HH:mm")</td>
+                                <td>@deployment.At.ToLocalTime().ToString("d MMM yyyy HH:mm")</td>
                                 <td>
                                     @if (deployment.Url is { } run)
                                     {
@@ -466,6 +488,58 @@ else
     private string? Done { get; set; }
 
     private WorkEvidence Evidence { get; set; } = new([], []);
+
+    /// <summary>
+    /// The dated facts on the row itself, for the stream. Null until the read finishes.
+    /// </summary>
+    /// <remarks>
+    /// Nullable rather than <c>default!</c>, and so are the three below. Under PostgreSQL a query
+    /// yields before it completes, so a property marked <c>default!</c> and read by the markup
+    /// before <c>OnInitializedAsync</c> is done is an error screen in production and fine under
+    /// SQLite — which is how the security centre shipped broken. RenderedBeforeLoadedTests fails
+    /// the build for it now.
+    /// </remarks>
+    private WorkStoryFacts? Facts { get; set; }
+
+    /// <summary>The change trail for this item, or null where the reader may not read it.</summary>
+    private AuditPage? Changes { get; set; }
+
+    private Dictionary<Guid, string> Names { get; set; } = [];
+
+    private Dictionary<string, string> Handles { get; set; } = [];
+
+    /// <summary>
+    /// What this reader is not being shown, said plainly. Null when they see everything.
+    /// </summary>
+    /// <remarks>
+    /// Three of the seven statuses have no column of their own, so the moves between them exist
+    /// only in the change trail — and the people who open this page all day mostly cannot read it.
+    /// A stream that simply omitted those lines would read as a work item nobody had ever moved,
+    /// which is a worse falsehood than saying what is missing.
+    /// </remarks>
+    private string? Withheld => Changes is not null
+        ? null
+        : "Moves, assignments and edits are not in this list. They are in the change trail, which "
+            + "your account cannot read, so this shows what the repositories reported and what "
+            + "people wrote here.";
+
+    /// <summary>What was left off for length. Null when nothing was.</summary>
+    private string? Cut => Changes is { HasMore: true } page
+        ? $"The {AuditQueries.PageSize} most recent changes are included; "
+            + $"{Words.Count(page.Total - AuditQueries.PageSize, "older one")} are on the trail."
+        : null;
+
+    /// <summary>
+    /// Where the whole trail for this item is.
+    /// </summary>
+    /// <remarks>
+    /// Both halves of the filter in the address, because the trail page's own read wants both. Also
+    /// the first thing in the application to link there at all: the subject parameter has been
+    /// supported since that page was written and nothing used it.
+    /// </remarks>
+    private string? TrailHref => Changes is null || Row is null
+        ? null
+        : $"/audit?type={nameof(WorkItem)}&subject={Row.Id}";
 
     /// <summary>Where this work stands: what was built of it, and how far out it got.</summary>
     /// <remarks>
@@ -562,7 +636,33 @@ else
 
         if (Row is not null && MayRead)
         {
-            Evidence = await Engineering.EvidenceForAsync(Row.Id);
+            /*
+             * Only for a reader who can see the result. This ran for everybody who could read the
+             * item and its output is drawn inside an AuthorizeView on repos.view, so a designer or
+             * a support agent paid for four queries whose rows were then discarded — and the stream
+             * beside them would have made that five.
+             */
+            if (held.Contains(Permissions.ReposView))
+            {
+                Evidence = await Engineering.EvidenceForAsync(Row.Id);
+                Handles = await Engineering.ClaimedHandlesAsync();
+            }
+
+            Facts = await Queries.StoryFactsAsync(Row.Id);
+
+            // Includes people who have left. The roster loaded above is filtered to active staff
+            // and would render a leaver's comment and a leaver's tick with a blank name.
+            Names = await People.NamesAsync();
+
+            if (held.Contains(Permissions.AuditView))
+            {
+                /*
+                 * Both halves of the filter. The index is (SubjectType, SubjectId) with the type
+                 * first, so a subject-only filter cannot use it and scans what its own remark calls
+                 * the largest table in the database within a year — on every view of a work item.
+                 */
+                Changes = await Trail.RecentAsync(nameof(WorkItem), null, Row.Id);
+            }
         }
 
         /*
@@ -624,50 +724,6 @@ else
 
         await LoadAsync();
     }
-
-    /// <summary>The colour a build outcome gets, not the word for it.</summary>
-    /// <remarks>
-    /// The words are in <see cref="Words"/>, where every other screen gets them; this is only
-    /// the pill. It is a method rather than the inline conditional the pull request column
-    /// uses because four outcomes do not fit one, and because the summary line and the table
-    /// under it have to agree: a failed build shown red in the sentence and grey in the table
-    /// is a reader deciding this page is unreliable and going to the host to check, which is
-    /// the habit the panel was built to remove.
-    ///
-    /// Cancelled is quiet rather than red on purpose. Somebody pushed again or the queue was
-    /// drained; nothing was broken, and marking it as a failure puts a red row against work
-    /// that was fine.
-    /// </remarks>
-    private static string Tone(BuildOutcome outcome) => outcome switch
-    {
-        BuildOutcome.Passed => "pill--done",
-        BuildOutcome.Failed => "pill--danger",
-
-        // Its own colour, not the waiting one. A build that is running is not queued.
-        BuildOutcome.Running => "pill--running",
-
-        /*
-         * Amber rather than the quiet grey a cancelled build gets. A cancelled build asks
-         * nothing of anybody; a blocked one is waiting for a person to open a gate, and drawn
-         * the same colour the second one is invisible on a page somebody is scanning.
-         */
-        BuildOutcome.Blocked => "pill--wait",
-        _ => "pill--quiet",
-    };
-
-    /// <remarks>
-    /// Its own overload rather than a shared one over both enums, because a build and a
-    /// deployment do not have the same middle: a build running is a wait, and a deployment
-    /// running is the few minutes in which an environment is neither the old version nor the
-    /// new one. They share the amber for now, and a change to either should not silently be a
-    /// change to both.
-    /// </remarks>
-    private static string Tone(DeploymentState state) => state switch
-    {
-        DeploymentState.Succeeded => "pill--done",
-        DeploymentState.Failed => "pill--danger",
-        _ => "pill--running",
-    };
 
     private sealed class BlockInput
     {

@@ -20,19 +20,19 @@ public sealed class EngineeringQueries(AppDbContext database)
     /// <summary>
     /// Every repository, with enough beside it to tell whether it is working.
     /// </summary>
+    /// <param name="projectId">
+    /// Only the repositories filed under one project, or all of them.
+    /// </param>
     /// <remarks>
     /// The counts and the last delivery are the whole value of this screen. A
     /// list of repository names tells nobody anything they could not get from
     /// GitHub; "connected three weeks ago, nothing received since" is the thing
     /// worth having, and it is the thing a naive list would hide.
-    /// </remarks>
-    /// <param name="projectId">
-    /// Only the repositories filed under one project, or all of them.
-    /// </param>
-    /// <remarks>
-    /// The filter is here rather than in the caller because <see cref="RepositoryRow"/> carries the
-    /// project's NAME and not its identifier, so a page narrowing the list itself would be matching
-    /// on a string two projects may share. The key is right here and is the thing to match on.
+    ///
+    /// The project filter is here rather than in the caller because <see cref="RepositoryRow"/>
+    /// carries the project's NAME and not its identifier, so a page narrowing the list itself would
+    /// be matching on a string two projects may share. The key is right here and is the thing to
+    /// match on.
     ///
     /// Added for the project page, which linked its client and nothing else — section 98's
     /// navigation goes project → repository and there was no way to make that hop.
@@ -401,7 +401,10 @@ public sealed class EngineeringQueries(AppDbContext database)
                 one.DeployedBy,
                 one.State,
                 one.At,
-                one.Url))
+                one.Url)
+            {
+                FinishedAt = one.FinishedAt,
+            })
             .ToListAsync(cancellationToken);
 
         return new DayOfWork(
@@ -422,6 +425,44 @@ public sealed class EngineeringQueries(AppDbContext database)
     /// commits and the pull request without anybody having written a status
     /// update — which is the promise the brief opens with.
     /// </remarks>
+    /// <summary>
+    /// Every provider handle somebody on the staff list has claimed, against their name.
+    /// </summary>
+    /// <remarks>
+    /// A stream of what happened to a work item has to name the person who pushed, and the only
+    /// thing the provider sends is a login. <see cref="Contributor"/> is the claim that joins the
+    /// two, and this returns the whole of it in one query because resolving a name per line is the
+    /// N+1 a stream of forty commits makes forty times.
+    ///
+    /// Deliberately not narrowed to current staff. Somebody who has left still pushed the commit,
+    /// and a stream that renders their line blank has lost the fact rather than protected anything.
+    /// That is the same reason <c>PeopleQueries.NamesAsync</c> includes leavers and the roster does
+    /// not — the roster answers who to assign work to, which is a different question.
+    ///
+    /// A handle claimed by two providers with the same spelling would collide, and the last one
+    /// read would win. Both would be the same person under any sane claim, so the collision costs
+    /// nothing worth a composite key on a screen.
+    /// </remarks>
+    public async Task<Dictionary<string, string>> ClaimedHandlesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var claims = await database.Contributors
+            .AsNoTracking()
+            .Join(
+                database.Employees.AsNoTracking(),
+                contributor => contributor.EmployeeId,
+                employee => employee.Id,
+                (contributor, employee) => new { contributor.Handle, employee.FullName })
+            .ToListAsync(cancellationToken);
+
+        return claims
+            .GroupBy(one => one.Handle, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.First().FullName,
+                StringComparer.OrdinalIgnoreCase);
+    }
+
     public async Task<WorkEvidence> EvidenceForAsync(
         Guid workItemId, CancellationToken cancellationToken = default)
     {
@@ -450,6 +491,11 @@ public sealed class EngineeringQueries(AppDbContext database)
                 pullRequest.Branch,
                 pullRequest.State,
                 pullRequest.OpenedAt,
+                pullRequest.ClosedAt,
+                Verdicts = pullRequest.Reviews
+                    .OrderBy(review => review.At)
+                    .Select(review => new ReviewRow(review.Reviewer, review.Verdict, review.At))
+                    .ToList(),
                 Repository = database.Repositories
                     .Where(repository => repository.Id == pullRequest.RepositoryId)
                     .Select(repository => repository.Owner + "/" + repository.Name)
@@ -490,7 +536,10 @@ public sealed class EngineeringQueries(AppDbContext database)
                 one.DeployedBy,
                 one.State,
                 one.At,
-                one.Url))
+                one.Url)
+            {
+                FinishedAt = one.FinishedAt,
+            })
             .ToListAsync(cancellationToken);
 
         return new WorkEvidence(
@@ -504,7 +553,11 @@ public sealed class EngineeringQueries(AppDbContext database)
                 row.State,
                 row.OpenedAt,
                 row.Reviews,
-                row.Approved && !row.Blocked))])
+                row.Approved && !row.Blocked)
+            {
+                ClosedAt = row.ClosedAt,
+                Verdicts = row.Verdicts,
+            })])
         {
             Builds = builds,
             Deployments = deployments,
@@ -559,7 +612,10 @@ public sealed class EngineeringQueries(AppDbContext database)
                     one.DeployedBy,
                     one.State,
                     one.At,
-                    one.Url))
+                    one.Url)
+                {
+                    FinishedAt = one.FinishedAt,
+                })
                 .ToListAsync(cancellationToken);
 
             live.Add(new LiveIn(environment, latest, totals.GetValueOrDefault(environment)));
@@ -615,6 +671,15 @@ public sealed record CommitRow(
     public string Short => Sha.Length > 7 ? Sha[..7] : Sha;
 }
 
+/// <summary>One reviewer's verdict, and when they gave it.</summary>
+/// <remarks>
+/// <c>PullRequestRow</c> kept only a COUNT of reviews and a single <c>IsApproved</c> flag, so the
+/// facts behind "Sarah approved #182 at 13:58" were stored in the database and unreachable from any
+/// screen. A count answers "has anybody looked", which is the pull request table's question; it
+/// cannot answer "what happened, in order", which is section 71's.
+/// </remarks>
+public sealed record ReviewRow(string Reviewer, ReviewVerdict Verdict, DateTimeOffset At);
+
 public sealed record PullRequestRow(
     int Number,
     string Title,
@@ -624,7 +689,22 @@ public sealed record PullRequestRow(
     PullRequestState State,
     DateTimeOffset OpenedAt,
     int Reviews,
-    bool IsApproved);
+    bool IsApproved)
+{
+    /// <summary>
+    /// When it stopped being open, merged or not.
+    /// </summary>
+    /// <remarks>
+    /// An init property rather than a positional parameter, for the reason already written on
+    /// <c>WorkEvidence.Builds</c>: three callers construct this record and only one of them has
+    /// anything to put here, so a tenth parameter would make the other two pass null explicitly to
+    /// say nothing.
+    /// </remarks>
+    public DateTimeOffset? ClosedAt { get; init; }
+
+    /// <summary>Each review, for a stream that has to name the reviewer.</summary>
+    public IReadOnlyList<ReviewRow> Verdicts { get; init; } = [];
+}
 
 /// <summary>What is running in one environment, and how it got there.</summary>
 public sealed record LiveIn(
@@ -692,6 +772,22 @@ public sealed record DeploymentRow(
     string? Url)
 {
     public string Short => Sha.Length > 7 ? Sha[..7] : Sha;
+
+    /// <summary>
+    /// When it landed, where <c>At</c> is when it began.
+    /// </summary>
+    /// <remarks>
+    /// <c>Deployment.At</c> is documented as the moment the deploy started, and every screen so far
+    /// has only had to say which deploy was latest, for which that is the right column. A line in a
+    /// stream is different: "reached production" dated on <c>At</c> is dated at the push of the
+    /// button and not at the moment the thing was live, and a deploy that took eleven minutes is
+    /// then eleven minutes wrong about the one fact the line exists to state.
+    ///
+    /// Set at every site that builds this record. Leaving one unset would make a landed deployment
+    /// read as one that only started, on a screen about what is live, which is worse than not
+    /// having the property at all.
+    /// </remarks>
+    public DateTimeOffset? FinishedAt { get; init; }
 
     /// <summary>
     /// Whether the name the host used says more than the classification does.

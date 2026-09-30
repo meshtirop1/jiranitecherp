@@ -396,6 +396,66 @@ public static class Words
         _ => status.ToString(),
     };
 
+    /// <summary>The colour a build outcome gets, not the word for it.</summary>
+    /// <remarks>
+    /// The words are a few methods up, where every screen gets them; this is only the pill. It is
+    /// a method rather than the inline conditional the pull request column uses because four
+    /// outcomes do not fit one, and because a page's summary line and the table under it have to
+    /// agree: a failed build shown red in the sentence and grey in the table is a reader deciding
+    /// the page is unreliable and going to the host to check, which is the habit the panel was
+    /// built to remove.
+    ///
+    /// Cancelled is quiet rather than red on purpose. Somebody pushed again or the queue was
+    /// drained; nothing was broken, and marking it as a failure puts a red row against work that
+    /// was fine.
+    ///
+    /// Here rather than on the work item page, which is where it was, because the stream of what
+    /// happened to a work item draws the same pills from the same rows immediately above that
+    /// table. Two copies would disagree the first time one of them was adjusted, and a reader
+    /// holding a red sentence and an amber pill about one build cannot tell which is wrong.
+    /// </remarks>
+    public static string PillFor(BuildOutcome outcome) => outcome switch
+    {
+        BuildOutcome.Passed => "pill--done",
+        BuildOutcome.Failed => "pill--danger",
+
+        // Its own colour, not the waiting one. A build that is running is not queued.
+        BuildOutcome.Running => "pill--running",
+
+        /*
+         * Amber rather than the quiet grey a cancelled build gets. A cancelled build asks nothing
+         * of anybody; a blocked one is waiting for a person to open a gate, and drawn the same
+         * colour the second one is invisible on a page somebody is scanning.
+         */
+        BuildOutcome.Blocked => "pill--wait",
+        _ => "pill--quiet",
+    };
+
+    /// <summary>The colour a deployment's state gets.</summary>
+    /// <remarks>
+    /// Its own overload rather than a shared one over both enums, because a build and a deployment
+    /// do not have the same middle: a build running is a wait, and a deployment running is the few
+    /// minutes in which an environment is neither the old version nor the new one. They share the
+    /// amber for now, and a change to either should not silently be a change to both.
+    ///
+    /// Two pages had a copy of exactly this switch under two different names -- <c>Tone</c> on the
+    /// work item and <c>PillFor</c> on the timesheet -- each with its own paragraph explaining the
+    /// same middle arm in different words. Neither had drifted in behaviour, which is the only
+    /// reason it was worth moving rather than fixing.
+    /// </remarks>
+    public static string PillFor(DeploymentState state) => state switch
+    {
+        DeploymentState.Succeeded => "pill--done",
+        DeploymentState.Failed => "pill--danger",
+
+        /*
+         * Its own colour rather than the waiting one. A deployment that is still going is not
+         * queued behind anything — it is happening — and on a panel read to reconstruct an
+         * afternoon those are different pieces of news.
+         */
+        _ => "pill--running",
+    };
+
     /// <remarks>
     /// "Held back" rather than "Suppressed", because the question somebody opens a rule's
     /// history to answer is why it did not do anything, and "suppressed" sounds like a fault.

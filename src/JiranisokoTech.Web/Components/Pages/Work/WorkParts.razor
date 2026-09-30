@@ -347,7 +347,12 @@
         }
     </section>
 
-    <section class="standing">
+    @*
+        Named, because the stream above links to it. A line saying somebody wrote on the thread is
+        only useful if it can reach the thread, and this page is long enough that "scroll down" is
+        not an answer.
+    *@
+    <section class="standing" id="thread">
         <h2>Comments</h2>
 
         @if (Item.Comments.Count == 0)

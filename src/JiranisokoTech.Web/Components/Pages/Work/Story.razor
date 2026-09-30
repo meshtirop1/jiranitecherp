@@ -1,0 +1,123 @@
+@*
+    What happened to one work item, in one column, newest first.
+
+    Section 71 asks for an activity timeline and the page it belongs on already had every fact in
+    four separate tables — commits, pull requests, builds, deployments — with the comments below
+    them and the moves nowhere at all. Four tables side by side is not a timeline: it makes the
+    reader hold four clocks and interleave them, which is the work this component does once.
+
+    Presentation only. No @rendermode, no @inject, no query and no form: it takes finished sentences
+    and draws them. The wording is decided in Streamed, where the facts are read, so that the
+    sentences can be tested without a browser and this file cannot quietly start deciding what a
+    status change means.
+
+    Deliberately in Components/Pages/Work, the same folder and therefore the same namespace as
+    Item.razor. _Imports.razor reaches only Components and Components.Layout, and Razor's answer to
+    a tag it cannot resolve is to emit it as unknown HTML that the browser silently drops — which is
+    how the client page's whole attachments section was a heading with nothing under it for weeks.
+*@
+
+<section class="standing">
+    <h2>What has happened</h2>
+
+    @if (Lines.Count == 0)
+    {
+        <p class="empty">
+            Nothing has been recorded against this work yet. Moving it, saying something on the
+            thread, or pushing a commit that names its reference all put a line here.
+        </p>
+    }
+    else
+    {
+        @foreach (var day in Streamed.ByDay(Lines))
+        {
+            <h3>@Day(day.Key)</h3>
+
+            @foreach (var line in day)
+            {
+                <article class="entry">
+                    @*
+                        The time inside an element rather than beside the pill. Razor emits nothing
+                        between an @expression and the element after it, so a bare time followed by
+                        a chip renders as "13:32Merged" — the fault CLAUDE.md records in thirty-six
+                        places, and the reason the incident timeline wraps its own time in a strong.
+                    *@
+                    <div class="entry__head">
+                        <strong>@line.At.ToLocalTime().ToString("HH:mm")</strong>
+
+                        @if (line.Tone is { } tone)
+                        {
+                            <span class="pill @tone">@line.ToneSaid</span>
+                        }
+                    </div>
+
+                    <p class="entry__subject">
+                        @line.Said
+
+                        @if (line.Link is { } href)
+                        {
+                            <a href="@href">@(line.LinkSaid ?? "Look")</a>
+                        }
+                    </p>
+                </article>
+            }
+        }
+    }
+
+    @if (Withheld is { } missing)
+    {
+        <p class="subtle">@missing</p>
+    }
+
+    @if (Cut is { } older)
+    {
+        <p class="subtle">@older</p>
+    }
+
+    @if (TrailHref is { } trail)
+    {
+        <p class="subtle"><a href="@trail">Every change to this, in the trail</a></p>
+    }
+</section>
+
+@code {
+    /// <summary>The lines to draw, already in the order they should be read.</summary>
+    /// <remarks>
+    /// Ordered by the caller rather than here, because ordering is a decision about instants — a
+    /// commit from Nairobi carries +03:00 — and it belongs with the code that knows what the
+    /// timestamps mean. This component's job is to draw what it is given.
+    /// </remarks>
+    [Parameter]
+    [EditorRequired]
+    public IReadOnlyList<StreamLine> Lines { get; set; } = [];
+
+    /// <summary>What this reader is not being shown, and why. Null when they see everything.</summary>
+    [Parameter]
+    public string? Withheld { get; set; }
+
+    /// <summary>What was left off for length. Null when nothing was.</summary>
+    [Parameter]
+    public string? Cut { get; set; }
+
+    /// <summary>Where the full change trail is, for a reader allowed to read it.</summary>
+    [Parameter]
+    public string? TrailHref { get; set; }
+
+    /// <summary>
+    /// A day, as a heading.
+    /// </summary>
+    /// <remarks>
+    /// "Today" and "Yesterday" by name because those are the two days somebody scanning a stream is
+    /// actually placing things against, and a date they have to work out is a date they skip. The
+    /// year is kept on everything older: a stream is read months later and "4 March" in January is
+    /// ambiguous in the direction that matters.
+    /// </remarks>
+    private static string Day(DateOnly day)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Now);
+
+        return day == today ? "Today"
+            : day == today.AddDays(-1) ? "Yesterday"
+            : day.ToString("d MMMM yyyy");
+    }
+}
