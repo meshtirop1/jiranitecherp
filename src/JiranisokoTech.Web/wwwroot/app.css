@@ -53,6 +53,26 @@
     --ink: #2b2b2b;
     --ink-quiet: #6e6e6e;
     --line: #e5e5e5;
+
+    /* One line, and every checkbox and radio in the application stops being the operating
+       system's blue and becomes the firm's. */
+    accent-color: var(--accent);
+
+    /*
+     * A second border, for the places a hairline is not enough. --line is #e5e5e5, which is
+     * 1.19:1 against the page — a line that exists in the stylesheet and not on the screen. It
+     * stays as it is for dividing rows inside a table, where a whisper is right; this one is for
+     * the edges that have to hold a shape, such as the underside of a header row.
+     */
+    --line-strong: #cfcfcf;
+
+    /*
+     * The ground a neutral chip sits on. It used to be --surface-sunken, which is #f1f1f1
+     * against a #f8f8f8 page: a contrast of 1.06:1, so a pill reading "Draft" or "Sent" was
+     * white text-sized words on white. Deep enough to be a shape, quiet enough not to shout.
+     */
+    --pill-ground: #e4e6e7;
+
     --link: #0c6e92;
 
     /*
@@ -90,13 +110,13 @@
     --warn: #b45309;
 
     /* The pill grounds and inks, which are pairs and only mean anything as pairs. */
-    --good-ground: #eaf5eb;
+    --good-ground: #d7ecda;
     --good-ink: #227a28;
-    --warn-ground: #fdf3e6;
+    --warn-ground: #fbe8cc;
     --warn-ink: #8a5300;
-    --danger-ground: #fbeaea;
+    --danger-ground: #f7d8d8;
     --danger-ink: #a02020;
-    --running-ground: #e8f7fd;
+    --running-ground: #d3ecf8;
     --running-ink: #0c6e92;
 
     /*
@@ -154,6 +174,8 @@
         --ink: #e8eef1;
         --ink-quiet: #8d9aa3;
         --line: #2d3840;
+        --line-strong: #44535e;
+        --pill-ground: #2b363e;
 
         /* Lifted, because #006bb7 on a dark ground fails contrast by a long way. */
         --link: #6fd2f5;
@@ -204,6 +226,8 @@
     --ink: #e8eef1;
     --ink-quiet: #8d9aa3;
     --line: #2d3840;
+    --line-strong: #44535e;
+    --pill-ground: #2b363e;
     --link: #6fd2f5;
 
     /* The same again, for a reader who chose dark on a light machine. */
@@ -264,12 +288,35 @@
  * The fallbacks are the site's, in the site's order, so the shape of a page is the same while
  * the face is still arriving and on anything that refuses to load it.
  */
+/*
+ * The base every other size in this file steps from, stated rather than inherited.
+ *
+ * This rule used to set the family and nothing else, so the base size of all 116 pages was
+ * Bootstrap's 1rem and the 1.5 line-height that comes with it. That made --text-base the base of
+ * nothing: every token below stepped down from a number this design had never chosen, and
+ * anything the scale forgot — h3, code, kbd — fell through to a framework nobody picked. Measured
+ * in a browser: body came back 16px/24px from bootstrap.min.css, not from here.
+ *
+ * Sixteen pixels is kept, because that is what the application has actually been rendering and
+ * shrinking every page was not the fix. What changes is that it is now a decision.
+ */
 html, body {
     font-family: 'PT Sans', 'Segoe UI', Tahoma, Verdana, sans-serif;
+    font-size: 1rem;
+    line-height: 1.55;
 
     /* Tabular figures everywhere, because most of this application is columns of numbers
        and proportional digits make a column of money jitter as it scrolls. */
     font-variant-numeric: tabular-nums;
+
+    /*
+     * The ground. --page was declared at the top of this file and reached the document only
+     * inside the two dark-mode blocks, so light mode — the default — kept Bootstrap's white,
+     * which is byte-identical to --surface. Every panel, card, pill and empty state was white on
+     * white separated by a hairline at 1.19:1, and dark mode was the better-looking theme.
+     */
+    background-color: var(--page);
+    color: var(--ink);
 }
 
 /*
@@ -277,20 +324,51 @@ html, body {
  * that wraps to two lines breaks on a sensible word rather than leaving one word alone on
  * the second, which is what text-wrap: balance buys for nothing.
  */
-h1, h2, h3 {
+h1, h2, h3, h4, h5, h6 {
     text-wrap: balance;
     letter-spacing: -0.01em;
     line-height: 1.25;
 }
 
+/*
+ * A ladder, because there was not one.
+ *
+ * Only h1 and h2 had a size, and h3 had none at all — so it fell through to Bootstrap's
+ * `calc(1.3rem + .6vw)`, capped at 1.75rem above 1200px, at weight 500. Measured in the browser:
+ * h1 came back 25.6px/600 and h3 came back 28px/500. An h3 was therefore LARGER and LIGHTER than
+ * the page title on any viewport wider than about 800px, on all 35 of them. The 500 is its own
+ * small fault: only the 400 and 700 faces are shipped, so it resolved down to 400.
+ *
+ * h2 was worse in the other direction — --text-md is 16.8px against a 16px body, a step of 1.05,
+ * which is to say no step at all. 261 section headings were indistinguishable from the prose
+ * under them, and that is most of what makes these pages read as one undifferentiated column.
+ *
+ * 28 / 22 / 18 / 16 — steps of about 1.27. Margins are here rather than on each page because the
+ * gap above a heading is what separates one section from the last, and 116 pages were each
+ * deciding that for themselves.
+ */
 h1 {
-    font-size: var(--text-xl);
+    font-size: 1.75rem;
     font-weight: 600;
+    margin: 0 0 0.35rem;
 }
 
 h2 {
-    font-size: var(--text-md);
+    font-size: 1.375rem;
     font-weight: 600;
+    margin: 2rem 0 0.65rem;
+}
+
+h3 {
+    font-size: 1.125rem;
+    font-weight: 700;
+    margin: 1.5rem 0 0.4rem;
+}
+
+h4, h5, h6 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 1.25rem 0 0.3rem;
 }
 
 /*
@@ -321,10 +399,79 @@ a, .btn-link {
  * becomes something nobody dares change.
  */
 
+/*
+ * The page shell, which did not exist.
+ *
+ * This rule was `padding-top: 1.1rem` and that was the whole design of the content area — no
+ * measure, no bottom padding, no ground. Measured on /people at a 1600px viewport: the article
+ * came back 1331px wide with `max-width: none`, so a paragraph of prose and a seven-column table
+ * both ran the full width of the monitor and neither lined up with anything.
+ *
+ * 84rem rather than something narrower because this is an ERP: several screens genuinely need
+ * eight columns, and a 60rem measure would put a scrollbar on them to protect prose that is
+ * already constrained by .standing at 44rem. Left-aligned rather than centred, because the
+ * content area already sits to the right of a fixed 250px sidebar and centring inside it would
+ * pull every page heading out of line with the sidebar's edge — which reads as a bug rather than
+ * as composition.
+ *
+ * overflow-x here is what stops the DOCUMENT scrolling sideways when a table is wider than the
+ * measure. It used to be on .grid itself and could not work there; see the note on that rule.
+ */
 .content {
-    padding-top: 1.1rem;
+    max-width: 84rem;
+    padding: 2rem 0 4rem;
+    overflow-x: auto;
 }
 
+/*
+ * The states this application did not have.
+ *
+ * grep for :hover in this file returned five rules and all five were on buttons. The sidebar has
+ * a hover state and an active state, written in its own scoped stylesheet; the content area had
+ * neither, which is a large part of why one half of the screen feels built and the other does
+ * not. None of this shows up in a screenshot, which is why none of it was noticed.
+ */
+:focus-visible {
+    outline: 2px solid var(--accent-strong);
+    outline-offset: 2px;
+    border-radius: 3px;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline-offset: 0;
+    border-color: var(--accent);
+}
+
+button:disabled,
+.button[aria-disabled="true"] {
+    background: var(--surface-sunken);
+    border-color: var(--line-strong);
+    color: var(--ink-quiet);
+    cursor: not-allowed;
+}
+
+button:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    button,
+    .button,
+    input,
+    select,
+    textarea,
+    .grid tbody tr {
+        transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+    }
+}
+
+/*
+ * Kept: the page heading is focused after a route change so a screen reader announces it, and
+ * the ring around a heading nobody clicked would be noise. :focus-visible above is what draws
+ * the ring for anybody actually using a keyboard.
+ */
 h1:focus {
     outline: none;
 }
@@ -568,12 +715,38 @@ h1:focus {
 
 /* --- Working screens ----------------------------------------------------- */
 
+/*
+ * A page header, rather than a spreader.
+ *
+ * `justify-content: space-between` is the single most visible fault in this application, and it
+ * is one keyword. Measured on /people: the row is 1275px wide and holds five children — the
+ * title, three secondary links and an action — so the browser put 133 pixels of dead air between
+ * each of them and the three links ended up marooned in the middle of the header, each as
+ * prominent as the page title. On /overview it flings the date 940px from the heading it dates.
+ * 89 pages use this rule.
+ *
+ * flex-start groups the title with what belongs to it. The action, when there is one, is pushed
+ * to the right on its own, which is the only thing space-between was ever wanted for.
+ *
+ * The rule now also ends the header: a border and a margin, so a page has a top rather than
+ * beginning abruptly at a heading. 27 of the 116 pages have no .page-head at all, and those
+ * still start abruptly — that is a markup job for another pass, not something CSS can reach.
+ */
 .page-head {
     display: flex;
     align-items: baseline;
-    justify-content: space-between;
-    gap: 1rem;
+    justify-content: flex-start;
+    gap: 0.4rem 1.25rem;
     flex-wrap: wrap;
+    margin: 0 0 1.75rem;
+    padding-bottom: 0.9rem;
+    border-bottom: 1px solid var(--line);
+}
+
+.page-head > .button,
+.page-head > a.button,
+.page-head > button {
+    margin-left: auto;
 }
 
 .subtle {
@@ -604,36 +777,85 @@ h1:focus {
  * and the layout is otherwise fluid, which is exactly the arrangement in which a table is
  * the thing that breaks.
  *
- * display: block gives the table its own horizontal scroll, so the page keeps its width and
- * the table takes the overflow. It reads as a loss of table semantics and is not: the rows
- * and cells keep their own display types, so the browser builds an anonymous table box
- * around them and the columns still line up. That was measured rather than assumed —
- * header and first-row cell widths come back identical either way.
+ * The paragraph that used to be here said display: block gives the table its own horizontal
+ * scroll while the page keeps its width, and that "width: 100% still fills the container when
+ * there is room", and that this had been measured at 375 pixels and at desktop.
  *
- * Checked at 375 pixels and at desktop. width: 100% still fills the container when there is
- * room, and overflow-x: auto shows nothing at all when the table fits.
+ * The second half of that is false, and the confident claim of a measurement is exactly what
+ * would have stopped the next person checking. display: block makes the <table> an ordinary
+ * block box; the browser then generates an ANONYMOUS table box inside it to hold the rows, and
+ * that inner box shrink-to-fits. width: 100% sizes the outer block only. Measured on /people at
+ * a 1600px viewport: the .grid element came back 1275px wide and the tbody inside it 597px —
+ * 678 pixels of empty space inside the table's own element, which is what made every list in
+ * this application look like a narrow table stranded in a white field.
+ *
+ * So the table goes back to being a table, and the horizontal scroll moves up to .content, where
+ * a block box can actually own it. The property the old rule was protecting is kept: a table
+ * wider than the measure scrolls the content column and never the document. StylesheetTests
+ * asserts that, and now asserts it where it is true.
  */
 .grid {
     width: 100%;
-    display: block;
-    overflow-x: auto;
+    display: table;
     border-collapse: collapse;
     font-size: var(--text-base);
+    margin: 0.75rem 0 2rem;
+    line-height: 1.4;
 }
 
+/*
+ * Symmetric padding. The old rule was `0.5rem 0.75rem 0.5rem 0` — no left padding at all — so
+ * every column sat hard against the one before it and a chip in a cell touched the value to its
+ * left. The first column keeps a zero left edge so the table still lines up with the heading
+ * above it.
+ */
 .grid th,
 .grid td {
     text-align: left;
-    padding: 0.5rem 0.75rem 0.5rem 0;
+    padding: 0.55rem 0.9rem;
     border-bottom: 1px solid var(--line);
-    vertical-align: top;
+    vertical-align: middle;
 }
 
-.grid th {
+.grid th:first-child,
+.grid td:first-child {
+    padding-left: 0;
+}
+
+/*
+ * A header row that reads as one. It was small grey uppercase on the same white as the data,
+ * separated by the same hairline every other row has, so on a list of ten people the column
+ * names were the eleventh row.
+ */
+.grid thead th {
     font-size: var(--text-xs);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--ink-quiet);
+    color: var(--ink-mid);
+    font-weight: 700;
+    background: var(--surface-sunken);
+    border-bottom: 2px solid var(--line-strong);
+}
+
+.grid thead th:first-child {
+    padding-left: 0.6rem;
+}
+
+.grid thead th:first-child,
+.grid tbody td:first-child {
+    border-top-left-radius: 4px;
+}
+
+/* The row under the cursor, which is how anybody reads across eight columns without losing
+   their place. There was no hover state anywhere in the content area — the sidebar has one. */
+.grid tbody tr:hover td {
+    background: var(--surface-sunken);
+}
+
+/* One column carries the row. Without this every cell has equal weight and there is nothing
+   for the eye to come back to when it scans down. */
+.grid tbody td:first-child {
+    font-weight: 600;
 }
 
 /* A closed department is still listed, because everything that ever named it
@@ -669,13 +891,26 @@ h1:focus {
     flex-wrap: wrap;
 }
 
+/*
+ * A chip that is a shape rather than a word with a faint tint behind it.
+ *
+ * Measured against the page: --surface-sunken came out at 1.06:1, --good-ground at 1.05:1 and
+ * --danger-ground at 1.11:1. On /invoices that meant Draft, Sent and Part paid were plain words
+ * and Paid and Overdue were barely-there smudges, on the column whose entire job is to be
+ * scannable. The grounds above are deepened and this adds a hairline drawn from the chip's own
+ * ink, so each one holds an edge whatever colour it is.
+ */
 .pill {
     display: inline-block;
-    padding: 0.1rem 0.5rem;
+    padding: 0.12rem 0.5rem;
     border-radius: 999px;
     font-size: var(--text-xs);
-    background: var(--surface-sunken);
+    font-weight: 600;
+    line-height: 1.5;
+    background: var(--pill-ground);
     color: var(--pill-ink);
+    border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+    white-space: nowrap;
 }
 
 .pill--active { background: var(--good-ground); color: var(--good-ink); }
@@ -699,17 +934,47 @@ h1:focus {
     color: var(--ink-mid);
 }
 
-.filters input,
-.filters select,
-.stack input,
-.stack select,
-.stack textarea,
-.inline input,
-.inline select {
-    padding: 0.4rem 0.5rem;
+/*
+ * Controls styled by element rather than by the container they happen to sit in.
+ *
+ * The old selector list named five containers, so a control anywhere else got nothing: roughly
+ * two hundred and twenty inputs and selects across 54 files were the browser's own, sitting
+ * beside styled ones on the same screen. That is the difference between a page that was designed
+ * and a page that was assembled, and it is visible without looking for it.
+ *
+ * 1rem rather than --text-base, and a 2.5rem minimum height, for one specific reason: mobile
+ * Safari zooms the whole page whenever a focused input is smaller than 16px, and every form in
+ * this application was doing that.
+ */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
+select,
+textarea {
+    padding: 0.5rem 0.6rem;
     border: 1px solid var(--field-line);
     border-radius: 4px;
-    font-size: var(--text-base);
+    font-size: 1rem;
+    font-family: inherit;
+    line-height: 1.4;
+    min-height: 2.5rem;
+    background: var(--surface);
+    color: var(--ink);
+    max-width: 100%;
+}
+
+textarea {
+    min-height: 6rem;
+    line-height: 1.5;
+    resize: vertical;
+}
+
+/* Room for the chevron the browser draws, which otherwise sits on top of the longest option. */
+select {
+    padding-right: 2rem;
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: var(--ink-quiet);
 }
 
 .filters__clear {
@@ -749,9 +1014,21 @@ h1:focus {
     margin-bottom: 1.5rem;
 }
 
+/*
+ * A button is the width of its words.
+ *
+ * Inside .stack, which is a flex column, a button with no width stretches to the column — so the
+ * submit on /people/new was a 353px accent-filled bar the same width as the inputs above it, and
+ * read as a banner rather than as something to press.
+ */
+.stack > button,
+.stack > .button {
+    align-self: flex-start;
+}
+
 button,
 .button {
-    padding: 0.4rem 0.9rem;
+    padding: 0.45rem 0.95rem;
     border: 1px solid var(--accent);
     border-radius: 4px;
     background: var(--accent);
@@ -1089,8 +1366,62 @@ code.key {
     flex-wrap: wrap;
 }
 
+/*
+ * A field in a row is a column, the same as a field in a stack.
+ *
+ * .stack label has had `flex-direction: column` since it was written and this one never did, so
+ * every label inside .fields laid its children out INLINE: the caption, the control and any help
+ * text ran along one line and wrapped wherever they ran out of room. On the announcements form
+ * that rendered as "Heading [a truncated input]" beside "Who it is for [a select] This narrows
+ * whose board it appears on…" with four lines of help text wrapping around the control it
+ * belonged to. It is used on 54 pages.
+ *
+ * The basis goes from 8rem to 14rem for the same reason: at 8rem two fields fit in a narrow
+ * column and the input is cut off mid-word, which is the truncation in that screenshot.
+ */
 .fields > label {
-    flex: 1 1 8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    flex: 1 1 14rem;
+    font-size: var(--text-sm);
+    font-weight: 600;
+}
+
+/*
+ * Help text under a field is not a label. Inside .fields > label it inherits the caption's
+ * weight, so every hint was rendering at 600 — which is why it read as a second label rather
+ * than as an aside.
+ */
+.fields > label .subtle,
+.stack label .subtle {
+    font-weight: 400;
+    font-size: var(--text-sm);
+    line-height: 1.45;
+}
+
+/*
+ * Bare <code> and <kbd>, which nothing in this file styled.
+ *
+ * There are rules for code.link, code.key and .codes code, and 77 plain <code> elements across
+ * 46 files that matched none of them — identifiers, file paths, webhook URLs, references. They
+ * fell through to bootstrap.min.css and rendered in #d63384, a magenta that belongs to no part
+ * of this design and reads, correctly, as a page somebody forgot to finish. Confirmed in the
+ * browser: rgb(214, 51, 132).
+ */
+code,
+kbd,
+samp {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.875em;
+    color: var(--ink-mid);
+    background: var(--surface-sunken);
+    padding: 0.05rem 0.28rem;
+    border-radius: 3px;
+
+    /* A forty-character commit hash or an API key has no break opportunity in it, and one of
+       those in a table cell is what drags a whole document sideways. */
+    overflow-wrap: anywhere;
 }
 
 /* A figure in a table. Right-aligned and tabular so that columns of money and
@@ -1101,6 +1432,21 @@ code.key {
     text-align: right;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+}
+
+/*
+ * The same, but able to win.
+ *
+ * `.number` is one class — specificity (0,1,0) — and `.grid td` is (0,1,1), so on every table in
+ * the application the left-align above beat it and money did not right-align. Seen on /invoices:
+ * KES 1,500,000.00, KES 780,000.00 and KES 0.00 ran ragged down the Total and Outstanding
+ * columns, on the one screen where a column of money is the entire point. Roughly seventy cells
+ * across twenty-eight files already carry the class and none of them was working.
+ */
+.grid td.number,
+.grid th.number {
+    text-align: right;
+    padding-right: 1rem;
 }
 
 /* The work item's number, shown beside its title. Monospace and quieter than

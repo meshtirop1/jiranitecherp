@@ -6,6 +6,15 @@
 
 main {
     flex: 1;
+
+    /*
+     * A flex item's default minimum size is its content, not zero. So one unbreakable token — a
+     * forty-character commit hash, an API key, a long URL in a table cell — could make main wider
+     * than the row it sits in, and the whole document scrolled sideways, sidebar and all. This is
+     * the one line that makes that impossible; the per-page word-break rescues that exist because
+     * it was missing can go when somebody is next in those files.
+     */
+    min-width: 0;
 }
 
 .sidebar {

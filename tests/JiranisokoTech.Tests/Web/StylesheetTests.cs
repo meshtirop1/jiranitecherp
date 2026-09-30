@@ -85,15 +85,44 @@ public class StylesheetTests
     /// What this asserts is only that the rule still says so. What actually proves it is
     /// opening the pages at 375 pixels and comparing scrollWidth against clientWidth, which is
     /// how both the fault and the fix were found.
+    ///
+    /// <b>It used to assert this of <c>.grid</c>, and that was the wrong element.</b>
+    /// <c>display: block</c> on a table makes it an ordinary block box and the browser generates
+    /// an anonymous table box inside it to hold the rows — and that inner box shrink-to-fits, so
+    /// <c>width: 100%</c> sized the outer block and nothing else. Measured on /people at a 1600
+    /// pixel viewport: the <c>.grid</c> element was 1275px wide and the tbody inside it 597px.
+    /// Every list in the application was a narrow table stranded in 678 pixels of its own empty
+    /// element, and the stylesheet carried a comment claiming the opposite had been measured.
+    ///
+    /// The table is a table again and the scroll moved to <c>.content</c>, which is a block box
+    /// and can own one. The property being defended has not changed: something inside the page
+    /// takes the overflow, and never the document.
     /// </remarks>
     [Fact]
     public void A_wide_table_scrolls_itself_rather_than_the_page()
     {
-        var rule = Regex.Match(TheStylesheet(), @"^\.grid \{([^}]*)\}", RegexOptions.Multiline);
+        var sheet = TheStylesheet();
 
-        Assert.True(rule.Success, "There is no .grid rule in app.css any more.");
+        var content = Regex.Match(sheet, @"^\.content \{([^}]*)\}", RegexOptions.Multiline);
 
-        Assert.Contains("overflow-x", rule.Groups[1].Value);
+        Assert.True(content.Success, "There is no .content rule in app.css any more.");
+
+        Assert.Contains(
+            "overflow-x",
+            content.Groups[1].Value);
+
+        /*
+         * And the table itself must NOT carry it, because that is the arrangement that looked
+         * right for months and could not work. A .grid that is display:block with its own
+         * overflow is the fault coming back.
+         */
+        var grid = Regex.Match(sheet, @"^\.grid \{([^}]*)\}", RegexOptions.Multiline);
+
+        Assert.True(grid.Success, "There is no .grid rule in app.css any more.");
+
+        Assert.DoesNotContain(
+            "display: block",
+            grid.Groups[1].Value);
     }
 
     /// <summary>The one stylesheet every page loads.</summary>
