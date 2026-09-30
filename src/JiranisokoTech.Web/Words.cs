@@ -431,6 +431,21 @@ public static class Words
         _ => "pill--quiet",
     };
 
+    /// <summary>The colour a pull request's state gets.</summary>
+    /// <remarks>
+    /// The work item page had this inline — <c>State == Merged ? "pill--done" : "pill--quiet"</c>
+    /// — which painted an OPEN pull request the same grey as one closed without merging. Those
+    /// are opposite pieces of news: one is waiting for somebody and the other is over, and on a
+    /// panel somebody scans to find what needs them, the waiting one is the row that matters.
+    /// Open is amber here for the same reason a blocked build is.
+    /// </remarks>
+    public static string PillFor(PullRequestState state) => state switch
+    {
+        PullRequestState.Merged => "pill--done",
+        PullRequestState.Open => "pill--wait",
+        _ => "pill--quiet",
+    };
+
     /// <summary>The colour a deployment's state gets.</summary>
     /// <remarks>
     /// Its own overload rather than a shared one over both enums, because a build and a deployment

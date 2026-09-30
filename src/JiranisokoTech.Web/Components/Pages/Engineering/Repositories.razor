@@ -186,8 +186,13 @@ else
             @foreach (var row in Rows)
             {
                 <tr class="@(row.IsWatched ? null : "row--closed")">
+                    @*
+                        Section 98's last broken hop. The name was plain text and there was no
+                        page behind it, so a repository could be reached from nowhere and led
+                        nowhere.
+                    *@
                     <td>
-                        <strong>@row.FullName</strong>
+                        <a href="/repositories/@row.Id"><strong>@row.FullName</strong></a>
                         <span class="subtle">@row.Provider</span>
                     </td>
                     <td>

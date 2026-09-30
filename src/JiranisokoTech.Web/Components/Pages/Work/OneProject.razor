@@ -331,7 +331,7 @@ else
                     @foreach (var repository in Repositories)
                     {
                         <li>
-                            <a href="/repositories">@repository.FullName</a>
+                            <a href="/repositories/@repository.Id">@repository.FullName</a>
                             <span class="pill pill--quiet">@repository.Provider</span>
                             <span class="subtle">
                                 @Words.Count(repository.Commits, "commit"),

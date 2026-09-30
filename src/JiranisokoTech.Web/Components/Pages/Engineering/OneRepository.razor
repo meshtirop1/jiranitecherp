@@ -1,0 +1,282 @@
+@page "/repositories/{Id:guid}"
+@using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Domain.Engineering
+@using JiranisokoTech.Infrastructure.Engineering
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ReposView)]
+@inject EngineeringQueries Queries
+
+@*
+    One repository, and what has arrived from it.
+
+    Section 98's navigation runs task → repository → pull request → deployment, and this page did
+    not exist — so a work item listed its pull requests and its deployments with nowhere to go,
+    and /repositories reached only the cross-repository views. The hop could be made in one
+    direction and not back, which is the losing of context the section is about.
+
+    Read-only on purpose. Connecting, moving to a project and disconnecting are all on
+    /repositories, where the decision is made against the whole list; this page answers "what is
+    going on in this one", and a second place to disconnect a repository is a second place to do
+    it by accident.
+*@
+
+<PageTitle>@(Detail?.Repository.FullName ?? "Repository") — Jiranisoko Delivery</PageTitle>
+
+<nav class="crumbs"><a href="/repositories">Repositories</a></nav>
+
+@if (Detail is not { } repository)
+{
+    <p class="empty">There is no repository with that identifier.</p>
+}
+else
+{
+    <div class="page-head">
+        <h1>@repository.Repository.FullName</h1>
+
+        <p class="subtle">
+            <span class="pill pill--quiet">@repository.Repository.Provider</span>
+
+            @if (!repository.Repository.IsWatched)
+            {
+                <span class="pill pill--quiet">no longer watched</span>
+            }
+        </p>
+    </div>
+
+    <dl class="facts">
+        <dt>Filed under</dt>
+        <dd>
+            @if (repository.Repository.Project is { } project)
+            {
+                <span>@project</span>
+            }
+            else
+            {
+                @*
+                    A repository under no project is ordinary — the firm's own tooling is under
+                    none — so it is said rather than left blank.
+                *@
+                <span class="subtle">No project</span>
+            }
+        </dd>
+
+        <dt>Connected</dt>
+        <dd>@repository.Repository.ConnectedAt.ToLocalTime().ToString("d MMM yyyy")</dd>
+
+        <dt>Last heard from</dt>
+        <dd>
+            @if (repository.Repository.LastDeliveryAt is { } heard)
+            {
+                <span>@heard.ToLocalTime().ToString("d MMM yyyy HH:mm")</span>
+            }
+            else
+            {
+                @*
+                    The one fact on this page worth going and doing something about. A repository
+                    connected and silent is either a webhook that was never added at the host or
+                    one whose secret does not match, and both look identical from here.
+                *@
+                <span class="subtle">Nothing has ever arrived</span>
+            }
+        </dd>
+    </dl>
+
+    @if (repository.IsQuiet)
+    {
+        <p class="empty">
+            Nothing has arrived from this repository yet. A push, a pull request, a build or a
+            deployment reported by the host all show up here.
+        </p>
+    }
+
+    @if (repository.PullRequests.Count > 0)
+    {
+        <section class="standing">
+            <h2>Pull requests</h2>
+
+            <table class="grid">
+                <caption class="visually-hidden">Pull requests on this repository</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Number</th>
+                        <th scope="col">Title</th>
+                        <th scope="col">Who</th>
+                        <th scope="col">Branch</th>
+                        <th scope="col">State</th>
+                        <th scope="col">Opened</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var pull in repository.PullRequests)
+                    {
+                        <tr>
+                            <td>#@pull.Number</td>
+                            <td>@pull.Title</td>
+                            <td class="subtle">@pull.Author</td>
+                            <td><code>@pull.Branch</code></td>
+                            <td>
+                                <span class="pill @Words.PillFor(pull.State)">
+                                    @Words.For(pull.State)
+                                </span>
+                            </td>
+                            <td>@pull.OpenedAt.ToLocalTime().ToString("d MMM yyyy HH:mm")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+
+    @if (repository.Commits.Count > 0)
+    {
+        <section class="standing">
+            <h2>Commits</h2>
+
+            <table class="grid">
+                <caption class="visually-hidden">Commits on this repository</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Commit</th>
+                        <th scope="col">Message</th>
+                        <th scope="col">Who</th>
+                        <th scope="col">Branch</th>
+                        <th scope="col">When</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var commit in repository.Commits)
+                    {
+                        <tr>
+                            <td><code>@commit.Short</code></td>
+                            <td>@commit.Message</td>
+                            <td class="subtle">@commit.Author</td>
+                            <td><code>@commit.Branch</code></td>
+                            @*
+                                Converted, the same way the work item page and the incident
+                                timeline convert. GitHub sends +03:00 for a commit made in
+                                Nairobi, and two screens disagreeing about what o'clock one
+                                happened is how somebody stops trusting both.
+                            *@
+                            <td>@commit.At.ToLocalTime().ToString("d MMM yyyy HH:mm")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+
+    @if (repository.Builds.Count > 0)
+    {
+        <section class="standing">
+            <h2>Builds</h2>
+
+            <table class="grid">
+                <caption class="visually-hidden">Builds on this repository</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Commit</th>
+                        <th scope="col">Outcome</th>
+                        <th scope="col">Took</th>
+                        <th scope="col">Started</th>
+                        <th scope="col"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var build in repository.Builds)
+                    {
+                        <tr>
+                            <td>@build.Name</td>
+                            <td><code>@build.Short</code></td>
+                            <td>
+                                <span class="pill @Words.PillFor(build.Outcome)">
+                                    @Words.For(build.Outcome)
+                                </span>
+                            </td>
+                            <td>@(build.Took ?? "—")</td>
+                            <td>@build.StartedAt.ToLocalTime().ToString("d MMM yyyy HH:mm")</td>
+                            <td>
+                                @if (build.Url is { } log)
+                                {
+                                    <a href="@log">The log</a>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+
+    @if (repository.Deployments.Count > 0)
+    {
+        <section class="standing">
+            <h2>Deployments</h2>
+
+            <table class="grid">
+                <caption class="visually-hidden">Deployments from this repository</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Where</th>
+                        <th scope="col">Commit</th>
+                        <th scope="col">State</th>
+                        <th scope="col">Who</th>
+                        <th scope="col">When</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var deployment in repository.Deployments)
+                    {
+                        <tr>
+                            <td>
+                                @Words.For(deployment.Environment)
+
+                                @if (deployment.NameAddsSomething)
+                                {
+                                    <span class="subtle">@deployment.EnvironmentName</span>
+                                }
+                            </td>
+                            <td><code>@deployment.Short</code></td>
+                            <td>
+                                <span class="pill @Words.PillFor(deployment.State)">
+                                    @Words.For(deployment.State)
+                                </span>
+                            </td>
+                            <td class="subtle">@(deployment.DeployedBy ?? "—")</td>
+                            <td>
+                                @((deployment.FinishedAt ?? deployment.At)
+                                    .ToLocalTime().ToString("d MMM yyyy HH:mm"))
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+
+    @if (!repository.IsQuiet)
+    {
+        @*
+            Said rather than implied. Each table above is capped, and a page that showed
+            twenty-five of forty thousand commits without saying so is a page somebody will draw a
+            conclusion from.
+        *@
+        <p class="subtle">The most recent of each is shown, not all of them.</p>
+    }
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    /// <remarks>
+    /// Nullable rather than <c>default!</c>. Under PostgreSQL a query yields before it completes,
+    /// so markup reading a <c>default!</c> property before <c>OnInitializedAsync</c> finishes is
+    /// an error screen in production and fine under SQLite — which is how the security centre
+    /// shipped broken. <c>RenderedBeforeLoadedTests</c> fails the build for it.
+    /// </remarks>
+    private RepositoryDetail? Detail { get; set; }
+
+    protected override async Task OnInitializedAsync() =>
+        Detail = await Queries.OneRepositoryAsync(Id);
+}

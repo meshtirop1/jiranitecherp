@@ -5,6 +5,7 @@ using JiranisokoTech.Application.People;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Domain.Common;
 using JiranisokoTech.Domain.Engineering;
+using JiranisokoTech.Infrastructure.Engineering;
 using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Tests.Identity;
 using Microsoft.AspNetCore.Hosting;
@@ -173,6 +174,42 @@ public class NavigationHopsTests(NavigationHopsTests.WithASecret factory)
         var page = await Read(browser, $"/teams/{handle}");
 
         Assert.Contains("No project names this team as the one delivering it", page);
+    }
+
+    /// <summary>
+    /// A repository has a page of its own, reachable from the list and from a project.
+    /// </summary>
+    /// <remarks>
+    /// The last of the section's five hops. Its navigation runs task → repository → pull request
+    /// → deployment and there was no page for one repository at all, so a work item listed its
+    /// pull requests and deployments with nowhere to go and <c>/repositories</c> reached only the
+    /// cross-repository views. The hop could be made in one direction and not back.
+    /// </remarks>
+    [Fact]
+    public async Task A_repository_has_a_page_and_both_lists_reach_it()
+    {
+        var (browser, chain) = await AChainAsync("hops-repo");
+
+        Guid repository = default;
+
+        await factory.InScopeAsync(async services =>
+        {
+            repository = (await services.GetRequiredService<EngineeringQueries>()
+                .RepositoriesAsync())
+                .Single(one => one.FullName == chain.Repository)
+                .Id;
+        });
+
+        Assert.Contains($"href=\"/repositories/{repository}\"", await Read(browser, "/repositories"));
+
+        Assert.Contains(
+            $"href=\"/repositories/{repository}\"",
+            await Read(browser, $"/projects/{chain.Project}"));
+
+        var page = await Read(browser, $"/repositories/{repository}");
+
+        Assert.Contains(chain.Repository, page);
+        Assert.Contains("Nothing has arrived from this repository yet", page);
     }
 
     private static async Task<string> Read(HttpClient browser, string path)

@@ -18,6 +18,17 @@ public sealed class EngineeringQueries(AppDbContext database)
     private const int PerEnvironment = 8;
 
     /// <summary>
+    /// How much of each list one repository's page shows.
+    /// </summary>
+    /// <remarks>
+    /// Twenty-five, and the page says so rather than implying it is everything. A repository
+    /// connected a year ago has tens of thousands of commits, and the question this screen
+    /// answers is "what is going on here" — for which the last twenty-five of each is more than
+    /// enough and the whole of it is unreadable.
+    /// </remarks>
+    private const int MostRecent = 25;
+
+    /// <summary>
     /// Every repository, with enough beside it to tell whether it is working.
     /// </summary>
     /// <param name="projectId">
@@ -88,6 +99,111 @@ public sealed class EngineeringQueries(AppDbContext database)
     }
 
     /// <summary>The delivery log, newest first.</summary>
+    /// <summary>
+    /// One repository, with what has arrived from it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Section 98's last broken hop.</b> Its navigation runs task → repository → pull request →
+    /// deployment, and there was no page for one repository at all: a work item listed its pull
+    /// requests and deployments with nowhere to go, and <c>/repositories</c> reached only the
+    /// cross-repository views. So the hop could be made in one direction and not back.
+    ///
+    /// Five reads rather than one join, because they are five independent lists and a join would
+    /// multiply the rows of each by the others. Each is capped, and the page says so: a repository
+    /// that has been connected a year has tens of thousands of commits and this is a screen for
+    /// answering "what is going on here", not an archive.
+    ///
+    /// Returns null for an identifier that is not there, so the page can say there is no such
+    /// repository rather than render a frame around nothing.
+    /// </remarks>
+    public async Task<RepositoryDetail?> OneRepositoryAsync(
+        Guid id, CancellationToken cancellationToken = default)
+    {
+        var repository = (await RepositoriesAsync(cancellationToken: cancellationToken))
+            .FirstOrDefault(one => one.Id == id);
+
+        if (repository is null)
+        {
+            return null;
+        }
+
+        var commits = await database.Commits
+            .AsNoTracking()
+            .Where(one => one.RepositoryId == id)
+            .OrderByDescending(one => one.At)
+            .Take(MostRecent)
+            .Select(one => new CommitRow(
+                one.Sha, one.Message, one.Author, one.Branch, one.At))
+            .ToListAsync(cancellationToken);
+
+        var pullRequests = await database.PullRequests
+            .AsNoTracking()
+            .Where(one => one.RepositoryId == id)
+            .OrderByDescending(one => one.OpenedAt)
+            .Take(MostRecent)
+            .Select(one => new
+            {
+                one.Number,
+                one.Title,
+                one.Author,
+                one.Branch,
+                one.State,
+                one.OpenedAt,
+                one.ClosedAt,
+                Reviews = one.Reviews.Count,
+                Approved = one.Reviews.Any(r => r.Verdict == ReviewVerdict.Approved),
+                Blocked = one.Reviews.Any(r => r.Verdict == ReviewVerdict.ChangesRequested),
+            })
+            .ToListAsync(cancellationToken);
+
+        var builds = await database.Builds
+            .AsNoTracking()
+            .Where(one => one.RepositoryId == id)
+            .OrderByDescending(one => one.StartedAt)
+            .Take(MostRecent)
+            .Select(one => new BuildRow(
+                one.Name, one.Sha, one.Branch, one.Outcome, one.StartedAt, one.FinishedAt, one.Url))
+            .ToListAsync(cancellationToken);
+
+        var deployments = await database.Deployments
+            .AsNoTracking()
+            .Where(one => one.RepositoryId == id)
+            .OrderByDescending(one => one.At)
+            .Take(MostRecent)
+            .Select(one => new DeploymentRow(
+                one.Environment,
+                one.EnvironmentName,
+                one.Sha,
+                one.Branch,
+                one.DeployedBy,
+                one.State,
+                one.At,
+                one.Url)
+            {
+                FinishedAt = one.FinishedAt,
+            })
+            .ToListAsync(cancellationToken);
+
+        return new RepositoryDetail(
+            repository,
+            commits,
+            [.. pullRequests.Select(row => new PullRequestRow(
+                row.Number,
+                row.Title,
+                row.Author,
+                row.Branch,
+                repository.FullName,
+                row.State,
+                row.OpenedAt,
+                row.Reviews,
+                row.Approved && !row.Blocked)
+            {
+                ClosedAt = row.ClosedAt,
+            })],
+            builds,
+            deployments);
+    }
+
     public async Task<List<DeliveryRow>> DeliveriesAsync(
         DeliveryStatus? status = null,
         Guid? repositoryId = null,
@@ -637,6 +753,20 @@ public sealed record RepositoryRow(
     int Commits,
     int OpenPullRequests,
     int Failing);
+
+/// <summary>One repository's page, in one read.</summary>
+public sealed record RepositoryDetail(
+    RepositoryRow Repository,
+    IReadOnlyList<CommitRow> Commits,
+    IReadOnlyList<PullRequestRow> PullRequests,
+    IReadOnlyList<BuildRow> Builds,
+    IReadOnlyList<DeploymentRow> Deployments)
+{
+    public bool IsQuiet => Commits.Count == 0
+        && PullRequests.Count == 0
+        && Builds.Count == 0
+        && Deployments.Count == 0;
+}
 
 public sealed record DeliveryRow(
     Guid Id,

@@ -273,8 +273,7 @@ else
                                     }
                                 </td>
                                 <td>
-                                    <span class="pill @(pull.State == PullRequestState.Merged
-                                        ? "pill--done" : "pill--quiet")">
+                                    <span class="pill @Words.PillFor(pull.State)">
                                         @Words.For(pull.State)
                                     </span>
                                 </td>
