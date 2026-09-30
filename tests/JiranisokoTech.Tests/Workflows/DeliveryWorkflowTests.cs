@@ -286,36 +286,16 @@ public static partial class DeliveryWorkflow
         Assert.Contains($"/audit?type=WorkItem&amp;subject={item}", reading);
     }
 
-    private static async Task DeliverAsync(ApplicationFactory factory, string kind, string payload, string id)
-    {
-        using var browser = factory.CreateBrowser();
+    /// <remarks>
+    /// Both of these moved to <see cref="Delivering"/> when the incident walk needed the same
+    /// machinery. The names and signatures stay so that no step of this walk moved with them.
+    /// </remarks>
+    private static Task DeliverAsync(
+        ApplicationFactory factory, string kind, string payload, string id) =>
+        Delivering.SignedAsync(factory, kind, payload, id);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/webhooks/github")
-        {
-            Content = new StringContent(payload, Encoding.UTF8, "application/json"),
-        };
-
-        request.Headers.TryAddWithoutValidation("X-GitHub-Event", kind);
-        request.Headers.TryAddWithoutValidation("X-GitHub-Delivery", id);
-        request.Headers.TryAddWithoutValidation("X-Hub-Signature-256", "sha256=" + Convert.ToHexStringLower(
-            HMACSHA256.HashData(Encoding.UTF8.GetBytes(Workflow.GitHubSecret), Encoding.UTF8.GetBytes(payload))));
-
-        var response = await browser.SendAsync(request);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    /// <summary>
-    /// Process what arrived, then what processing it raised — the two loops production runs.
-    /// </summary>
-    private static async Task DrainAsync(ApplicationFactory factory)
-    {
-        await factory.InScopeAsync(services =>
-            services.GetRequiredService<DeliveryDispatcher>().RunOnceAsync());
-
-        await factory.InScopeAsync(services =>
-            services.GetRequiredService<OutboxDispatcher>().RunOnceAsync());
-    }
+    private static Task DrainAsync(ApplicationFactory factory) =>
+        Delivering.SettleAsync(factory);
 
     private static string Push(string repository, string branch) => $$"""
         {

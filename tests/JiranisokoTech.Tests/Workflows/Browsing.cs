@@ -59,6 +59,32 @@ public static class Browsing
     }
 
     /// <summary>
+    /// Signed in, and joined to a staff record.
+    /// </summary>
+    /// <remarks>
+    /// An account and an employee are separate on purpose, so most of the application works with
+    /// one and no other. Anything that records who DID something needs both: an incident's
+    /// timeline, a scorecard and an approval all take an employee identifier, and a signed-in
+    /// account with no staff record behind it cannot supply one.
+    /// </remarks>
+    public static async Task<HttpClient> AsStaffAsync(
+        ApplicationFactory factory, string email, Guid employeeId, params string[] roles)
+    {
+        var browser = await SignedInAsync(factory, email, roles);
+
+        await factory.InScopeAsync(async services =>
+        {
+            var account = await services.GetRequiredService<UserManager<ApplicationUser>>()
+                .FindByEmailAsync(email);
+
+            await services.GetRequiredService<JiranisokoTech.Application.People.PeopleService>()
+                .LinkAccountAsync(employeeId, account!.Id);
+        });
+
+        return browser;
+    }
+
+    /// <summary>
     /// Post the named form on a page, as the browser would, and return what came back.
     /// </summary>
     public static async Task<HttpResponseMessage> PressAsync(

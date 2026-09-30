@@ -292,19 +292,13 @@ public static class HiringWorkflow
         Assert.Contains($"Achieng Odhiambo {tag}", onboarding);
     }
 
-    private static async Task<HttpClient> LinkedAsync(
-        ApplicationFactory factory, string email, Guid employee, string role)
-    {
-        var browser = await Browsing.SignedInAsync(factory, email, role);
-
-        await factory.InScopeAsync(async services =>
-        {
-            var account = await services.GetRequiredService<UserManager<ApplicationUser>>().FindByEmailAsync(email);
-            await services.GetRequiredService<PeopleService>().LinkAccountAsync(employee, account!.Id);
-        });
-
-        return browser;
-    }
+    /// <remarks>
+    /// Moved to <see cref="Browsing.AsStaffAsync"/> when the incident walk needed the same thing.
+    /// The name and signature stay so that its three call sites above did not move with it.
+    /// </remarks>
+    private static Task<HttpClient> LinkedAsync(
+        ApplicationFactory factory, string email, Guid employee, string role) =>
+        Browsing.AsStaffAsync(factory, email, employee, role);
 
     private static Task DrainAsync(ApplicationFactory factory) =>
         factory.InScopeAsync(services => services.GetRequiredService<OutboxDispatcher>().RunOnceAsync());
