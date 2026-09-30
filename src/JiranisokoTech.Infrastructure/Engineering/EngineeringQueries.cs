@@ -1,3 +1,4 @@
+using JiranisokoTech.Domain.Platform;
 using JiranisokoTech.Domain.Engineering;
 using JiranisokoTech.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -202,6 +203,84 @@ public sealed class EngineeringQueries(AppDbContext database)
             })],
             builds,
             deployments);
+    }
+
+    /// <summary>
+    /// What a repository's code actually runs on.
+    /// </summary>
+    /// <remarks>
+    /// <b>Section 70's second missing link, and the one it describes exactly:</b> "a deployment
+    /// reaches a server only by going repository → service → resource and matching the
+    /// environment, and nothing does". Every key in that chain has existed since section 14 —
+    /// <c>Service.RepositoryId</c> and <c>Resource.ServiceId</c> — and no query walked it, so the
+    /// question "which machine did this deploy land on" could only be answered by opening the
+    /// platform register beside the repository page and reading both.
+    ///
+    /// Grouped by environment rather than returned flat, because that is the join the chain is
+    /// missing. A repository has one set of services and each service has resources in several
+    /// environments; a deployment names one environment, and the answer to "what did this reach"
+    /// is the resources of those services in THAT environment. Returned as a lookup so a caller
+    /// with a deployment in hand can ask directly.
+    ///
+    /// Live resources only. A retired server is a fact about the past, and a deployment page
+    /// listing one is telling somebody to go and look at a machine that is not there.
+    /// </remarks>
+    public async Task<Dictionary<DeploymentEnvironment, List<RunsOn>>> RunsOnAsync(
+        IReadOnlyCollection<Guid> repositoryIds, CancellationToken cancellationToken = default)
+    {
+        if (repositoryIds.Count == 0)
+        {
+            return [];
+        }
+
+        var services = await database.Services
+            .AsNoTracking()
+            .Where(one => one.RepositoryId != null
+                && repositoryIds.Contains(one.RepositoryId!.Value)
+                && one.RetiredAt == null)
+            .Select(one => new { one.Id, one.Name })
+            .ToListAsync(cancellationToken);
+
+        if (services.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = services.Select(one => one.Id).ToList();
+        var names = services.ToDictionary(one => one.Id, one => one.Name);
+
+        var resources = await database.Resources
+            .AsNoTracking()
+            .Where(one => one.ServiceId != null
+                && ids.Contains(one.ServiceId!.Value)
+                && one.RetiredAt == null)
+            .Select(one => new
+            {
+                one.Id,
+                one.Name,
+                one.Kind,
+                one.Provider,
+                one.Environment,
+                one.Address,
+                ServiceId = one.ServiceId!.Value,
+            })
+            .ToListAsync(cancellationToken);
+
+        return resources
+            .GroupBy(one => one.Environment)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .Select(one => new RunsOn(
+                        one.Id,
+                        one.Name,
+                        one.Kind,
+                        one.Provider,
+                        names.GetValueOrDefault(one.ServiceId) ?? "A service since removed",
+                        one.Address))
+                    .OrderBy(one => one.Service, StringComparer.Ordinal)
+                    .ThenBy(one => one.Name, StringComparer.Ordinal)
+                    .ToList());
     }
 
     public async Task<List<DeliveryRow>> DeliveriesAsync(
@@ -753,6 +832,21 @@ public sealed record RepositoryRow(
     int Commits,
     int OpenPullRequests,
     int Failing);
+
+/// <summary>One machine, address or registration a repository's code runs on.</summary>
+/// <remarks>
+/// Named for the question rather than for the table, because the table is called Resource and the
+/// question is "what does this run on". The service is carried on the row so the page can say
+/// which one a machine belongs to without a second lookup — a repository with four services and
+/// twelve resources is otherwise a list of twelve names with nothing grouping them.
+/// </remarks>
+public sealed record RunsOn(
+    Guid Id,
+    string Name,
+    ResourceKind Kind,
+    string? Provider,
+    string Service,
+    string? Address);
 
 /// <summary>One repository's page, in one read.</summary>
 public sealed record RepositoryDetail(

@@ -1,6 +1,8 @@
 using System.Net;
 using JiranisokoTech.Application.Business;
 using JiranisokoTech.Application.Engineering;
+using JiranisokoTech.Application.Platform;
+using JiranisokoTech.Domain.Platform;
 using JiranisokoTech.Application.People;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Domain.Common;
@@ -210,6 +212,80 @@ public class NavigationHopsTests(NavigationHopsTests.WithASecret factory)
 
         Assert.Contains(chain.Repository, page);
         Assert.Contains("Nothing has arrived from this repository yet", page);
+    }
+
+    /// <summary>
+    /// A repository says what its code runs on, walking repository to service to resource.
+    /// </summary>
+    /// <remarks>
+    /// <b>Section 70's second missing link, and it describes it exactly:</b> "a deployment reaches
+    /// a server only by going repository → service → resource and matching the environment, and
+    /// nothing does". Every key in that chain has existed since section 14 —
+    /// <c>Service.RepositoryId</c> and <c>Resource.ServiceId</c> — and no query walked it, so
+    /// "which machine did this land on" meant opening the platform register beside the repository
+    /// and reading both.
+    ///
+    /// The environment is the part worth asserting. A service has resources in several
+    /// environments and a deployment names one, so a walk that ignored it would put a staging box
+    /// in front of somebody looking at a production incident.
+    /// </remarks>
+    [Fact]
+    public async Task A_repository_says_what_its_code_runs_on()
+    {
+        var (browser, chain) = await AChainAsync("hops-estate");
+        var tag = Suffix();
+
+        Guid repository = default;
+
+        await factory.InScopeAsync(async services =>
+        {
+            repository = (await services.GetRequiredService<EngineeringQueries>()
+                .RepositoriesAsync())
+                .Single(one => one.FullName == chain.Repository)
+                .Id;
+
+            var estate = services.GetRequiredService<EstateService>();
+
+            var service = await estate.AddServiceAsync(
+                "Settlement " + tag,
+                "Takes the callbacks",
+                HowCritical.Important,
+                repositoryId: repository);
+
+            await estate.RecordAsync(
+                "prod-settle-01." + tag,
+                ResourceKind.Server,
+                DeploymentEnvironment.Production,
+                provider: "A cloud",
+                serviceId: service.Id);
+
+            // In another environment, so a walk that ignored the environment would show both.
+            await estate.RecordAsync(
+                "stage-settle-01." + tag,
+                ResourceKind.Server,
+                DeploymentEnvironment.Staging,
+                provider: "A cloud",
+                serviceId: service.Id);
+        });
+
+        var page = await Read(browser, $"/repositories/{repository}");
+
+        Assert.Contains("What it runs on", page);
+        Assert.Contains("prod-settle-01." + tag, page);
+        Assert.Contains("stage-settle-01." + tag, page);
+        Assert.Contains("Settlement " + tag, page);
+
+        // And the query keeps them apart, which the page groups on.
+        var runsOn = await factory.InRequestAsync(services =>
+            services.GetRequiredService<EngineeringQueries>().RunsOnAsync([repository]));
+
+        Assert.Equal(
+            "prod-settle-01." + tag,
+            Assert.Single(runsOn[DeploymentEnvironment.Production]).Name);
+
+        Assert.Equal(
+            "stage-settle-01." + tag,
+            Assert.Single(runsOn[DeploymentEnvironment.Staging]).Name);
     }
 
     private static async Task<string> Read(HttpClient browser, string path)

@@ -1,5 +1,6 @@
 @page "/repositories/{Id:guid}"
 @using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Web.Authorization
 @using JiranisokoTech.Domain.Engineering
 @using JiranisokoTech.Infrastructure.Engineering
 @using Microsoft.AspNetCore.Authorization
@@ -222,6 +223,7 @@ else
                         <th scope="col">State</th>
                         <th scope="col">Who</th>
                         <th scope="col">When</th>
+                        <th scope="col">Runs on</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -243,6 +245,25 @@ else
                                 </span>
                             </td>
                             <td class="subtle">@(deployment.DeployedBy ?? "—")</td>
+                            @*
+                                Section 70's second missing link, answered where the question is
+                                asked. Every key in repository → service → resource has existed
+                                since section 14 and nothing walked it, so "which machine did
+                                this land on" meant opening the platform register beside this
+                                page and reading both.
+                            *@
+                            <td>
+                                @if (RunsOn.TryGetValue(deployment.Environment, out var machines))
+                                {
+                                    <span class="subtle">
+                                        @Words.Count(machines.Count, "machine")
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="subtle">—</span>
+                                }
+                            </td>
                             <td>
                                 @((deployment.FinishedAt ?? deployment.At)
                                     .ToLocalTime().ToString("d MMM yyyy HH:mm"))
@@ -253,6 +274,45 @@ else
             </table>
         </section>
     }
+
+    @*
+        And the whole estate behind this repository, grouped the way the chain groups it: a
+        service has resources in several environments, and a deployment names one — so the answer
+        to "what did this reach" is the resources of those services in that environment.
+
+        Behind platform.view, because that is the permission guarding the register these rows come
+        from.
+    *@
+    <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.PlatformView)"
+                   Context="mayReadEstate">
+        @if (RunsOn.Count > 0)
+        {
+            <section class="standing">
+                <h2>What it runs on</h2>
+
+                @foreach (var (environment, machines) in RunsOn.OrderBy(one => one.Key))
+                {
+                    <h3>@Words.For(environment)</h3>
+
+                    <ul class="plain">
+                        @foreach (var machine in machines)
+                        {
+                            <li>
+                                <strong>@machine.Name</strong>
+                                <span class="pill pill--quiet">@machine.Kind</span>
+                                <span class="subtle">@machine.Service</span>
+
+                                @if (machine.Provider is { } provider)
+                                {
+                                    <span class="subtle">@provider</span>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+        }
+    </AuthorizeView>
 
     @if (!repository.IsQuiet)
     {
@@ -277,6 +337,18 @@ else
     /// </remarks>
     private RepositoryDetail? Detail { get; set; }
 
-    protected override async Task OnInitializedAsync() =>
+    /// <summary>
+    /// What this repository's code runs on, by environment. Empty when nothing is recorded.
+    /// </summary>
+    private Dictionary<DeploymentEnvironment, List<RunsOn>> RunsOn { get; set; } = [];
+
+    protected override async Task OnInitializedAsync()
+    {
         Detail = await Queries.OneRepositoryAsync(Id);
+
+        if (Detail is not null)
+        {
+            RunsOn = await Queries.RunsOnAsync([Id]);
+        }
+    }
 }
