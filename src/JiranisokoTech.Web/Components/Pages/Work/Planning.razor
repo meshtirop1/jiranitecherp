@@ -167,7 +167,15 @@
                         <td>@Criteria(item)</td>
                         <AuthorizeView Policy="@Managing" Context="mayPlan">
                             <td class="row-actions">
-                                <select @bind="MoveTo">
+                                @*
+                                    Named, because "Into…" is the first option's text and not the
+                                    control's name — a screen reader announces an unlabelled
+                                    select as "combo box" and stops. The item's own title is in
+                                    the label so that a page of twenty rows does not announce
+                                    twenty controls that all say the same thing.
+                                *@
+                                <select @bind="MoveTo"
+                                        aria-label="@($"Put {item.Title} into a sprint")">
                                     <option value="">Into…</option>
                                     @foreach (var sprint in Sprints.Where(one => one.Accepts))
                                     {

@@ -1,8 +1,13 @@
 using System.Net;
 using System.Reflection;
+using JiranisokoTech.Application.Business;
+using JiranisokoTech.Application.People;
+using JiranisokoTech.Application.Work;
+using JiranisokoTech.Domain.Common;
 using JiranisokoTech.Tests.Identity;
 using JiranisokoTech.Tests.Postgres;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.DependencyInjection;
 using Roles = JiranisokoTech.Application.Authorization.Roles;
 
 namespace JiranisokoTech.Tests.Workflows;
@@ -141,6 +146,67 @@ public class EveryPageOpensTests(ApplicationFactory factory) : IClassFixture<App
 {
     [Fact]
     public Task Every_page_opens_on_sqlite() => EveryPageOpens.CheckAsync(factory);
+
+    /// <summary>
+    /// And again with records in the database, which is a different question.
+    /// </summary>
+    /// <remarks>
+    /// <b>This exists because the sweep above was green while /accounting was an error screen.</b>
+    /// The remark on <see cref="EveryPageOpens"/> says what it proves — "on SQLite it is a cheap
+    /// check that nothing throws on an empty database" — and that is honest and is exactly the
+    /// hole. A page that renders an empty list fine and throws on the first row is invisible to
+    /// it, and that is the commoner fault of the two: an empty page runs almost no code.
+    ///
+    /// The accounting report held its totals in a <c>Dictionary&lt;Guid?, long&gt;</c> with null
+    /// meaning "not coded to an account". A dictionary refuses a null key whatever its key type
+    /// is, so the first uncoded invoice to reach the report threw — and every invoice is uncoded
+    /// until somebody codes it. With no invoices at all, nothing reached it and the page opened.
+    ///
+    /// <b>Deliberately a handful of records rather than the demonstration seed.</b> That seed
+    /// builds eighteen months of history and drains the outbox, which is minutes; this wants the
+    /// cheapest database that is not empty. One of each of the things pages read, and each chosen
+    /// to be the awkward version: an invoice that is sent and coded to nothing, a project with no
+    /// client, a work item assigned to nobody. A seed of tidy records would open every page and
+    /// prove less than the empty one does.
+    /// </remarks>
+    [Fact]
+    public async Task Every_page_opens_with_records_in_the_database()
+    {
+        await factory.InScopeAsync(async services =>
+        {
+            var tag = Guid.CreateVersion7().ToString("N")[^8..];
+
+            var client = await services.GetRequiredService<ClientService>()
+                .TakeOnAsync("Swept " + tag, "swept-" + tag);
+
+            var invoices = services.GetRequiredService<InvoiceService>();
+            var invoice = await invoices.DraftAsync(client.Id, "KES");
+
+            await invoices.AddLineAsync(
+                invoice.Id, "Work nobody has coded", 1, Money.Of(250_000_00L, "KES"));
+
+            /*
+             * Sent and coded to nothing. Only a sent invoice is income, and an uncoded one is
+             * what the accounting report could not survive — so this single row is the whole
+             * reason this test exists.
+             */
+            await invoices.SendAsync(invoice.Id);
+
+            var work = services.GetRequiredService<WorkService>();
+            var project = await work.BeginProjectAsync("Swept " + tag);
+
+            var people = services.GetRequiredService<PeopleService>();
+            var person = await people.HireAsync(
+                "Swept " + tag, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-30));
+
+            await people.StartAsync(person.Id);
+
+            // Assigned to nobody, on purpose: a null assignee is what half the board looks like.
+            await work.RaiseAsync("Something swept " + tag, person.Id, project.Id);
+        });
+
+        await EveryPageOpens.CheckAsync(factory);
+    }
 
     /// <summary>The sweep finds pages at all, so an empty list cannot pass it.</summary>
     [Fact]
