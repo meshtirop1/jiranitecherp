@@ -1,4 +1,8 @@
 using JiranisokoTech.Application.Accounting;
+using JiranisokoTech.Application.Business;
+using JiranisokoTech.Application.Settings;
+using JiranisokoTech.Infrastructure.Business;
+using JiranisokoTech.Infrastructure.Settings;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Infrastructure.Accounting;
 using JiranisokoTech.Tests.Infrastructure;
@@ -27,6 +31,14 @@ public class AccountingTests
             new(new AccountingRepository(_context), db.Clock);
 
         public AccountingQueries Reads => new(_context);
+
+        public ClientService Clients => new(new BusinessRepository(_context));
+
+        public InvoiceService Invoices =>
+            new(
+                new BusinessRepository(_context),
+                new SettingsService(new SettingsRepository(_context)),
+                db.Clock);
 
         public async ValueTask DisposeAsync() => await _context.DisposeAsync();
     }
@@ -287,6 +299,53 @@ public class AccountingTests
         // The charge is coded, so it appears under its account rather than unclassified.
         Assert.Contains(report.Expenditure, line => line.Code == "5000");
         Assert.DoesNotContain(report.Expenditure, line => line.Code == "—");
+    }
+
+    /// <summary>
+    /// An invoice coded to no account lands in the unclassified line rather than taking the
+    /// report down.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is the case the unclassified bucket exists for and the one that could not work.</b>
+    /// The totals were held in a <c>Dictionary&lt;Guid?, long&gt;</c> with the null key standing
+    /// for "not coded", and a dictionary throws <c>ArgumentNullException</c> for a null key
+    /// whatever its key type is — <c>Nullable&lt;Guid&gt;</c> is a value type, but a null one
+    /// still arrives at the dictionary's boundary as a null reference. So the first uncoded
+    /// invoice to reach this report made <c>/accounting</c> an error screen.
+    ///
+    /// CS8714 had said so and was suppressed, with a paragraph explaining that the warning was
+    /// "about the annotation rather than the behaviour". It was not. The suppression is gone and
+    /// the compiler is back on watch.
+    ///
+    /// Found by opening the page, not by the suite — no test had an uncoded invoice and also read
+    /// this report. This is that test.
+    /// </remarks>
+    [Fact]
+    public async Task An_invoice_coded_to_nothing_lands_in_the_unclassified_line()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        db.Clock.Now = Now;
+        await using var module = new Module(db);
+
+        var client = await module.Clients.TakeOnAsync("Lakeside Microfinance", "lakeside");
+
+        var invoice = await module.Invoices.DraftAsync(client.Id, "KES");
+
+        await module.Invoices.AddLineAsync(
+            invoice.Id, "Work nobody has coded", 1, Money.Of(250_000_00, "KES"));
+
+        // Sent, because only a sent invoice is income. Coded to nothing, which is every invoice
+        // raised before the chart of accounts existed.
+        await module.Invoices.SendAsync(invoice.Id);
+
+        var report = await module.Reads.ReportAsync(
+            db.Clock.Today.AddDays(-1), db.Clock.Today.AddDays(1), "KES");
+
+        var line = Assert.Single(report.Income);
+
+        Assert.Equal("—", line.Code);
+        Assert.Equal("Not coded to an account", line.Name);
+        Assert.Equal(Money.Of(250_000_00, "KES"), line.Total);
     }
 
     /// <summary>

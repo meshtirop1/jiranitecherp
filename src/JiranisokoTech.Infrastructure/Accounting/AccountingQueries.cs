@@ -4,23 +4,31 @@ using Microsoft.EntityFrameworkCore;
 using Money = JiranisokoTech.Domain.Common.Money;
 
 /*
- * The report totals are keyed by a nullable account id, and null is a key this file means
- * rather than tolerates: it is the unclassified bucket, which every invoice and claim
- * written before the chart of accounts existed falls into. The report names that row
- * explicitly, because one that quietly dropped it would show a firm that earned nothing.
+ * The unclassified bucket is a key this file means rather than tolerates: it is where every
+ * invoice and claim written before the chart of accounts existed falls, and the report names
+ * that row explicitly because one that quietly dropped it would show a firm that earned nothing.
  *
- * CS8714 objects because Dictionary declares its key notnull. A Dictionary whose key is a
- * Nullable<T> does accept null — the runtime null check is folded away for a value-type
- * key — so the warning is about the annotation rather than the behaviour. Suppressed here
- * with the reason rather than worked around with a sentinel, because Guid.Empty standing
- * for an absent account is a convention somebody has to be told, while a nullable key is a
- * fact the type states.
+ * THE PARAGRAPH THAT USED TO BE HERE WAS WRONG, AND IT TOOK THE PAGE DOWN.
  *
- * These three sat in the build for two commits without anybody noticing, which is what a
- * repository that tolerates any warnings at all costs: the wall is only useful while it is
- * exactly zero high.
+ * It said CS8714 was about the annotation rather than the behaviour — that "a Dictionary whose
+ * key is a Nullable<T> does accept null, the runtime null check is folded away for a value-type
+ * key" — and suppressed the warning on the strength of it. That is not true.
+ * Dictionary<TKey, TValue> calls ThrowHelper.ThrowArgumentNullException for a null key whatever
+ * TKey is; Nullable<Guid> is a value type but a null Nullable<Guid> still boxes to a null
+ * reference at the dictionary's boundary. So `income[invoice.AccountId]` threw
+ * ArgumentNullException the first time an uncoded invoice reached it, and /accounting was an
+ * error screen for every firm that had one — which is every firm, because the comment itself
+ * says almost everything is uncoded the first time the report is opened. The feature the
+ * unclassified bucket exists for was the one case that could not work.
+ *
+ * Found by opening the page. The suite was green: no test had an uncoded invoice and also read
+ * this report, and CS8714 had been argued away in prose, so nothing was left to object.
+ *
+ * The totals are now keyed by a plain Guid with the uncoded amount carried beside them. That is
+ * the sentinel the old comment rejected, and rejecting it was the right instinct applied to the
+ * wrong shape: a Guid.Empty key really would be a convention somebody has to be told, so there
+ * is no sentinel key here — there is a second variable with a name that says what it holds.
  */
-#pragma warning disable CS8714
 
 namespace JiranisokoTech.Infrastructure.Accounting;
 
@@ -129,7 +137,8 @@ public sealed class AccountingQueries(AppDbContext database)
                 && invoice.IssuedOn <= to)
             .ToListAsync(cancellationToken);
 
-        var income = new Dictionary<Guid?, long>();
+        var income = new Dictionary<Guid, long>();
+        var uncodedIncome = 0L;
         var wrongCurrency = 0;
 
         foreach (var invoice in invoices)
@@ -140,8 +149,14 @@ public sealed class AccountingQueries(AppDbContext database)
                 continue;
             }
 
-            income[invoice.AccountId] =
-                income.GetValueOrDefault(invoice.AccountId) + invoice.Total.MinorUnits;
+            if (invoice.AccountId is { } account)
+            {
+                income[account] = income.GetValueOrDefault(account) + invoice.Total.MinorUnits;
+            }
+            else
+            {
+                uncodedIncome += invoice.Total.MinorUnits;
+            }
         }
 
         // --- expenditure: claims, and standing charges that fell due -------------
@@ -169,7 +184,8 @@ public sealed class AccountingQueries(AppDbContext database)
             })
             .ToListAsync(cancellationToken);
 
-        var spent = new Dictionary<Guid?, long>();
+        var spent = new Dictionary<Guid, long>();
+        var uncodedSpend = 0L;
 
         foreach (var claim in claims)
         {
@@ -179,8 +195,14 @@ public sealed class AccountingQueries(AppDbContext database)
                 continue;
             }
 
-            spent[claim.AccountId] =
-                spent.GetValueOrDefault(claim.AccountId) + claim.MinorUnits;
+            if (claim.AccountId is { } account)
+            {
+                spent[account] = spent.GetValueOrDefault(account) + claim.MinorUnits;
+            }
+            else
+            {
+                uncodedSpend += claim.MinorUnits;
+            }
         }
 
         var standing = await database.RecurringExpenses
@@ -199,6 +221,11 @@ public sealed class AccountingQueries(AppDbContext database)
                     continue;
                 }
 
+                /*
+                 * No branch here: a standing cost's account is not nullable — RecurringExpense
+                 * refuses to be scheduled without one, which is the rule the claim above does
+                 * not have.
+                 */
                 spent[schedule.AccountId] =
                     spent.GetValueOrDefault(schedule.AccountId) + charge.AmountMinorUnits;
             }
@@ -257,8 +284,8 @@ public sealed class AccountingQueries(AppDbContext database)
             from,
             to,
             currency,
-            [.. Lines(income, accounts, AccountKind.Income, currency)],
-            [.. Lines(spent, accounts, AccountKind.Expense, currency)],
+            [.. Lines(income, uncodedIncome, accounts, currency)],
+            [.. Lines(spent, uncodedSpend, accounts, currency)],
             wrongCurrency,
             payroll);
     }
@@ -273,26 +300,40 @@ public sealed class AccountingQueries(AppDbContext database)
     /// nothing. Naming it is also the only thing that makes the coding get done.
     /// </remarks>
     private static IEnumerable<ReportLine> Lines(
-        Dictionary<Guid?, long> totals,
+        Dictionary<Guid, long> totals,
+        long uncoded,
         Dictionary<Guid, Named> accounts,
-        AccountKind kind,
         string currency)
     {
-        foreach (var (accountId, minorUnits) in totals.OrderByDescending(one => one.Value))
+        /*
+         * The uncoded total joins the ordering rather than being appended, so it sits where its
+         * size puts it. On the first opening of this report it is the largest line on the page
+         * and belongs at the top, which is the whole point of naming it.
+         *
+         * An account that has since been deleted falls in with it: the money was earned or spent
+         * and the row that classified it is gone, which is the same situation as never having
+         * been classified and reads better as one line than as a second mystery row.
+         */
+        var known = totals
+            .Where(one => accounts.ContainsKey(one.Key))
+            .Select(one => (Name: accounts[one.Key], Total: one.Value));
+
+        var orphaned = totals
+            .Where(one => !accounts.ContainsKey(one.Key))
+            .Sum(one => one.Value);
+
+        var lines = known
+            .Select(one => new ReportLine(
+                one.Name.Code, one.Name.Name, Money.Of(one.Total, currency)))
+            .ToList();
+
+        if (uncoded + orphaned != 0)
         {
-            if (accountId is { } id && accounts.TryGetValue(id, out var account))
-            {
-                yield return new ReportLine(
-                    account.Code, account.Name, Money.Of(minorUnits, currency));
-
-                continue;
-            }
-
-            yield return new ReportLine(
-                "—",
-                kind == AccountKind.Income ? "Not coded to an account" : "Not coded to an account",
-                Money.Of(minorUnits, currency));
+            lines.Add(new ReportLine(
+                "—", "Not coded to an account", Money.Of(uncoded + orphaned, currency)));
         }
+
+        return lines.OrderByDescending(one => one.Total.MinorUnits);
     }
 
     /// <summary>
@@ -459,4 +500,3 @@ public sealed record IncomeAndExpenditure(
                 Money.Zero(Currency), (running, line) => running + line.Total);
 }
 
-#pragma warning restore CS8714
