@@ -33,6 +33,9 @@ public interface IWorkRepository
     /// </remarks>
     Task<Contract?> FindContractAsync(Guid id, CancellationToken cancellationToken = default);
 
+    /// <summary>Does this team exist, so a project can name it as the one delivering?</summary>
+    Task<bool> TeamExistsAsync(Guid teamId, CancellationToken cancellationToken = default);
+
     Task<bool> CodeTakenAsync(
         string code, Guid? exceptProjectId = null, CancellationToken cancellationToken = default);
 

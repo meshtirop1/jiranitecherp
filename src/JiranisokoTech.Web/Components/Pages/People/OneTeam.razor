@@ -1,6 +1,8 @@
 @page "/teams/{Handle}"
 @rendermode InteractiveServer
 @using JiranisokoTech.Application.Authorization
+@using JiranisokoTech.Infrastructure.Work
+@using JiranisokoTech.Web.Authorization
 @using JiranisokoTech.Application.People
 @using JiranisokoTech.Domain.People
 @using JiranisokoTech.Infrastructure.People
@@ -9,6 +11,7 @@
 @inject TeamService Service
 @inject PeopleQueries People
 @inject JiranisokoTech.Application.Abstractions.IClock Clock
+@inject WorkQueries Work
 
 @*
     One team: who is on it now, who used to be, and who runs it.
@@ -80,6 +83,55 @@ else
             </span>
         </dd>
     </dl>
+
+    @*
+        What this team is actually doing.
+
+        Section 91 names the missing hop — "project → team → developer is not a step anybody can
+        take" — and section 98 counted this page as one of two the navigation still breaks at: it
+        listed members and nothing else, because Team knew its people and nothing about work.
+        Behind the permission that guards a project's own page, because a link somebody cannot
+        follow is a door that refuses them.
+    *@
+    <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.ProjectsViewAll)"
+                   Context="mayReadWork">
+        <section class="standing">
+            <h2>What it is working on</h2>
+
+            @if (Projects.Count == 0)
+            {
+                <p class="empty">
+                    No project names this team as the one delivering it. That is set on a
+                    project's own page.
+                </p>
+            }
+            else
+            {
+                <table class="grid">
+                    <caption class="visually-hidden">Projects this team is delivering</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Project</th>
+                            <th scope="col">State</th>
+                            <th scope="col">Open</th>
+                            <th scope="col">Due</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var project in Projects)
+                        {
+                            <tr>
+                                <td><a href="/projects/@project.Id">@project.Name</a></td>
+                                <td>@project.Status</td>
+                                <td class="number">@project.OpenItems</td>
+                                <td>@(project.DueOn?.ToString("d MMM yyyy") ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    </AuthorizeView>
 
     <section class="standing">
         <h2>On the team</h2>
@@ -315,6 +367,8 @@ else
 
     protected override async Task OnParametersSetAsync() => await LoadAsync();
 
+    private List<ProjectRow> Projects { get; set; } = [];
+
     private async Task LoadAsync()
     {
         Team = await Service.ByHandleAsync(Handle);
@@ -328,6 +382,8 @@ else
         {
             return;
         }
+
+        Projects = await Work.ProjectsAsync(teamId: Team.Id);
 
         Name = Team.Name;
         Purpose = Team.Purpose ?? string.Empty;

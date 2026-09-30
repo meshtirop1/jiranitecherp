@@ -38,6 +38,10 @@ public sealed class WorkRepository(AppDbContext database) : IWorkRepository
         Guid id, CancellationToken cancellationToken = default) =>
         database.Contracts.FirstOrDefaultAsync(contract => contract.Id == id, cancellationToken);
 
+    public Task<bool> TeamExistsAsync(
+        Guid teamId, CancellationToken cancellationToken = default) =>
+        database.Teams.AnyAsync(team => team.Id == teamId, cancellationToken);
+
     public Task<bool> CodeTakenAsync(
         string code, Guid? exceptProjectId = null, CancellationToken cancellationToken = default) =>
         database.Projects.AnyAsync(

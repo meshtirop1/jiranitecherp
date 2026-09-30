@@ -118,6 +118,63 @@ public class NavigationHopsTests(NavigationHopsTests.WithASecret factory)
         Assert.Contains("Nothing has been invoiced against this project", html);
     }
 
+    /// <summary>
+    /// A team's page says what it is working on, and each project links back.
+    /// </summary>
+    /// <remarks>
+    /// The last of the five hops this section named, and the one that needed a column rather than
+    /// markup: <c>Team</c> knew its members and nothing about work, so the page listed people and
+    /// stopped. Section 91 names the same gap from the other end — "project → team → developer is
+    /// not a step anybody can take".
+    /// </remarks>
+    [Fact]
+    public async Task A_team_says_what_it_is_working_on()
+    {
+        var browser = await SignedInAsync("hops-team@jiranisokotech.co.ke");
+        var tag = Suffix();
+
+        string handle = string.Empty;
+        var name = "Payments " + tag;
+
+        await factory.InScopeAsync(async services =>
+        {
+            var team = await services.GetRequiredService<TeamService>().FormAsync(name);
+
+            var work = services.GetRequiredService<WorkService>();
+            var project = await work.BeginProjectAsync("Settlement rewrite " + tag);
+
+            await work.DeliveredByAsync(project.Id, team.Id);
+
+            handle = team.Slug;
+        });
+
+        var page = await Read(browser, $"/teams/{handle}");
+
+        Assert.Contains("Settlement rewrite " + tag, page);
+        Assert.Contains("Projects this team is delivering", page);
+    }
+
+    /// <summary>A team nobody has given work to says so, rather than showing an empty heading.</summary>
+    [Fact]
+    public async Task A_team_with_no_work_says_what_would_give_it_some()
+    {
+        var browser = await SignedInAsync("hops-idle@jiranisokotech.co.ke");
+
+        string handle = string.Empty;
+
+        await factory.InScopeAsync(async services =>
+        {
+            var team = await services.GetRequiredService<TeamService>()
+                .FormAsync("Idle " + Suffix());
+
+            handle = team.Slug;
+        });
+
+        var page = await Read(browser, $"/teams/{handle}");
+
+        Assert.Contains("No project names this team as the one delivering it", page);
+    }
+
     private static async Task<string> Read(HttpClient browser, string path)
     {
         var page = await browser.GetAsync(path);

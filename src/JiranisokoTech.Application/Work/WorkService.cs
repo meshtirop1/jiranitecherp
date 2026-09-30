@@ -164,6 +164,28 @@ public sealed class WorkService(
     /// Billing under an unsigned contract is a different act, and <c>InvoiceService.BillUnderAsync</c>
     /// refuses it.
     /// </remarks>
+    /// <summary>
+    /// Say which team is delivering this project.
+    /// </summary>
+    /// <remarks>
+    /// Section 91's missing hop, and section 98's last broken one. Only that the team exists is
+    /// checked: a team may deliver work for any client, and there is no sensible second rule to
+    /// impose that would not be this firm guessing about a firm it is not.
+    /// </remarks>
+    public async Task DeliveredByAsync(
+        Guid projectId, Guid? teamId, CancellationToken cancellationToken = default)
+    {
+        var project = await RequiredProject(projectId, cancellationToken);
+
+        if (teamId is { } id && !await work.TeamExistsAsync(id, cancellationToken))
+        {
+            throw new InvalidOperationException("That team does not exist.");
+        }
+
+        project.DeliveredBy(teamId);
+        await work.SaveAsync(cancellationToken);
+    }
+
     public async Task DeliveredUnderAsync(
         Guid projectId, Guid? contractId, CancellationToken cancellationToken = default)
     {

@@ -51,6 +51,19 @@ public sealed class ProjectConfiguration : IEntityTypeConfiguration<Project>
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasIndex(project => project.ContractId);
+
+        /*
+         * The team delivering it — section 91's missing hop. Null on delete: a team can be
+         * disbanded and the work it did still happened, and a delete that refused because a
+         * project points at it would turn disbanding a team into a conversation about a project
+         * that may have finished a year ago.
+         */
+        builder.HasOne<Team>()
+            .WithMany()
+            .HasForeignKey(project => project.TeamId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasIndex(project => project.TeamId);
     }
 }
 

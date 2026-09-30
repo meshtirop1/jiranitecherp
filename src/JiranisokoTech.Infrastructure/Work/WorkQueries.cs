@@ -136,10 +136,25 @@ public sealed class WorkQueries(AppDbContext database)
         return query;
     }
 
+    /// <param name="teamId">
+    /// Only the projects a given team is delivering, or all of them.
+    /// </param>
+    /// <remarks>
+    /// Added so a team's page can say what its members are working on. It listed people and no
+    /// work, because nothing joined a team to a project — section 91 names that hop as missing
+    /// and section 98 counts the page as one of two the navigation still breaks at.
+    /// </remarks>
     public async Task<List<ProjectRow>> ProjectsAsync(
-        bool runningOnly = false, CancellationToken cancellationToken = default)
+        bool runningOnly = false,
+        Guid? teamId = null,
+        CancellationToken cancellationToken = default)
     {
         var query = database.Projects.AsNoTracking();
+
+        if (teamId is { } team)
+        {
+            query = query.Where(project => project.TeamId == team);
+        }
 
         if (runningOnly)
         {
@@ -160,6 +175,7 @@ public sealed class WorkQueries(AppDbContext database)
                 project.LeadId,
                 project.ClientId,
                 project.ContractId,
+                project.TeamId,
             })
             .ToListAsync(cancellationToken);
 
@@ -176,6 +192,10 @@ public sealed class WorkQueries(AppDbContext database)
             .AsNoTracking()
             .ToDictionaryAsync(
                 contract => contract.Id, contract => contract.Reference, cancellationToken);
+
+        var teams = await database.Teams
+            .AsNoTracking()
+            .ToDictionaryAsync(team => team.Id, team => team.Name, cancellationToken);
 
         var counts = await database.WorkItems
             .AsNoTracking()
@@ -213,6 +233,8 @@ public sealed class WorkQueries(AppDbContext database)
                 ContractReference = project.ContractId is { } under
                     ? contracts.GetValueOrDefault(under)
                     : null,
+                TeamId = project.TeamId,
+                TeamName = project.TeamId is { } team ? teams.GetValueOrDefault(team) : null,
             };
         }).ToList();
     }
@@ -388,4 +410,13 @@ public sealed record ProjectRow(
 
     /// <summary>What both sides of that agreement quote at each other.</summary>
     public string? ContractReference { get; init; }
+
+    /// <summary>The team delivering it, if one is named.</summary>
+    /// <remarks>
+    /// Section 91's missing hop: project → team → developer. A team's page could list its members
+    /// and nothing about what they were doing, because nothing joined the two.
+    /// </remarks>
+    public Guid? TeamId { get; init; }
+
+    public string? TeamName { get; init; }
 }

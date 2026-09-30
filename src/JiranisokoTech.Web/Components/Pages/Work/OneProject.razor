@@ -1,4 +1,5 @@
 @page "/projects/{Id:guid}"
+@using JiranisokoTech.Application.People
 @using System.ComponentModel.DataAnnotations
 @using System.Security.Claims
 @using JiranisokoTech.Application.Authorization
@@ -15,6 +16,7 @@
 @attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.ProjectsViewAll)]
 @inject WorkQueries Work
 @inject EngineeringQueries Engineering
+@inject TeamService TeamsService
 @inject BusinessQueries Business
 @inject DocumentService Files
 @inject WorkService Service
@@ -84,6 +86,22 @@ else
             else
             {
                 <span class="subtle">No contract recorded</span>
+            }
+        </dd>
+
+        @*
+            Section 91's missing hop, and section 98's last broken one: project → team →
+            developer. A team's page listed its members and nothing about what they were doing.
+        *@
+        <dt>Delivered by</dt>
+        <dd>
+            @if (Project.TeamId is { } team)
+            {
+                <a href="/teams/@TeamHandle(team)">@Project.TeamName</a>
+            }
+            else
+            {
+                <span class="subtle">No team named</span>
             }
         </dd>
 
@@ -193,6 +211,25 @@ else
                     <button type="submit" class="button button--quiet">Set</button>
                 </EditForm>
             }
+
+            @*
+                The lead stays separate from the team on purpose: the person answerable for a
+                piece of work is not always the lead of the team doing it.
+            *@
+            <EditForm Model="Delivering" method="post" OnValidSubmit="SetTeam" FormName="team"
+                      class="inline">
+                <label>
+                    <span>Delivered by</span>
+                    <InputSelect @bind-Value="Delivering.TeamId">
+                        <option value="">No team named</option>
+                        @foreach (var team in Teams)
+                        {
+                            <option value="@team.Id">@team.Name</option>
+                        }
+                    </InputSelect>
+                </label>
+                <button type="submit" class="button button--quiet">Set</button>
+            </EditForm>
 
             @if (Project.Status is ProjectStatus.Planned or ProjectStatus.Active)
             {
@@ -432,6 +469,15 @@ else
         set => _serving = value ?? new ClientInput();
     }
 
+    private TeamInput _delivering = new();
+
+    [SupplyParameterFromForm(FormName = "team")]
+    private TeamInput Delivering
+    {
+        get => _delivering;
+        set => _delivering = value ?? new TeamInput();
+    }
+
     private ContractInput _under = new();
 
     /*
@@ -486,6 +532,8 @@ else
     private List<ClientRow> Clients { get; set; } = [];
 
     private List<ContractRow> Contracts { get; set; } = [];
+
+    private List<Team> Teams { get; set; } = [];
 
     /// <summary>The repositories filed under this project, and what it has been billed.</summary>
     /// <remarks>
@@ -542,10 +590,13 @@ else
             ? await Business.ContractsAsync(clientId: forClient)
             : [];
 
+        Teams = await TeamsService.AllAsync();
+
         if (FirstLook.ThisTime(Request))
         {
             Serving.ClientId = Project.ClientId;
             Under.ContractId = Project.ContractId;
+            Delivering.TeamId = Project.TeamId;
         }
         Attached = await Files.ForAsync(AttachedTo.Project, Id);
 
@@ -566,6 +617,15 @@ else
 
     private Task SetContract() =>
         TryAsync(() => Service.DeliveredUnderAsync(Id, Under.ContractId));
+
+    private Task SetTeam() => TryAsync(() => Service.DeliveredByAsync(Id, Delivering.TeamId));
+
+    /// <remarks>
+    /// A team's page is addressed by its handle rather than its identifier, so the link needs the
+    /// handle. Taken from the list already loaded for the select rather than by a second read.
+    /// </remarks>
+    private string TeamHandle(Guid id) =>
+        Teams.FirstOrDefault(one => one.Id == id)?.Slug ?? id.ToString();
 
     private Task Hold() => TryAsync(() => Service.HoldProjectAsync(Id, Holding.Reason));
 
@@ -639,6 +699,11 @@ else
     private sealed class ContractInput
     {
         public Guid? ContractId { get; set; }
+    }
+
+    private sealed class TeamInput
+    {
+        public Guid? TeamId { get; set; }
     }
 
     private sealed class ReasonInput

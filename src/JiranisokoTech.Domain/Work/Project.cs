@@ -91,6 +91,24 @@ public sealed class Project : Entity, IAuditable
     /// </remarks>
     public Guid? ContractId { get; private set; }
 
+    /// <summary>
+    /// The team delivering it, when one team is answerable for it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Section 91 names the hop this is missing: "project → team → developer is not a step
+    /// anybody can take".</b> A team knew its members and nothing about what they were doing, so
+    /// its page listed people and no work — which section 98 counts as one of the two navigation
+    /// hops still broken, and §72 as the reason employee → project exists only as a project's
+    /// lead.
+    ///
+    /// On the project rather than a join table between the two. A project is delivered by one
+    /// team at a time in this firm; two teams on one project is a thing to say in the project's
+    /// summary, not a structure to carry in the schema for a case nobody has yet. The lead stays
+    /// separate and stays on the project, because the person answerable for a piece of work is
+    /// not always the lead of the team doing it.
+    /// </remarks>
+    public Guid? TeamId { get; private set; }
+
     public ProjectStatus Status { get; private set; }
 
     public DateOnly? DueOn { get; private set; }
@@ -261,6 +279,14 @@ public sealed class Project : Entity, IAuditable
     /// belongs to THIS client is checked in the service, which is the layer that can read one —
     /// the entity holds the identifier and cannot see the row behind it.
     /// </remarks>
+    /// <summary>Say which team is delivering it, or that no team is named.</summary>
+    /// <remarks>
+    /// No rule beyond the team existing, which the service checks. A team may deliver work for
+    /// any client or none, and a project may sensibly have no team named on it — that is every
+    /// project in this database until somebody says otherwise.
+    /// </remarks>
+    public void DeliveredBy(Guid? teamId) => TeamId = teamId;
+
     public void DeliveredUnder(Guid? contractId)
     {
         if (contractId is not null && ClientId is null)
