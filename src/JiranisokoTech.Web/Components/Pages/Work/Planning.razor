@@ -90,7 +90,7 @@
                                 }
                             </td>
                             <td>@WorkItem.Name(item.Kind)</td>
-                            <td><span class="pill @PillFor(item.Status)">@Said(item.Status)</span></td>
+                            <td><span class="pill @PillFor(item.Status)">@Words.For(item.Status).ToLowerInvariant()</span></td>
                             <td>@Criteria(item)</td>
                             <AuthorizeView Policy="@Managing" Context="mayPlan">
                                 <td class="row-actions">
@@ -501,14 +501,6 @@
 
     private static string Count(int many, string one, string more) =>
         $"{many} {(many == 1 ? one : more)}";
-
-    private static string Said(WorkItemStatus status) => status switch
-    {
-        WorkItemStatus.Todo => "to do",
-        WorkItemStatus.InProgress => "in progress",
-        WorkItemStatus.InReview => "in review",
-        _ => status.ToString().ToLowerInvariant(),
-    };
 
     private static string PillFor(WorkItemStatus status) => status switch
     {

@@ -184,7 +184,7 @@
                         <span class="pill pill--quiet">@WorkItem.Name(child.Kind)</span>
                         @if (!child.IsOpen)
                         {
-                            <span class="pill pill--done">@Said(child.Status)</span>
+                            <span class="pill pill--done">@Words.For(child.Status).ToLowerInvariant()</span>
                         }
                     </li>
                 }
@@ -295,7 +295,7 @@
                     <li>
                         <a href="/work/@blocker.Id">@blocker.Reference</a>
                         <span class="subtle">@blocker.Title</span>
-                        <span class="pill pill--wait">@Said(blocker.Status)</span>
+                        <span class="pill pill--wait">@Words.For(blocker.Status).ToLowerInvariant()</span>
 
                         @if (MayPlan)
                         {
@@ -673,13 +673,4 @@
 
     private string Who(Guid employeeId) =>
         Names.GetValueOrDefault(employeeId) ?? "Somebody no longer on the staff list";
-
-    private static string Said(WorkItemStatus status) => status switch
-    {
-        WorkItemStatus.Todo => "to do",
-        WorkItemStatus.InProgress => "in progress",
-        WorkItemStatus.InReview => "in review",
-        WorkItemStatus.Blocked => "blocked",
-        _ => status.ToString().ToLowerInvariant(),
-    };
 }

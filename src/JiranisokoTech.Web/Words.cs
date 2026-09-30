@@ -6,6 +6,7 @@ using JiranisokoTech.Domain.Engineering;
 using JiranisokoTech.Domain.Integrations;
 using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Domain.Time;
+using JiranisokoTech.Domain.Work;
 
 namespace JiranisokoTech.Web;
 
@@ -419,5 +420,36 @@ public static class Words
         AutomationRunStatus.Queued => "pill--running",
         AutomationRunStatus.Retrying or AutomationRunStatus.GaveUp => "pill--danger",
         _ => "pill--quiet",
+    };
+
+    /// <remarks>
+    /// Five pages carried a copy of this switch and no two of them were quite the same shape:
+    /// three worded it in title case, two in lower, and one of the lower pair spelt Blocked out
+    /// by hand while its twin let the fall-through do it. None of them disagreed about a word
+    /// yet, which is exactly the state the <c>Length(TimeSpan)</c> copies were in before one of
+    /// them started writing "1 days" on three screens. The rule in CLAUDE.md is that a small
+    /// formatting helper belongs here, and a status is the most-rendered value in the work half
+    /// of this application.
+    ///
+    /// Lower case is taken at the call site with <c>ToLowerInvariant</c>, which is what the two
+    /// pages wanting it in a sentence already did, rather than a second method whose only
+    /// difference is capitalisation.
+    ///
+    /// This one falls through where <see cref="WorkItem.Name(WorkItemKind)"/> deliberately
+    /// throws, and the difference is worth stating: an unnamed KIND is the zero an unbound
+    /// select posts, so it has to be refused. The four statuses not named here --
+    /// Blocked, Done, Deployed, Cancelled -- are each spelt correctly by <c>ToString</c>, so the
+    /// fall-through is the right answer for them rather than a guess nobody checked.
+    ///
+    /// <see cref="WorkItem"/> keeps its own private copy. It words exception text, the domain
+    /// cannot reference the web project, and a sentence thrown at a caller is not a sentence on
+    /// a screen. That duplication is a decision.
+    /// </remarks>
+    public static string For(WorkItemStatus status) => status switch
+    {
+        WorkItemStatus.Todo => "To do",
+        WorkItemStatus.InProgress => "In progress",
+        WorkItemStatus.InReview => "In review",
+        _ => status.ToString(),
     };
 }

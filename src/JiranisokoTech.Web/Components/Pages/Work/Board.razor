@@ -80,7 +80,7 @@ else
         {
             <section class="board__column">
                 <h2 class="board__heading">
-                    @Name(status) <span class="board__count">@items.Count</span>
+                    @Words.For(status) <span class="board__count">@items.Count</span>
                 </h2>
 
                 @foreach (var item in items)
@@ -181,12 +181,4 @@ else
         Projects = await Work.ProjectsAsync(runningOnly: true);
         Staff = await People.RosterAsync(status: Domain.People.EmploymentStatus.Active);
     }
-
-    private static string Name(WorkItemStatus status) => status switch
-    {
-        WorkItemStatus.Todo => "To do",
-        WorkItemStatus.InProgress => "In progress",
-        WorkItemStatus.InReview => "In review",
-        _ => status.ToString(),
-    };
 }

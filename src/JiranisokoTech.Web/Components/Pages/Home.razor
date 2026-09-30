@@ -92,7 +92,7 @@ else
                     <td><a href="/work/@item.Id">@item.Title</a></td>
                     <td>@(item.ProjectName ?? "—")</td>
                     <td>
-                        @Describe(item.Status)
+                        @Words.For(item.Status)
                         @if (item.BlockedReason is { } reason)
                         {
                             <span class="card__blocked">@reason</span>
@@ -169,12 +169,4 @@ else
         // what to do next.
         Mine = await Work.ItemsAsync(assigneeId: me, openOnly: true);
     }
-
-    private static string Describe(WorkItemStatus status) => status switch
-    {
-        WorkItemStatus.Todo => "To do",
-        WorkItemStatus.InProgress => "In progress",
-        WorkItemStatus.InReview => "In review",
-        _ => status.ToString(),
-    };
 }

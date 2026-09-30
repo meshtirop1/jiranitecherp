@@ -43,7 +43,7 @@ else
             know. A number nobody can see is a link nobody makes.
         *@
         <h1><span class="reference">@Row.Reference</span> @Row.Title</h1>
-        <span class="pill">@Name(Row.Status)</span>
+        <span class="pill">@Words.For(Row.Status)</span>
     </div>
 
     @if (Refusal is not null)
@@ -125,7 +125,7 @@ else
                       @onsubmit="() => Move(next, null)">
                     <AntiforgeryToken />
                     <button type="submit" class="@(next == WorkItemStatus.Cancelled ? "danger" : "")">
-                        @Name(next)
+                        @Words.For(next)
                     </button>
                 </form>
             }
@@ -592,7 +592,7 @@ else
         Moves.Contains(status)
             ? Run(
                 () => Service.MoveAsync(Id, status, because),
-                $"Moved to {Name(status).ToLowerInvariant()}.")
+                $"Moved to {Words.For(status).ToLowerInvariant()}.")
             : Refuse("That is not a move you can make on this piece of work.");
 
     private async Task Refuse(string why)
@@ -667,14 +667,6 @@ else
         DeploymentState.Succeeded => "pill--done",
         DeploymentState.Failed => "pill--danger",
         _ => "pill--running",
-    };
-
-    private static string Name(WorkItemStatus status) => status switch
-    {
-        WorkItemStatus.Todo => "To do",
-        WorkItemStatus.InProgress => "In progress",
-        WorkItemStatus.InReview => "In review",
-        _ => status.ToString(),
     };
 
     private sealed class BlockInput

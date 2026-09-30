@@ -41,6 +41,38 @@ public sealed class RepositoryTheoryAttribute : TheoryAttribute
     }
 }
 
+/// <summary>
+/// Where the repository is, found once.
+/// </summary>
+/// <remarks>
+/// The walk below already had to know this to decide whether to skip, and nine test classes each
+/// carry a private copy of the same loop. Two of those nine have already drifted -- they look for
+/// <c>.env.example</c> rather than the solution file, and one of the two lost the null check its
+/// siblings have, so a walk that finds nothing throws a NullReferenceException with no message
+/// instead of saying what it was looking for. New tests take it from here.
+/// </remarks>
+internal static class Repository
+{
+    public static string Root { get; } = Find();
+
+    private static string Find()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
+            directory is not null;
+            directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "JiranisokoTech.slnx")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new InvalidOperationException(
+            "No JiranisokoTech.slnx above " + AppContext.BaseDirectory
+            + ", so this test cannot tell where the repository is.");
+    }
+}
+
 internal static class RepositoryFiles
 {
     public const string Absent =
