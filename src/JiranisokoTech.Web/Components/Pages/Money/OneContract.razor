@@ -192,24 +192,29 @@ else
     @if (Contract.StartsOn is not null)
     {
         <section class="standing">
-            <h2>Billed while it ran</h2>
+            <h2>Billed under it</h2>
 
             @*
-                Read by date and client, not by a link: an invoice does not carry
-                a contract identifier. So this is the invoices issued inside the
-                span rather than the invoices raised under this agreement, and the
-                two differ whenever two contracts overlap. Saying so here is
-                cheaper than a number nobody can account for; linking an invoice
-                to its contract is the honest next step and is not done yet.
+                The invoices linked to this contract, which is what this heading has always
+                claimed and until now could not deliver.
 
-                Voided invoices are left out because nothing was billed on them,
-                and a foreign-currency one is left out because Money refuses to
-                add two currencies — and a contract agreed in one cannot be
-                checked against a bill in another anyway.
+                It used to read the invoices issued to this client BETWEEN the contract's dates,
+                because an invoice carried no contract identifier — and the comment here said so,
+                and said the two lists differ whenever two contracts overlap. That is exactly when
+                somebody opens this page. Invoice.ContractId exists now and this reads it, so the
+                figure below is what was billed under this agreement rather than what happened to
+                be issued while it ran.
+
+                Voided invoices are still left out, because nothing was billed on them. The
+                currency filter is gone: the service refuses to bill an invoice under a contract
+                in another currency, so a mismatched one cannot be in this list to be filtered.
             *@
             @if (Within.Count == 0)
             {
-                <p class="empty">Nothing was invoiced to this client while it ran.</p>
+                <p class="empty">
+                    Nothing has been billed under this agreement yet. An invoice is put under one
+                    on its own page.
+                </p>
             }
             else
             {
@@ -219,7 +224,7 @@ else
                 </p>
 
                 <table class="grid">
-                    <caption class="visually-hidden">Invoices issued while this contract ran</caption>
+                    <caption class="visually-hidden">Invoices billed under this contract</caption>
                     <thead>
                         <tr>
                             <th scope="col">Number</th>
@@ -395,21 +400,20 @@ else
         }
     }
 
+    /// <remarks>
+    /// The contract's dates used to be read here, because the invoices were matched by falling
+    /// inside them. They are not needed any more and are gone rather than left: a date range
+    /// computed and not used is the next reader's ten minutes.
+    /// </remarks>
     private async Task BilledAsync()
     {
-        if (Contract is not { StartsOn: { } from })
+        if (Contract is null)
         {
             return;
         }
 
-        // Open-ended if the end date has somehow gone missing, which only a draft
-        // can be. Counting to the start date alone would report nothing billed.
-        var to = Contract.EndsOn ?? DateOnly.MaxValue;
-
-        Within = (await Queries.InvoicesAsync(clientId: Contract.ClientId))
-            .Where(invoice => invoice.IssuedOn >= from && invoice.IssuedOn <= to)
+        Within = (await Queries.InvoicesAsync(contractId: Id))
             .Where(invoice => invoice.Status != InvoiceStatus.Void)
-            .Where(invoice => invoice.Total.Currency == Contract.Currency)
             .ToList();
 
         Billed = Within.Count == 0

@@ -19,8 +19,17 @@
 
 <p class="instructions">
     Only the budget is recorded. What a project earned and what it took are worked
-    out from the invoices, the approved hours and the paid expenses every time this
-    page is opened — so they cannot drift away from the records they come from.
+    out from the invoices, the approved hours, the paid expenses and the standing
+    costs filed against it, every time this page is opened — so they cannot drift
+    away from the records they come from.
+</p>
+
+<p class="instructions">
+    Running is what a project costs to keep going: the charges raised by a standing
+    cost that is filed against it, on <a href="/accounting">the accounting page</a>.
+    Every charge raised counts, whether or not it has been settled yet — unlike an
+    expense claim, which counts only once it has been paid, because a claim can still
+    be refused and a charge that has been raised is a bill already incurred.
 </p>
 
 @if (Refusal is not null)
@@ -56,6 +65,7 @@ else
                 <th scope="col">Budget</th>
                 <th scope="col">Invoiced</th>
                 <th scope="col">Hours</th>
+                <th scope="col">Running</th>
                 <th scope="col">Cost</th>
                 <th scope="col">Margin</th>
             </tr>
@@ -80,6 +90,17 @@ else
                     </td>
                     <td class="number">@(row.Invoiced?.ToString() ?? Dash(row))</td>
                     <td class="number">@Words.Hours(row.ApprovedMinutes)</td>
+
+                    @*
+                        What it costs to run: the standing charges filed against this project.
+
+                        Its own column rather than folded silently into Cost, because the figure
+                        was absent before and a reader who knew the old total needs to see where
+                        the difference came from. Section 94 named this: a project hosted for
+                        thirty thousand a month reported the same cost as one that runs on
+                        nothing, so every margin on this screen was overstated by the whole bill.
+                    *@
+                    <td class="number">@(row.Running?.ToString() ?? Dash(row))</td>
                     <td class="number">@(row.Cost?.ToString() ?? Dash(row))</td>
                     <td class="number">
                         @if (row.Margin is { } margin)

@@ -1,7 +1,11 @@
 using System.Net;
+using JiranisokoTech.Application.Accounting;
 using JiranisokoTech.Application.Api;
 using JiranisokoTech.Application.Business;
+using JiranisokoTech.Application.Work;
 using JiranisokoTech.Domain.Clients;
+using JiranisokoTech.Domain.Common;
+using JiranisokoTech.Domain.Money;
 using JiranisokoTech.Infrastructure.Identity;
 using JiranisokoTech.Infrastructure.Persistence;
 using JiranisokoTech.Tests.Identity;
@@ -121,6 +125,74 @@ public class PerRowFormPostTests(ApplicationFactory factory) : IClassFixture<App
             .OpenAsync("Statements " + Suffix(), "A client portal for statements");
 
         return opened.Id;
+    }
+
+    /// <summary>
+    /// Filing a standing cost against a project files it, and unfiling it puts it back.
+    /// </summary>
+    /// <remarks>
+    /// The newest of these forms, added with section 94's link from a standing cost to a project.
+    /// It is worth a test of its own rather than trust in the pattern, because the consequence of
+    /// the binding silently dropping the choice is not a blank field somebody notices — it is a
+    /// project's margin on /projects/money staying overstated by the whole hosting bill while the
+    /// page says the cost was filed.
+    ///
+    /// Both directions. Posting the empty option back is the case a select is most likely to get
+    /// wrong: an empty string is what a plain select posts for "The firm", and a model taking a
+    /// Guid? for it would refuse the whole form with no message.
+    /// </remarks>
+    [Fact]
+    public async Task Filing_a_standing_cost_against_a_project_files_it()
+    {
+        var browser = await SignedInAsync("standing@jiranisokotech.co.ke");
+        var tag = Suffix();
+
+        Guid schedule;
+        Guid project;
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var services = scope.ServiceProvider;
+
+            project = (await services.GetRequiredService<WorkService>()
+                .BeginProjectAsync("Hosted " + tag)).Id;
+
+            var accounting = services.GetRequiredService<AccountingService>();
+
+            var account = await accounting.OpenAccountAsync(
+                "run-" + tag, "Running " + tag, AccountKind.Expense);
+
+            schedule = (await accounting.ScheduleAsync(
+                account.Id,
+                "Servers " + tag,
+                "A hosting company",
+                Money.Of(30_000_00L, "KES"),
+                Recurrence.Monthly,
+                DateOnly.FromDateTime(DateTime.UtcNow))).Id;
+        }
+
+        await PostAsync(browser, "/accounting", $"project-{schedule}", new()
+        {
+            ["Moving.ProjectId"] = project.ToString(),
+        });
+
+        Assert.Equal(project, await FiledUnderAsync(schedule));
+
+        await PostAsync(browser, "/accounting", $"project-{schedule}", new()
+        {
+            ["Moving.ProjectId"] = string.Empty,
+        });
+
+        Assert.Null(await FiledUnderAsync(schedule));
+    }
+
+    private async Task<Guid?> FiledUnderAsync(Guid schedule)
+    {
+        using var scope = factory.Services.CreateScope();
+
+        return (await scope.ServiceProvider.GetRequiredService<AppDbContext>().RecurringExpenses
+            .AsNoTracking()
+            .SingleAsync(one => one.Id == schedule)).ProjectId;
     }
 
     /// <summary>
