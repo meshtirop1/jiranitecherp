@@ -452,8 +452,97 @@ button:disabled,
     cursor: not-allowed;
 }
 
-button:active:not(:disabled) {
+/*
+ * The press, on both kinds of button.
+ *
+ * This named `button` alone while every other rule in this file pairs `button, .button` — so an
+ * anchor styled as a button, which is what the pagination and several page actions are, had no
+ * response to being pressed at all.
+ */
+button:active:not(:disabled),
+.button:active:not([aria-disabled="true"]) {
     transform: translateY(1px);
+}
+
+/*
+ * SAYING THAT THE MACHINE HEARD YOU.
+ *
+ * Before this the application acknowledged nothing. There was no aria-busy anywhere, no progress
+ * indication anywhere, no keyframes in this file, and not one of its two hundred and fifteen
+ * submit buttons changed in any way when pressed. Following a link, posting a form and pressing a
+ * button on an interactive island all spent the whole round trip showing a screen byte-identical
+ * to the one before the click — so a working control and a dead one looked the same, and the
+ * honest response to that is to press again. On several pages the second press writes the record
+ * twice.
+ *
+ * It is worse under this rendering model than it would be elsewhere. An enhanced navigation is a
+ * DOM patch rather than a browser navigation, so there is not even a tab spinner; and a page with
+ * an interactive island arrives finished-looking and stays dead until its circuit connects, which
+ * CLAUDE.md records as a trap that nearly had somebody conclude interactivity was broken.
+ *
+ * Driven entirely by pending.js, which adds no elements — every selector below hangs off an
+ * attribute on something the server already rendered.
+ */
+:root[data-navigating]::before {
+    content: "";
+    position: fixed;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    z-index: 2000;
+    block-size: 3px;
+    inline-size: 100%;
+    background: var(--accent);
+    transform-origin: left center;
+
+    /*
+     * Never reaching the end, because it does not know when the end is. A bar that fills to 100%
+     * and then waits has told a lie somebody will notice twice.
+     */
+    animation: creeping 1.4s ease-out forwards;
+}
+
+@keyframes creeping {
+    from { transform: scaleX(0.04); }
+    to   { transform: scaleX(0.92); }
+}
+
+/*
+ * The clicked link says so itself, which is the thing a bar at the top of the screen cannot do:
+ * it answers "did that register" where the eye already is.
+ */
+[data-pending] {
+    opacity: 0.6;
+}
+
+/*
+ * A submitted button. Kept at full opacity rather than dimmed, because it is still the thing
+ * being waited on and fading it reads as refused.
+ */
+/*
+ * `:root` is here to win a specificity fight, not for scope, and it is worth saying which fight.
+ *
+ * Blazor's scoped CSS rewrites a component's selectors against an attribute the compiler puts on
+ * the elements it rendered — so NavMenu's `.nav-signout` ships as `.nav-signout[b-sdsg6rqhia]`,
+ * which is (0,2,0) and outranks a plain `button[data-pending]` at (0,1,1). Measured in the
+ * browser: the computed cursor on the signed-out button came back `pointer`. Any rule in this
+ * file that has to beat a component's own styling needs the extra weight, and `:root` is the
+ * readable way to add it — the alternatives are !important, which this file has none of and the
+ * layout's two cost an argument, or doubling the attribute, which reads like a typo.
+ */
+:root button[data-pending] {
+    opacity: 1;
+    cursor: progress;
+}
+
+form[aria-busy="true"] {
+    cursor: progress;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root[data-navigating]::before {
+        animation: none;
+        transform: scaleX(0.5);
+    }
 }
 
 /*
