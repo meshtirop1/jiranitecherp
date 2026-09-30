@@ -1,3 +1,4 @@
+using JiranisokoTech.Domain.Contracts;
 using JiranisokoTech.Domain.Work;
 
 namespace JiranisokoTech.Application.Work;
@@ -21,6 +22,16 @@ public interface IWorkRepository
     Task<Project?> FindProjectAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<bool> ClientExistsAsync(Guid clientId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// One contract, tracked, so a project can be told which one it is delivered under.
+    /// </summary>
+    /// <remarks>
+    /// The whole row rather than a boolean, because the rule that matters is not "does this
+    /// contract exist" but "does it belong to the client this project is for" — and answering the
+    /// second needs the contract's client.
+    /// </remarks>
+    Task<Contract?> FindContractAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<bool> CodeTakenAsync(
         string code, Guid? exceptProjectId = null, CancellationToken cancellationToken = default);

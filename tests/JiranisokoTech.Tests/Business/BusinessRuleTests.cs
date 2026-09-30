@@ -28,6 +28,126 @@ public class BusinessRuleTests
 {
     private static readonly DateOnly Monday = new(2026, 9, 21);
 
+    /// <summary>
+    /// An invoice can only be billed under a signed contract with its own client, in its own
+    /// currency.
+    /// </summary>
+    /// <remarks>
+    /// <b>Section 72 lists invoice to contract among its examples and it did not exist</b> —
+    /// OneContract.razor said so in prose, listing the invoices issued while a contract ran and
+    /// admitting in its own comment that the two lists differ whenever a client has two contracts
+    /// that overlap, which is exactly when somebody opens the page.
+    ///
+    /// Three rules with three different reasons, so three cases. Another client's agreement
+    /// against this client's bill is wrong in a way that reads correctly from either end. A draft
+    /// is refused although a PROJECT may be delivered under one, because recording which agreement
+    /// work is expected to fall under is a note about intent while saying it on a bill is a claim
+    /// about what the client owes. And two currencies cannot be added, which is what summing what
+    /// has been billed under a contract would have to do.
+    /// </remarks>
+    [Fact]
+    public async Task An_invoice_cannot_be_billed_under_another_clients_contract()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var ours = await module.Clients.TakeOnAsync("Lakeside Microfinance", "lakeside");
+        var theirs = await module.Clients.TakeOnAsync("Mombasa Freight", "mombasa");
+
+        var contract = await module.Contracts.DraftAsync(theirs.Id, "JTS-C-2026-101", "Theirs");
+
+        // Priced and dated first: a contract nobody has priced cannot be brought into force.
+        await module.Contracts.AgreeAsync(
+            contract.Id, "Theirs", Money.Of(1_000_000_00L, "KES"), Monday, Monday.AddMonths(6));
+
+        await module.Contracts.ActivateAsync(contract.Id);
+
+        var invoice = await module.Invoices.DraftAsync(ours.Id);
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => module.Invoices.BillUnderAsync(invoice.Id, contract.Id));
+
+        Assert.Contains("different client", refused.Message);
+    }
+
+    [Fact]
+    public async Task An_invoice_cannot_be_billed_under_a_contract_nobody_has_signed()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var client = await module.Clients.TakeOnAsync("Lakeside Microfinance", "lakeside");
+        var contract = await module.Contracts.DraftAsync(client.Id, "JTS-C-2026-102", "Draft");
+
+        var invoice = await module.Invoices.DraftAsync(client.Id);
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => module.Invoices.BillUnderAsync(invoice.Id, contract.Id));
+
+        Assert.Contains("not been signed", refused.Message);
+    }
+
+    [Fact]
+    public async Task An_invoice_cannot_be_billed_under_a_contract_in_another_currency()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var client = await module.Clients.TakeOnAsync("Lakeside Microfinance", "lakeside");
+
+        // The contract takes the firm's currency; the invoice is raised in another.
+        var contract = await module.Contracts.DraftAsync(client.Id, "JTS-C-2026-103", "Ours");
+
+        // Priced and dated first: a contract nobody has priced cannot be brought into force.
+        await module.Contracts.AgreeAsync(
+            contract.Id, "Ours", Money.Of(1_000_000_00L, "KES"), Monday, Monday.AddMonths(6));
+
+        await module.Contracts.ActivateAsync(contract.Id);
+
+        var invoice = await module.Invoices.DraftAsync(client.Id, "USD");
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => module.Invoices.BillUnderAsync(invoice.Id, contract.Id));
+
+        Assert.Contains("cannot be added up", refused.Message);
+    }
+
+    /// <summary>
+    /// And a signed contract with the right client, in the right currency, is accepted — on a
+    /// sent invoice as well as a draft.
+    /// </summary>
+    /// <remarks>
+    /// The acceptance case matters as much as the refusals. Which agreement a bill was issued
+    /// under is a fact about paperwork, and the commonest moment anybody notices it is wrong is
+    /// while reading a report months later — so a gate on the invoice's status would mean the
+    /// answer stays wrong for ever, which is the argument CodeTo already makes for itself.
+    /// </remarks>
+    [Fact]
+    public async Task A_sent_invoice_can_still_be_told_which_contract_it_was_billed_under()
+    {
+        await using var db = await DatabaseFixture.CreateAsync();
+        await using var module = new Module(db);
+
+        var client = await module.Clients.TakeOnAsync("Lakeside Microfinance", "lakeside");
+        var contract = await module.Contracts.DraftAsync(client.Id, "JTS-C-2026-104", "Ours");
+
+        // Priced and dated first: a contract nobody has priced cannot be brought into force.
+        await module.Contracts.AgreeAsync(
+            contract.Id, "Ours", Money.Of(1_000_000_00L, "KES"), Monday, Monday.AddMonths(6));
+
+        await module.Contracts.ActivateAsync(contract.Id);
+
+        var invoice = await module.Invoices.DraftAsync(client.Id);
+        await module.Invoices.AddLineAsync(invoice.Id, "The work", 1, Money.Of(100_00L, "KES"));
+        await module.Invoices.SendAsync(invoice.Id);
+
+        await module.Invoices.BillUnderAsync(invoice.Id, contract.Id);
+
+        var billed = await module.Reads.InvoicesAsync(clientId: client.Id);
+
+        Assert.Equal(contract.Id, Assert.Single(billed).ContractId);
+    }
+
     private sealed class Module(DatabaseFixture db) : IAsyncDisposable
     {
         private readonly TestDbContext _context = db.NewContext();

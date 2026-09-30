@@ -159,12 +159,23 @@ public sealed class WorkQueries(AppDbContext database)
                 project.DueOn,
                 project.LeadId,
                 project.ClientId,
+                project.ContractId,
             })
             .ToListAsync(cancellationToken);
 
         var clients = await database.Clients
             .AsNoTracking()
             .ToDictionaryAsync(client => client.Id, client => client.Name, cancellationToken);
+
+        /*
+         * The reference rather than the identifier, because that is what both sides of the
+         * agreement quote at each other. Loaded whole for the same reason the clients and the
+         * people above are: a lookup per project is the N+1 a list of forty makes forty times.
+         */
+        var contracts = await database.Contracts
+            .AsNoTracking()
+            .ToDictionaryAsync(
+                contract => contract.Id, contract => contract.Reference, cancellationToken);
 
         var counts = await database.WorkItems
             .AsNoTracking()
@@ -196,7 +207,13 @@ public sealed class WorkQueries(AppDbContext database)
                 count?.Open ?? 0,
                 count?.Total ?? 0,
                 project.ClientId,
-                project.ClientId is { } client ? clients.GetValueOrDefault(client) : null);
+                project.ClientId is { } client ? clients.GetValueOrDefault(client) : null)
+            {
+                ContractId = project.ContractId,
+                ContractReference = project.ContractId is { } under
+                    ? contracts.GetValueOrDefault(under)
+                    : null,
+            };
         }).ToList();
     }
 
@@ -359,4 +376,16 @@ public sealed record ProjectRow(
     int OpenItems,
     int TotalItems,
     Guid? ClientId = null,
-    string? ClientName = null);
+    string? ClientName = null)
+{
+    /// <summary>The contract this project is delivered under, if it is under one.</summary>
+    /// <remarks>
+    /// Section 70's first missing link, on the row so a page can show it without a second read.
+    /// Init properties rather than two more positional parameters, because three callers build
+    /// this record and only one of them has anything to say here.
+    /// </remarks>
+    public Guid? ContractId { get; init; }
+
+    /// <summary>What both sides of that agreement quote at each other.</summary>
+    public string? ContractReference { get; init; }
+}

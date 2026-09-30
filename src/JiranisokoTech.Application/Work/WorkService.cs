@@ -144,6 +144,60 @@ public sealed class WorkService(
         await work.SaveAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Say which of the client's contracts this project is delivered under.
+    /// </summary>
+    /// <remarks>
+    /// <b>Section 70's first missing link.</b> A contract had a client and a project had a client,
+    /// so the two were siblings under a client and "which contract is this project delivered
+    /// under" had no answer — which is where both the delivery chain (§91) and the finance chain
+    /// (§94) stop on their first hop.
+    ///
+    /// The rule worth having is the client one. A contract with Lakeside Microfinance cannot cover
+    /// a project for Mombasa Freight, and a link that allowed it would put one client's agreement
+    /// against another client's work in every report that walks the chain — quietly, because each
+    /// half reads correctly on its own.
+    ///
+    /// A DRAFT contract is deliberately allowed here, and refused on an invoice. Work routinely
+    /// starts while the paperwork is still being agreed, and recording which agreement it is
+    /// expected to fall under is exactly what somebody wants to write down at that moment.
+    /// Billing under an unsigned contract is a different act, and <c>InvoiceService.BillUnderAsync</c>
+    /// refuses it.
+    /// </remarks>
+    public async Task DeliveredUnderAsync(
+        Guid projectId, Guid? contractId, CancellationToken cancellationToken = default)
+    {
+        var project = await RequiredProject(projectId, cancellationToken);
+
+        if (contractId is not { } id)
+        {
+            project.DeliveredUnder(null);
+            await work.SaveAsync(cancellationToken);
+
+            return;
+        }
+
+        var contract = await work.FindContractAsync(id, cancellationToken)
+            ?? throw new InvalidOperationException("That contract does not exist.");
+
+        if (project.ClientId is not { } client)
+        {
+            throw new InvalidOperationException(
+                "Say which client this project is for before saying which of their contracts it "
+                + "is delivered under.");
+        }
+
+        if (contract.ClientId != client)
+        {
+            throw new InvalidOperationException(
+                $"{contract.Reference} is an agreement with a different client, so this project "
+                + "cannot be delivered under it.");
+        }
+
+        project.DeliveredUnder(id);
+        await work.SaveAsync(cancellationToken);
+    }
+
     public async Task<WorkItem> RaiseAsync(
         string title,
         Guid raisedById,

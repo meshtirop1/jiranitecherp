@@ -71,6 +71,26 @@ public sealed class Project : Entity, IAuditable
 
     public Guid? ClientId { get; private set; }
 
+    /// <summary>
+    /// The contract this project is delivered under, when it is delivered under one.
+    /// </summary>
+    /// <remarks>
+    /// <b>Section 70 names this as one of two missing links in the relationship model, and it is
+    /// the one that costs the most.</b> A contract had a client and a project had a client, so the
+    /// two were siblings and "which contract is this project delivered under" could only be
+    /// answered by reading a client's list of contracts beside its list of projects and guessing.
+    /// Sections 91 and 94 both stop at the same place: client to contract to project is the first
+    /// hop of the delivery chain and of the finance chain, and it was two separate facts about a
+    /// client.
+    ///
+    /// Nullable, because most of the firm's work predates any contract row and internal work is
+    /// delivered under none. A project may be delivered under one contract rather than several:
+    /// two contracts covering one project needs an apportioning rule for the money, and nobody
+    /// has agreed one — the same reasoning <see cref="JiranisokoTech.Domain.Money.Invoice"/>
+    /// already gives for its own project link.
+    /// </remarks>
+    public Guid? ContractId { get; private set; }
+
     public ProjectStatus Status { get; private set; }
 
     public DateOnly? DueOn { get; private set; }
@@ -214,7 +234,45 @@ public sealed class Project : Entity, IAuditable
         Raise(new ProjectLeadChanged(Id, from, employeeId));
     }
 
-    public void ForClient(Guid? clientId) => ClientId = clientId;
+    /// <summary>
+    /// Move the project to a client, or to none.
+    /// </summary>
+    /// <remarks>
+    /// Taking the client off takes the contract with it. A contract belongs to a client, so a
+    /// project with no client and a contract would be claiming to be delivered under an agreement
+    /// with somebody it is not for — and that is the shape of wrong answer a report repeats
+    /// without anybody noticing, because each half reads correctly on its own.
+    /// </remarks>
+    public void ForClient(Guid? clientId)
+    {
+        ClientId = clientId;
+
+        if (clientId is null)
+        {
+            ContractId = null;
+        }
+    }
+
+    /// <summary>
+    /// Say which contract this project is delivered under, or that it is under none.
+    /// </summary>
+    /// <remarks>
+    /// Refuses a contract on a project that has no client, for the reason above. That the contract
+    /// belongs to THIS client is checked in the service, which is the layer that can read one —
+    /// the entity holds the identifier and cannot see the row behind it.
+    /// </remarks>
+    public void DeliveredUnder(Guid? contractId)
+    {
+        if (contractId is not null && ClientId is null)
+        {
+            throw new ArgumentException(
+                "Say which client this project is for before saying which of their contracts it "
+                + "is delivered under.",
+                nameof(contractId));
+        }
+
+        ContractId = contractId;
+    }
 
     public void Rename(string name) => Name = Require(name, nameof(name));
 

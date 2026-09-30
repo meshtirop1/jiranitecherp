@@ -70,6 +70,23 @@ else
             }
         </dd>
 
+        @*
+            Section 70's first missing link. A contract had a client and a project had a client,
+            so the two were siblings and "which agreement is this delivered under" could only be
+            answered by reading a client's contracts beside its projects and guessing.
+        *@
+        <dt>Delivered under</dt>
+        <dd>
+            @if (Project.ContractId is { } under)
+            {
+                <a href="/contracts/@under">@Project.ContractReference</a>
+            }
+            else
+            {
+                <span class="subtle">No contract recorded</span>
+            }
+        </dd>
+
         <dt>Led by</dt>
         <dd>@(Project.LeadName ?? "Nobody yet")</dd>
 
@@ -131,6 +148,51 @@ else
                 </label>
                 <button type="submit" class="button button--quiet">Set</button>
             </EditForm>
+
+            @*
+                Only where there is a client to have contracts. A select of nothing is a control
+                that looks broken, and the sentence beside it says which of the two things has to
+                happen first rather than leaving somebody to guess.
+
+                A DRAFT contract is offered here and refused on an invoice. Work routinely starts
+                while the paperwork is still being agreed, and writing down which agreement it is
+                expected to fall under is exactly what somebody wants to do at that moment;
+                stating on a bill that it was issued under an unsigned agreement is a different
+                claim, and InvoiceService refuses it.
+            *@
+            @if (Project.ClientId is null)
+            {
+                <p class="subtle">
+                    Say which client this project is for, and the contracts it could be
+                    delivered under can be chosen here.
+                </p>
+            }
+            else if (Contracts.Count == 0)
+            {
+                <p class="subtle">
+                    @Project.ClientName has no contracts recorded. One is added on
+                    <a href="/clients/@Project.ClientId">their page</a>.
+                </p>
+            }
+            else
+            {
+                <EditForm Model="Under" method="post" OnValidSubmit="SetContract" FormName="contract"
+                          class="inline">
+                    <label>
+                        <span>Delivered under</span>
+                        <InputSelect @bind-Value="Under.ContractId">
+                            <option value="">No contract</option>
+                            @foreach (var contract in Contracts)
+                            {
+                                <option value="@contract.Id">
+                                    @contract.Reference — @contract.Title
+                                </option>
+                            }
+                        </InputSelect>
+                    </label>
+                    <button type="submit" class="button button--quiet">Set</button>
+                </EditForm>
+            }
 
             @if (Project.Status is ProjectStatus.Planned or ProjectStatus.Active)
             {
@@ -370,6 +432,20 @@ else
         set => _serving = value ?? new ClientInput();
     }
 
+    private ContractInput _under = new();
+
+    /*
+     * Named, not bare. This form has one field and it is the page's only form of that name, so a
+     * name is correct here — the bare binding PerRowFormTests requires is for a form rendered
+     * once per row, which this is not.
+     */
+    [SupplyParameterFromForm(FormName = "contract")]
+    private ContractInput Under
+    {
+        get => _under;
+        set => _under = value ?? new ContractInput();
+    }
+
     private ReasonInput _holding = new();
 
     [SupplyParameterFromForm(FormName = "hold")]
@@ -408,6 +484,8 @@ else
     private List<PersonRow> Staff { get; set; } = [];
 
     private List<ClientRow> Clients { get; set; } = [];
+
+    private List<ContractRow> Contracts { get; set; } = [];
 
     /// <summary>The repositories filed under this project, and what it has been billed.</summary>
     /// <remarks>
@@ -455,9 +533,19 @@ else
         // Seeded only when somebody arrives. On the POST the posted choice is in the model, and
         // seeding it here would put the stored client back before the handler reads it — the
         // fault FirstLook exists for.
+        /*
+         * Only the client's own. A contract belongs to a client, and offering another client's
+         * would be offering a choice the service refuses — a select whose options are not all
+         * selectable is worse than a shorter select.
+         */
+        Contracts = Project.ClientId is { } forClient
+            ? await Business.ContractsAsync(clientId: forClient)
+            : [];
+
         if (FirstLook.ThisTime(Request))
         {
             Serving.ClientId = Project.ClientId;
+            Under.ContractId = Project.ContractId;
         }
         Attached = await Files.ForAsync(AttachedTo.Project, Id);
 
@@ -475,6 +563,9 @@ else
     private Task SetLead() => TryAsync(() => Service.LeadProjectAsync(Id, Leading.EmployeeId));
 
     private Task SetClient() => TryAsync(() => Service.ForClientAsync(Id, Serving.ClientId));
+
+    private Task SetContract() =>
+        TryAsync(() => Service.DeliveredUnderAsync(Id, Under.ContractId));
 
     private Task Hold() => TryAsync(() => Service.HoldProjectAsync(Id, Holding.Reason));
 
@@ -543,6 +634,11 @@ else
     private sealed class ClientInput
     {
         public Guid? ClientId { get; set; }
+    }
+
+    private sealed class ContractInput
+    {
+        public Guid? ContractId { get; set; }
     }
 
     private sealed class ReasonInput

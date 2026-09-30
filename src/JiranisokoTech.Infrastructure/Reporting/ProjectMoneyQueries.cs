@@ -139,6 +139,49 @@ public sealed class ProjectMoneyQueries(AppDbContext database)
             })
             .ToListAsync(cancellationToken);
 
+        /*
+         * What it costs to run — section 94's third gap, and the one that made a figure wrong
+         * rather than merely absent.
+         *
+         * A project's cost was approved hours at the firm's standard rate plus paid expense
+         * claims. A standing hosting charge carried no project at all, so a project costing forty
+         * thousand shillings a month to run showed exactly the same cost as one that runs on
+         * nothing — and its margin, which is the one number on this screen anybody decides with,
+         * was overstated by the entire bill for every month it ran.
+         *
+         * Every charge raised counts, settled or not, and that is a different rule from the
+         * expenses above on purpose. An expense claim that has not been paid may yet be refused,
+         * so counting it would be counting a request. A recurring charge that has been raised is
+         * a bill the firm has already incurred: the server ran that month whether or not anybody
+         * has ticked the payment off yet, and leaving it out would understate the cost of exactly
+         * the projects that are still running.
+         *
+         * The charges are an owned collection and have to be pulled into memory to be grouped,
+         * which is why this is not a GroupBy in SQL like the two above. The row count is the
+         * number of standing costs filed against these projects multiplied by the months they
+         * have run, which is small and stays small.
+         */
+        var running = (await database.RecurringExpenses
+            .AsNoTracking()
+            .Include(one => one.Charges)
+            .Where(one => one.ProjectId != null && ids.Contains(one.ProjectId!.Value))
+            .Select(one => new { one.ProjectId, one.Charges })
+            .ToListAsync(cancellationToken))
+            .SelectMany(one => one.Charges.Select(charge => new
+            {
+                ProjectId = one.ProjectId!.Value,
+                charge.Currency,
+                charge.AmountMinorUnits,
+            }))
+            .GroupBy(one => new { one.ProjectId, one.Currency })
+            .Select(group => new
+            {
+                group.Key.ProjectId,
+                group.Key.Currency,
+                Total = group.Sum(one => one.AmountMinorUnits),
+            })
+            .ToList();
+
         return
         [
             .. projects.Select(project =>
@@ -148,6 +191,10 @@ public sealed class ProjectMoneyQueries(AppDbContext database)
                     .ToList();
 
                 var spentOnExpenses = expenses
+                    .Where(row => row.ProjectId == project.Id)
+                    .ToList();
+
+                var spentOnRunning = running
                     .Where(row => row.ProjectId == project.Id)
                     .ToList();
 
@@ -167,6 +214,7 @@ public sealed class ProjectMoneyQueries(AppDbContext database)
                  */
                 var currencies = earned.Select(row => row.Currency)
                     .Concat(spentOnExpenses.Select(row => row.Currency))
+                    .Concat(spentOnRunning.Select(row => row.Currency))
                     .Append(project.BudgetCurrency ?? currency)
                     .Append(currency)
                     .Distinct(StringComparer.Ordinal)
@@ -190,7 +238,12 @@ public sealed class ProjectMoneyQueries(AppDbContext database)
                         ? null
                         : Money.Of(spentOnExpenses.Sum(row => row.Total), currency),
                     mixed,
-                    costPerHour is not null);
+                    costPerHour is not null)
+                {
+                    Running = mixed
+                        ? null
+                        : Money.Of(spentOnRunning.Sum(row => row.Total), currency),
+                };
             }),
         ];
     }
@@ -219,9 +272,30 @@ public sealed record ProjectMoney(
     bool HasCostRate)
 {
     /// <summary>What the project took, when both parts of it are known.</summary>
-    public Money? Cost => Labour is { } labour && Expenses is { } expenses
-        ? labour + expenses
-        : null;
+    /// <summary>
+    /// What it costs to run: the standing charges filed against this project.
+    /// </summary>
+    /// <remarks>
+    /// An init property rather than a positional parameter because three callers build this
+    /// record and adding a tenth argument to all of them to say "nothing" is how the others on
+    /// this record came to be init properties too.
+    /// </remarks>
+    public Money? Running { get; init; }
+
+    /// <remarks>
+    /// Three streams, not two. Running was added for section 94 and adding it to the record
+    /// without adding it here would have computed a figure nothing read, and left the margin
+    /// overstated by exactly the amount the change existed to capture — which is the quietest
+    /// possible way to not fix something.
+    ///
+    /// All three must be present. Each is null when this project's money spans more than one
+    /// currency, and Money refuses cross-currency addition, so a partial sum here would be
+    /// either an exception or a figure that silently left a stream out.
+    /// </remarks>
+    public Money? Cost =>
+        Labour is { } labour && Expenses is { } expenses && Running is { } running
+            ? labour + expenses + running
+            : null;
 
     /// <summary>What is left of the money after what it took.</summary>
     public Money? Margin => Invoiced is { } invoiced && Cost is { } cost

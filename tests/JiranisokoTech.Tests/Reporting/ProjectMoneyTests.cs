@@ -1,3 +1,4 @@
+using JiranisokoTech.Application.Accounting;
 using JiranisokoTech.Application.Business;
 using JiranisokoTech.Application.People;
 using JiranisokoTech.Application.Settings;
@@ -157,6 +158,79 @@ public class ProjectMoneyTests(ApplicationFactory factory) : IClassFixture<Appli
             Assert.True(row.IsOverBudget);
             Assert.Equal(120, row.BudgetUsedShare);
         });
+    }
+
+    /// <summary>
+    /// What it costs to run reaches the project's cost, and so its margin.
+    /// </summary>
+    /// <remarks>
+    /// <b>Section 94's third gap, and the only one of the four that made a figure wrong rather
+    /// than absent.</b> A standing cost carried no project, so this query's cost side was labour
+    /// plus paid expense claims and nothing else — a project hosted for KES 30,000 a month showed
+    /// the same cost as one that runs on nothing, and its margin was overstated by the whole bill
+    /// for every month it ran.
+    ///
+    /// Worked by hand: one sent invoice of KES 100,000 earned. No hours and no claims, so labour
+    /// and expenses are both zero. A KES 30,000 monthly hosting charge filed against this project
+    /// has raised three charges — one of them settled, two not — so running is 90,000, the cost is
+    /// 90,000 and the margin is 10,000. Before this change the cost was 0 and the margin was the
+    /// full 100,000.
+    ///
+    /// All three charges count although only one is settled, and that is a different rule from
+    /// the paid-only one the expense claims follow. A claim not yet paid may still be refused; a
+    /// charge that has been raised is a bill already incurred, because the server ran that month
+    /// whether or not anybody has ticked it off.
+    /// </remarks>
+    [Fact]
+    public async Task What_it_costs_to_run_counts_against_the_project()
+    {
+        var project = await AProjectAsync(budget: null);
+        var tag = Guid.CreateVersion7().ToString("N")[^8..];
+
+        await factory.InScopeAsync(async services =>
+        {
+            var clients = services.GetRequiredService<ClientService>();
+            var client = await clients.TakeOnAsync("Hosted " + tag, "hosted-" + tag);
+
+            var invoices = services.GetRequiredService<InvoiceService>();
+            var invoice = await invoices.DraftAsync(client.Id, "KES");
+
+            await invoices.BillForAsync(invoice.Id, project);
+            await invoices.AddLineAsync(invoice.Id, "The work", 1, Money.Of(100_000_00L, "KES"));
+            await invoices.SendAsync(invoice.Id);
+
+            var accounting = services.GetRequiredService<AccountingService>();
+            var account = await accounting.OpenAccountAsync(
+                "host-" + tag, "Hosting " + tag, AccountKind.Expense);
+
+            /*
+             * Started three months back so that catching up raises exactly three charges. The
+             * job raises what is due from the start date to today, which is the same path the
+             * application takes every morning.
+             */
+            var started = DateOnly.FromDateTime(DateTime.UtcNow).AddMonths(-2);
+
+            var schedule = await accounting.ScheduleAsync(
+                account.Id,
+                "Servers for " + tag,
+                "A hosting company",
+                Money.Of(30_000_00L, "KES"),
+                Recurrence.Monthly,
+                started);
+
+            await accounting.RunsForAsync(schedule.Id, project);
+            await accounting.RaiseWhatIsDueAsync();
+        });
+
+        var money = await factory.InRequestAsync(services =>
+            services.GetRequiredService<ProjectMoneyQueries>().AllAsync());
+
+        var row = money.Single(one => one.Id == project);
+
+        Assert.Equal(Money.Of(100_000_00L, "KES"), row.Invoiced);
+        Assert.Equal(Money.Of(90_000_00L, "KES"), row.Running);
+        Assert.Equal(Money.Of(90_000_00L, "KES"), row.Cost);
+        Assert.Equal(Money.Of(10_000_00L, "KES"), row.Margin);
     }
 
     private async Task<Guid> AProjectAsync(long? budget)

@@ -617,10 +617,11 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
         int skip = 0,
         int? take = null,
         Guid? projectId = null,
+        Guid? contractId = null,
         CancellationToken cancellationToken = default)
     {
         var query = NarrowInvoices(
-            database.Invoices.AsNoTracking(), clientId, status, projectId);
+            database.Invoices.AsNoTracking(), clientId, status, projectId, contractId);
 
         // The totals below are summed by the aggregate from these, so an invoice
         // loaded without them reports zero — not an error anywhere, just a wrong
@@ -657,7 +658,11 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
             invoice.Total,
             invoice.Paid,
             invoice.Outstanding,
-            invoice.Lines.Count)).ToList();
+            invoice.Lines.Count)
+        {
+            ProjectId = invoice.ProjectId,
+            ContractId = invoice.ContractId,
+        }).ToList();
     }
 
     /// <summary>
@@ -711,11 +716,25 @@ public sealed class BusinessQueries(AppDbContext database, IClock clock)
     /// The filtering, in one place, because a count and a page have to agree.
     /// </summary>
     private static IQueryable<Invoice> NarrowInvoices(
-        IQueryable<Invoice> query, Guid? clientId, InvoiceStatus? status, Guid? projectId = null)
+        IQueryable<Invoice> query,
+        Guid? clientId,
+        InvoiceStatus? status,
+        Guid? projectId = null,
+        Guid? contractId = null)
     {
         if (clientId is { } client)
         {
             query = query.Where(invoice => invoice.ClientId == client);
+        }
+
+        /*
+         * And by the contract it was billed under, which a contract's own page needs. Until this
+         * existed that page matched invoices by client and date — its own comment admitted the
+         * two lists differ whenever a client has two contracts that overlap.
+         */
+        if (contractId is { } under)
+        {
+            query = query.Where(invoice => invoice.ContractId == under);
         }
 
         /*
@@ -973,6 +992,17 @@ public sealed record InvoiceRow(
     Money Outstanding,
     int Lines)
 {
+    /// <summary>The project this bills for, if it bills for one.</summary>
+    /// <remarks>
+    /// Init properties rather than two more positional parameters on a record that already takes
+    /// eleven. Both are here so a screen can follow the chain section 98 names without a second
+    /// read: an invoice to its project, and an invoice to the agreement it was issued under.
+    /// </remarks>
+    public Guid? ProjectId { get; init; }
+
+    /// <summary>The contract this was billed under, if it was billed under one.</summary>
+    public Guid? ContractId { get; init; }
+
     /// <summary>
     /// Past its due date with money still on it.
     /// </summary>

@@ -1,4 +1,5 @@
 @page "/invoices/{Id:guid}"
+@using JiranisokoTech.Domain.Contracts
 @using System.ComponentModel.DataAnnotations
 @using JiranisokoTech.Application.Abstractions
 @using JiranisokoTech.Application.Authorization
@@ -116,7 +117,16 @@ else
     *@
     <AuthorizeView Policy="@(PermissionClaim.PolicyPrefix + Permissions.InvoicesManage)"
                    Context="mayBill">
-        <EditForm Model="Billing" method="post" OnValidSubmit="SetProject" FormName="project"
+        @*
+            Model="Against", which is what this form actually posts into. It said Model="Billing"
+            — the model belonging to the bill-the-hours form much further down — and worked only
+            because this form has no DataAnnotationsValidator. Add one, or copy this line for a
+            new form, and BillingInput's [Required] ProjectId and its [Range(0.01, ...)] HourlyRate
+            would both fail against a default-constructed model, the valid-submit handler would
+            never run, and the page would say nothing. That is the silent-refusal shape CLAUDE.md
+            records, on the form that decides which project a bill is earned by.
+        *@
+        <EditForm Model="Against" method="post" OnValidSubmit="SetProject" FormName="project"
                   class="inline">
             <label>
                 <span>Bills for</span>
@@ -134,6 +144,40 @@ else
             </label>
             <button type="submit" class="button button--quiet">Set</button>
         </EditForm>
+
+        @*
+            Which agreement this bill was issued under — section 72's missing example, and the one
+            OneContract.razor admitted to in prose: it listed the invoices issued while a contract
+            ran, matched by client and date, and its own comment said the two lists differ whenever
+            a client has two contracts that overlap.
+
+            A signed contract only. The service refuses a draft, because stating on a bill that it
+            is issued under an agreement nobody has signed is a claim about what the client owes —
+            unlike a project, where recording the agreement work is expected to fall under is a
+            note about intent and a draft is the normal case.
+        *@
+        @if (Contracts.Count > 0)
+        {
+            <EditForm Model="Under" method="post" OnValidSubmit="SetContract" FormName="contract"
+                      class="inline">
+                <label>
+                    <span>Billed under</span>
+                    <select name="Under.ContractId" aria-label="Contract">
+                        <option value="" selected="@(Invoice!.ContractId is null)">
+                            No contract
+                        </option>
+                        @foreach (var contract in Contracts)
+                        {
+                            <option value="@contract.Id"
+                                    selected="@(Invoice.ContractId == contract.Id)">
+                                @contract.Reference — @contract.Title
+                            </option>
+                        }
+                    </select>
+                </label>
+                <button type="submit" class="button button--quiet">Set</button>
+            </EditForm>
+        }
     </AuthorizeView>
 
     <section>
@@ -499,6 +543,17 @@ else
         set => _against = value ?? new ProjectInput();
     }
 
+    private List<ContractRow> Contracts { get; set; } = [];
+
+    private ContractInput _under = new();
+
+    [SupplyParameterFromForm(FormName = "contract")]
+    private ContractInput Under
+    {
+        get => _under;
+        set => _under = value ?? new ContractInput();
+    }
+
     private List<Attachment> Attached { get; set; } = [];
 
     private string? Refusal { get; set; }
@@ -535,6 +590,19 @@ else
 
         ClientName = (await Queries.ClientAsync(Invoice.ClientId))?.Name ?? "A client since removed";
         Projects = await Work.ProjectsAsync(runningOnly: true);
+
+        /*
+         * The client's own, and not only the signed ones. A draft is left out of the select by
+         * the service refusing it rather than by this read, so that a contract signed a minute
+         * ago appears without a page reload being the thing that fixed it. Terminated and expired
+         * ones are offered on purpose: an invoice for work done while a contract ran is ordinary
+         * and often arrives after it ends.
+         */
+        Contracts = Invoice is null
+            ? []
+            : (await Queries.ContractsAsync(clientId: Invoice.ClientId))
+                .Where(contract => contract.State != ContractState.Draft)
+                .ToList();
         Attached = await Files.ForAsync(AttachedTo.Invoice, Id);
     }
 
@@ -549,6 +617,10 @@ else
     private Task SetProject() => TryAsync(() => Service.BillForAsync(
         Id,
         string.IsNullOrWhiteSpace(Against.ProjectId) ? null : Guid.Parse(Against.ProjectId)));
+
+    private Task SetContract() => TryAsync(() => Service.BillUnderAsync(
+        Id,
+        string.IsNullOrWhiteSpace(Under.ContractId) ? null : Guid.Parse(Under.ContractId)));
 
     private Task AddLine() => TryAsync(() => Service.AddLineAsync(
         Id, Line.Description, Line.Quantity, Minor(Line.UnitPrice)));
@@ -618,6 +690,17 @@ else
     private sealed class ProjectInput
     {
         public string? ProjectId { get; set; }
+    }
+
+    /// <remarks>
+    /// A string for the same reason ProjectInput's is: the select is a plain one so the stored
+    /// choice can be marked selected without binding, and a plain select posts "" for its empty
+    /// option — which Blazor cannot map onto a Guid?, so the whole form would be refused with no
+    /// message. That is the BlankChoices fault, avoided here by not asking it to.
+    /// </remarks>
+    private sealed class ContractInput
+    {
+        public string? ContractId { get; set; }
     }
 
     private sealed class LineInput

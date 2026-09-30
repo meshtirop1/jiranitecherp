@@ -72,6 +72,28 @@ public sealed class Invoice : Entity, IAuditable
     /// invoice covering two projects can be issued as two invoices, which is what a
     /// client would rather receive anyway.
     /// </remarks>
+    public Guid? ProjectId { get; private set; }
+
+    /// <summary>
+    /// Which contract this invoice is billed under, when it is billed under one.
+    /// </summary>
+    /// <remarks>
+    /// <b>Section 72 lists invoice to contract among its examples and OneContract.razor said in
+    /// prose that it did not exist.</b> That page listed the invoices issued while a contract ran,
+    /// by date and client, and its own comment admitted the two lists differ whenever a client has
+    /// two contracts that overlap — which is exactly when somebody is reading the page.
+    ///
+    /// Set independently of the project link rather than derived from it. An invoice usually bills
+    /// under the contract its project sits under, and sometimes does not: a variation billed under
+    /// a new agreement while the work is still filed against the old project is ordinary, and a
+    /// derived answer would be quietly wrong about the money in precisely that case.
+    ///
+    /// Deliberately not gated on the invoice still being a draft. Which agreement a bill was
+    /// issued under is a fact about paperwork, and the commonest moment anybody notices it is
+    /// wrong is while reading a report months later — the same argument
+    /// <see cref="CodeTo"/> already makes for itself.
+    /// </remarks>
+    public Guid? ContractId { get; private set; }
 
     /// <summary>
     /// Which income account this invoice's revenue is classified as.
@@ -86,9 +108,6 @@ public sealed class Invoice : Entity, IAuditable
     /// unclassified rather than hiding it.
     /// </remarks>
     public Guid? AccountId { get; private set; }
-    public Guid? ProjectId { get; private set; }
-
-    /// <summary>Say which project this bills for, or that it bills for none.</summary>
 
     /// <summary>Say which income account this invoice's revenue is.</summary>
     /// <remarks>
@@ -98,7 +117,18 @@ public sealed class Invoice : Entity, IAuditable
     /// months later. A gate here would mean the answer stays wrong for ever.
     /// </remarks>
     public void CodeTo(Guid? accountId) => AccountId = accountId;
+
+    /// <summary>Say which project this bills for, or that it bills for none.</summary>
+    /// <remarks>
+    /// This summary used to sit above <see cref="CodeTo"/> with a blank line between it and the
+    /// member it belonged to, so the compiler attached it to the account method and both this and
+    /// <see cref="ProjectId"/> documented nothing. Two doc blocks in these lines had drifted the
+    /// same way; repaired while adding the contract beside them.
+    /// </remarks>
     public void BillsFor(Guid? projectId) => ProjectId = projectId;
+
+    /// <summary>Say which contract this is billed under, or that it is billed under none.</summary>
+    public void BillsUnder(Guid? contractId) => ContractId = contractId;
 
     /// <summary>What the client quotes back at us. Unique, and never reused.</summary>
     public string Number { get; private init; }

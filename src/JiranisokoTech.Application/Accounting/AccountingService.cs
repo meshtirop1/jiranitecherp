@@ -37,6 +37,9 @@ public interface IAccountingRepository
     /// </remarks>
     Task<bool> AccountInUseAsync(Guid accountId, CancellationToken cancellationToken = default);
 
+    /// <summary>Does this project exist, so a standing cost can be filed against it?</summary>
+    Task<bool> ProjectExistsAsync(Guid projectId, CancellationToken cancellationToken = default);
+
     void Add(Account account);
 
     void Add(RecurringExpense schedule);
@@ -222,6 +225,39 @@ public sealed class AccountingService(IAccountingRepository accounting, IClock c
         var schedule = await RequiredSchedule(scheduleId, cancellationToken);
 
         schedule.Resume();
+        await accounting.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Say which project a standing cost runs for, or that it runs for the firm.
+    /// </summary>
+    /// <remarks>
+    /// <b>Section 94 says infrastructure cost does not reach a project, and this is the half that
+    /// lets it.</b> A project's cost side was approved hours at the firm's standard rate plus
+    /// expense claims tagged with a project, so a project hosted for forty thousand shillings a
+    /// month showed exactly the same cost as one that runs on nothing, and its margin on
+    /// /projects/money was overstated by the entire hosting bill for every month it ran. That
+    /// figure is the one anybody actually makes a decision with.
+    ///
+    /// Only that the project exists is checked. There is deliberately no rule about the project
+    /// being live: a delivered project can still be costing money to host, and that is exactly
+    /// the case somebody most wants filed correctly.
+    ///
+    /// Charges already raised keep the project they were raised under, because a charge is a
+    /// record of a payment that fell due and re-filing history would move figures in months that
+    /// have already been read.
+    /// </remarks>
+    public async Task RunsForAsync(
+        Guid scheduleId, Guid? projectId, CancellationToken cancellationToken = default)
+    {
+        var schedule = await RequiredSchedule(scheduleId, cancellationToken);
+
+        if (projectId is { } id && !await accounting.ProjectExistsAsync(id, cancellationToken))
+        {
+            throw new InvalidOperationException("That project does not exist.");
+        }
+
+        schedule.RunsFor(projectId);
         await accounting.SaveAsync(cancellationToken);
     }
 

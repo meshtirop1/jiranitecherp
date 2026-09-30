@@ -63,6 +63,10 @@ public sealed class AccountingRepository(AppDbContext database) : IAccountingRep
         || await database.RecurringExpenses.AnyAsync(
             one => one.AccountId == accountId, cancellationToken);
 
+    public Task<bool> ProjectExistsAsync(
+        Guid projectId, CancellationToken cancellationToken = default) =>
+        database.Projects.AnyAsync(project => project.Id == projectId, cancellationToken);
+
     public void Add(Account account) => database.Accounts.Add(account);
 
     public void Add(RecurringExpense schedule) => database.RecurringExpenses.Add(schedule);

@@ -317,6 +317,16 @@ public sealed class AccountingQueries(AppDbContext database)
             .ToDictionaryAsync(
                 account => account.Id, account => account.Code, cancellationToken);
 
+        /*
+         * Every project, not only the running ones. A delivered project can still be costing
+         * money to host, and a screen that showed a blank where its name belongs would look like
+         * a fault rather than like the thing somebody most needs to notice.
+         */
+        var projects = await database.Projects
+            .AsNoTracking()
+            .ToDictionaryAsync(
+                project => project.Id, project => project.Name, cancellationToken);
+
         return costs.Select(cost =>
         {
             var unsettled = cost.Charges.Where(charge => !charge.IsSettled).ToList();
@@ -333,7 +343,13 @@ public sealed class AccountingQueries(AppDbContext database)
                 cost.NextDueOn(),
                 unsettled.Count,
                 oldest?.Id,
-                oldest?.DueOn);
+                oldest?.DueOn)
+            {
+                ProjectId = cost.ProjectId,
+                ProjectName = cost.ProjectId is { } project
+                    ? projects.GetValueOrDefault(project)
+                    : null,
+            };
         }).ToList();
     }
 
@@ -351,7 +367,18 @@ public sealed record StandingCostRow(
     DateOnly? NextDueOn,
     int Unsettled,
     Guid? OldestUnsettled,
-    DateOnly? OldestUnsettledOn);
+    DateOnly? OldestUnsettledOn)
+{
+    /// <summary>The project this cost runs for, if it runs for one rather than for the firm.</summary>
+    /// <remarks>
+    /// Section 94's third gap. Init properties rather than two more positional parameters,
+    /// because a record with eleven of them is already at the edge of being readable at a call
+    /// site.
+    /// </remarks>
+    public Guid? ProjectId { get; init; }
+
+    public string? ProjectName { get; init; }
+}
 
 /// <summary>An account's code and name, for labelling a report line.</summary>
 internal sealed record Named(string Code, string Name);

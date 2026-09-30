@@ -1,4 +1,5 @@
 using JiranisokoTech.Domain.Common;
+using JiranisokoTech.Domain.Contracts;
 using JiranisokoTech.Domain.People;
 using JiranisokoTech.Domain.Work;
 using Microsoft.EntityFrameworkCore;
@@ -35,6 +36,21 @@ public sealed class ProjectConfiguration : IEntityTypeConfiguration<Project>
             .WithMany()
             .HasForeignKey(project => project.DepartmentId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        /*
+         * Which contract the project is delivered under — section 70's first missing link.
+         *
+         * Set to null on delete rather than restricted, for the same reason the invoice's project
+         * link is: the work happened whether or not the paperwork row survives, and a delete that
+         * refuses because a project points at it turns removing a mistyped contract into a
+         * conversation about the project, which is not the conversation anybody wanted.
+         */
+        builder.HasOne<Contract>()
+            .WithMany()
+            .HasForeignKey(project => project.ContractId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasIndex(project => project.ContractId);
     }
 }
 

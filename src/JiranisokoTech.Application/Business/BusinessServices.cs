@@ -35,9 +35,8 @@ public interface IBusinessRepository
 
     Task<bool> InvoiceNumberTakenAsync(string number, CancellationToken cancellationToken = default);
 
-    /// <summary>The highest number issued this year, for the next one.</summary>
     /// <summary>
-    /// The highest sequence number issued this year under this prefix.
+    /// The highest sequence number issued this year under this prefix, for the next one.
     /// </summary>
     /// <remarks>
     /// The prefix is a parameter rather than a constant here because it is a
@@ -1031,6 +1030,83 @@ public sealed class InvoiceService(
             ?? throw new InvalidOperationException("There is no invoice with that identifier.");
 
         invoice.BillsFor(projectId);
+        await business.SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Say which contract this invoice is billed under.
+    /// </summary>
+    /// <remarks>
+    /// <b>Section 72 lists invoice to contract among its examples, and OneContract.razor said in
+    /// prose that it did not exist.</b> That page showed the invoices issued while a contract ran,
+    /// matched by client and date, and its own comment admitted the two lists differ whenever a
+    /// client has two contracts that overlap — which is precisely when somebody opens the page to
+    /// check.
+    ///
+    /// Three rules, and the reasoning for each is different.
+    ///
+    /// The contract must belong to the invoice's client, for the same reason a project's must:
+    /// one client's agreement against another client's bill is wrong in a way that reads
+    /// correctly from either end.
+    ///
+    /// It must be SIGNED. This is where the draft is refused although
+    /// <c>WorkService.DeliveredUnderAsync</c> allows one, and the difference is real rather than
+    /// fussy: recording which agreement work is expected to fall under is a note about intent,
+    /// and stating on a bill that it is issued under an agreement nobody has signed is a claim
+    /// about what the client owes. A terminated or expired contract is allowed, because an
+    /// invoice for work done while it ran is ordinary and often arrives after it ends.
+    ///
+    /// And the currencies must match. A contract agreed in dollars and an invoice raised in
+    /// shillings cannot both be describing the same commitment, and the value consumed against
+    /// that contract would be added up across two currencies — which
+    /// <see cref="JiranisokoTech.Domain.Common.Money"/> refuses everywhere else in this system
+    /// and should refuse here.
+    ///
+    /// Deliberately NOT required: that the contract matches the one the invoice's project is
+    /// delivered under. A variation billed under a new agreement while the work stays filed
+    /// against the existing project is ordinary, and a rule forbidding it would be wrong in
+    /// exactly the case somebody needs it.
+    /// </remarks>
+    public async Task BillUnderAsync(
+        Guid invoiceId, Guid? contractId, CancellationToken cancellationToken = default)
+    {
+        var invoice = await business.FindInvoiceAsync(invoiceId, cancellationToken)
+            ?? throw new InvalidOperationException("There is no invoice with that identifier.");
+
+        if (contractId is not { } id)
+        {
+            invoice.BillsUnder(null);
+            await business.SaveAsync(cancellationToken);
+
+            return;
+        }
+
+        var contract = await business.FindContractAsync(id, cancellationToken)
+            ?? throw new InvalidOperationException("That contract does not exist.");
+
+        if (contract.ClientId != invoice.ClientId)
+        {
+            throw new InvalidOperationException(
+                $"{contract.Reference} is an agreement with a different client, so this invoice "
+                + "cannot be billed under it.");
+        }
+
+        if (contract.State == ContractState.Draft)
+        {
+            throw new InvalidOperationException(
+                $"{contract.Reference} has not been signed. An invoice cannot say it is issued "
+                + "under an agreement nobody has agreed to.");
+        }
+
+        if (!string.Equals(contract.Currency, invoice.Currency, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"{contract.Reference} is agreed in {contract.Currency} and this invoice is in "
+                + $"{invoice.Currency}. What has been billed under a contract cannot be added up "
+                + "across two currencies.");
+        }
+
+        invoice.BillsUnder(id);
         await business.SaveAsync(cancellationToken);
     }
 

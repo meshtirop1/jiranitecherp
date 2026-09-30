@@ -318,6 +318,21 @@ public sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
 
         builder.HasIndex(invoice => new { invoice.ProjectId, invoice.Status });
 
+        /*
+         * Which contract this was billed under — section 72's missing example, and the one
+         * OneContract.razor admitted to in prose. Null on delete for the same reason as above.
+         *
+         * Indexed with the status because the question asked of it is always "what has been
+         * billed under this contract, and how much of it is still owed" — a contract's own page
+         * reads exactly that, and a bare contract index would leave the status filter to a scan.
+         */
+        builder.HasOne<Contract>()
+            .WithMany()
+            .HasForeignKey(invoice => invoice.ContractId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasIndex(invoice => new { invoice.ContractId, invoice.Status });
+
         builder.Property(invoice => invoice.Number).HasMaxLength(40).IsRequired();
         builder.Property(invoice => invoice.Currency).HasMaxLength(3).IsRequired();
         builder.Property(invoice => invoice.Status).HasConversion<int>().IsRequired();

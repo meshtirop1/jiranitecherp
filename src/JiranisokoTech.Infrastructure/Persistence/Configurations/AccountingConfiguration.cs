@@ -1,4 +1,5 @@
 using JiranisokoTech.Domain.Money;
+using JiranisokoTech.Domain.Work;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -69,6 +70,21 @@ public sealed class RecurringExpenseConfiguration : IEntityTypeConfiguration<Rec
             .WithMany()
             .HasForeignKey(one => one.AccountId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        /*
+         * Which project the cost runs for, so that infrastructure reaches a project's margin —
+         * section 94's third gap.
+         *
+         * Null on delete, not restricted. Unlike the account above, a standing cost without a
+         * project is an ordinary thing: it becomes the firm's, which is what it already was for
+         * every row before this column existed.
+         */
+        builder.HasOne<Project>()
+            .WithMany()
+            .HasForeignKey(one => one.ProjectId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasIndex(one => one.ProjectId);
 
         builder.OwnsMany(one => one.Charges, charge =>
         {

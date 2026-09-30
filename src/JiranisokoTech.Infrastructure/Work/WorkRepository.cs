@@ -1,3 +1,4 @@
+using JiranisokoTech.Domain.Contracts;
 using JiranisokoTech.Application.Work;
 using JiranisokoTech.Domain.Work;
 using JiranisokoTech.Infrastructure.Persistence;
@@ -26,6 +27,16 @@ public sealed class WorkRepository(AppDbContext database) : IWorkRepository
     public Task<bool> ClientExistsAsync(
         Guid clientId, CancellationToken cancellationToken = default) =>
         database.Clients.AnyAsync(client => client.Id == clientId, cancellationToken);
+
+    /// <remarks>
+    /// Tracked, matching FindProjectAsync above rather than the AsNoTracking reads in the query
+    /// classes. Nothing writes to the contract here, but a repository that returns tracked
+    /// entities from one method and detached ones from the next is a trap for whoever calls the
+    /// second one expecting to be able to save.
+    /// </remarks>
+    public Task<Contract?> FindContractAsync(
+        Guid id, CancellationToken cancellationToken = default) =>
+        database.Contracts.FirstOrDefaultAsync(contract => contract.Id == id, cancellationToken);
 
     public Task<bool> CodeTakenAsync(
         string code, Guid? exceptProjectId = null, CancellationToken cancellationToken = default) =>

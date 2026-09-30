@@ -112,6 +112,24 @@ public sealed class RecurringExpense : Entity, IAuditable
 
     public Guid AccountId { get; private set; }
 
+    /// <summary>
+    /// The project this standing cost runs for, when it runs for one.
+    /// </summary>
+    /// <remarks>
+    /// <b>Section 94 says infrastructure cost does not reach a project, and this is why.</b>
+    /// <c>ProjectMoneyQueries</c> builds a project's cost side from approved hours at the firm's
+    /// standard rate plus expense claims tagged with a project — so a project that costs forty
+    /// thousand shillings a month to host showed exactly the same cost as one that runs on
+    /// nothing, and its margin was overstated by the whole hosting bill every month it ran. That
+    /// is the one figure on /projects/money anybody makes a decision with.
+    ///
+    /// Nullable, and most standing costs will stay null: an accounting package, an office
+    /// broadband line and an insurance premium are the firm's, not any project's. Charges already
+    /// raised are untouched by a change here, because a charge is a record of a payment that was
+    /// due and re-filing history would move figures in months somebody has already read.
+    /// </remarks>
+    public Guid? ProjectId { get; private set; }
+
     public string Description { get; private set; }
 
     /// <summary>Who it is paid to.</summary>
@@ -247,6 +265,12 @@ public sealed class RecurringExpense : Entity, IAuditable
 
         AccountId = accountId;
     }
+
+    /// <summary>Say which project this cost runs for, or that it runs for the firm.</summary>
+    /// <remarks>
+    /// That the project exists is checked in the service, which is the layer that can read one.
+    /// </remarks>
+    public void RunsFor(Guid? projectId) => ProjectId = projectId;
 
     public void Retitle(string description) =>
         Description = Require(description, nameof(description));

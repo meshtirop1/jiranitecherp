@@ -5,6 +5,7 @@
     since section 4. Two pages on one route is a routing exception at startup, and the first
     version of this page collided exactly there.
 *@
+@using JiranisokoTech.Infrastructure.Work
 @using System.ComponentModel.DataAnnotations
 @using JiranisokoTech.Application.Abstractions
 @using JiranisokoTech.Application.Accounting
@@ -14,6 +15,7 @@
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize(Policy = PermissionClaim.PolicyPrefix + Permissions.AccountingView)]
 @inject AccountingQueries Queries
+@inject WorkQueries Work
 @inject AccountingService Service
 @inject IClock Clock
 @inject NavigationManager Navigation
@@ -349,6 +351,7 @@
                     <th scope="col">Paid to</th>
                     <th scope="col">How much</th>
                     <th scope="col">How often</th>
+                    <th scope="col">For</th>
                     <th scope="col">Next due</th>
                     <th scope="col"></th>
                 </tr>
@@ -366,7 +369,52 @@
                         </td>
                         <td class="subtle">@cost.Payee</td>
                         <td class="number">@cost.Amount</td>
+                        @*
+                            Which project this cost runs for — section 94's third gap. A standing
+                            hosting charge carried no project at all, so /projects/money counted
+                            labour and paid claims as the whole of a project's cost and its margin
+                            was overstated by the entire bill for every month it ran.
+
+                            A per-row form WITH a field in it, so the model is bound by a BARE
+                            [SupplyParameterFromForm]. A named binding matches one exact name and
+                            has nowhere to put a row's identifier, so nothing typed into it would
+                            ever reach the handler — the trap PerRowFormTests fails the build for.
+                        *@
                         <td>@cost.Every</td>
+                        <td>
+                            <AuthorizeView Policy="@ManagePolicy" Context="mayFile">
+                                <Authorized>
+                                    <EditForm Model="Moving" method="post"
+                                              FormName="@($"project-{cost.Id}")"
+                                              OnValidSubmit="() => RunsFor(cost.Id)" class="inline">
+                                        <label>
+                                            <span class="visually-hidden">
+                                                Which project this cost runs for
+                                            </span>
+                                            <select name="Moving.ProjectId" aria-label="Project">
+                                                <option value=""
+                                                        selected="@(cost.ProjectId is null)">
+                                                    The firm
+                                                </option>
+                                                @foreach (var project in Projects)
+                                                {
+                                                    <option value="@project.Id"
+                                                            selected="@(cost.ProjectId == project.Id)">
+                                                        @project.Name
+                                                    </option>
+                                                }
+                                            </select>
+                                        </label>
+                                        <button type="submit" class="button button--quiet">
+                                            Set
+                                        </button>
+                                    </EditForm>
+                                </Authorized>
+                                <NotAuthorized>
+                                    @(cost.ProjectName ?? "The firm")
+                                </NotAuthorized>
+                            </AuthorizeView>
+                        </td>
                         <td>
                             @(cost.NextDueOn?.ToString("d MMM yyyy") ?? "—")
                             @if (cost.Unsettled > 0)
@@ -451,6 +499,24 @@
 
     private List<StandingCostRow> Standing { get; set; } = [];
 
+    private List<ProjectRow> Projects { get; set; } = [];
+
+    private FilingInput _moving = new();
+
+    /*
+     * Bare, with no FormName. This form is rendered once per standing cost and each copy needs a
+     * unique name, but [SupplyParameterFromForm(FormName = "...")] matches one exact name and has
+     * nowhere to put the row's identifier — so nothing chosen in the select would ever reach the
+     * handler, and the page would say it had been set. A bare binding takes whichever form was
+     * posted, which is the row's own.
+     */
+    [SupplyParameterFromForm]
+    private FilingInput Moving
+    {
+        get => _moving;
+        set => _moving = value ?? new FilingInput();
+    }
+
     /// <summary>The expense accounts a standing cost may be coded to.</summary>
     private List<AccountRow> Expenses => Chart;
 
@@ -489,6 +555,7 @@
 
         Chart = await Queries.AccountsAsync();
         Standing = await Queries.StandingCostsAsync();
+        Projects = await Work.ProjectsAsync();
         Report = await Queries.ReportAsync(from, to, "KES");
 
         Scheduling.AccountId ??= Chart
@@ -512,6 +579,10 @@
             (long)Math.Round(Scheduling.Amount * 100), "KES"),
         Scheduling.Every,
         Scheduling.StartsOn!.Value));
+
+    private Task RunsFor(Guid id) => TryAsync(() => Service.RunsForAsync(
+        id,
+        string.IsNullOrWhiteSpace(Moving.ProjectId) ? null : Guid.Parse(Moving.ProjectId)));
 
     private Task Pause(Guid id) => TryAsync(() => Service.PauseAsync(id));
 
@@ -577,5 +648,18 @@
         public string Name { get; set; } = string.Empty;
 
         public AccountKind Kind { get; set; } = AccountKind.Expense;
+    }
+}
+
+@code {
+    /// <remarks>
+    /// A string rather than a Guid?, because the select is a plain one so each row can mark its
+    /// own value selected, and a plain select posts "" for its empty option — which Blazor cannot
+    /// map onto a Guid?, so the whole form would be silently refused. That is the BlankChoices
+    /// fault; this avoids it by not asking for the conversion.
+    /// </remarks>
+    private sealed class FilingInput
+    {
+        public string? ProjectId { get; set; }
     }
 }

@@ -145,4 +145,62 @@ public class ProjectTests
     {
         Assert.Throws<ArgumentException>(() => Project.Begin("   "));
     }
+
+    /// <summary>
+    /// A project with no client cannot be delivered under a contract.
+    /// </summary>
+    /// <remarks>
+    /// Section 70's first missing link comes with one rule the entity can enforce on its own. A
+    /// contract belongs to a client, so a project that is for nobody claiming to be delivered
+    /// under one would be claiming an agreement with a client it does not have — and both halves
+    /// read correctly on their own, which is how a wrong answer survives in a report.
+    ///
+    /// That the contract belongs to THIS client is the service's rule, because the entity holds
+    /// an identifier and cannot read the row behind it.
+    /// </remarks>
+    [Fact]
+    public void A_project_for_nobody_cannot_be_delivered_under_a_contract()
+    {
+        var project = Begun();
+
+        Assert.Throws<ArgumentException>(
+            () => project.DeliveredUnder(Guid.CreateVersion7()));
+    }
+
+    /// <summary>
+    /// Taking the client off takes the contract with it.
+    /// </summary>
+    /// <remarks>
+    /// The state the rule above forbids can otherwise be reached from the other direction: set a
+    /// client, set their contract, then move the project to no client at all, and it is left
+    /// holding an agreement with somebody it is no longer for. A guard on one door and not the
+    /// other is not a guard.
+    /// </remarks>
+    [Fact]
+    public void Taking_the_client_off_takes_the_contract_with_it()
+    {
+        var project = Begun();
+        var client = Guid.CreateVersion7();
+        var contract = Guid.CreateVersion7();
+
+        project.ForClient(client);
+        project.DeliveredUnder(contract);
+
+        Assert.Equal(contract, project.ContractId);
+
+        project.ForClient(null);
+
+        Assert.Null(project.ContractId);
+    }
+
+    /// <summary>Saying it is under no contract always works, client or not.</summary>
+    [Fact]
+    public void A_project_can_always_be_put_under_no_contract()
+    {
+        var project = Begun();
+
+        project.DeliveredUnder(null);
+
+        Assert.Null(project.ContractId);
+    }
 }
