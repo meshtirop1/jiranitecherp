@@ -61,7 +61,18 @@ main {
         text-overflow: ellipsis;
     }
 
-@media (max-width: 640.98px) {
+/*
+ * The breakpoint moved from the template's 641 pixels to 1024.
+ *
+ * Measured: at a 641 pixel viewport the content column is 335 pixels wide — 641 less the 250
+ * pixel sidebar and the gutters — while at 375 pixels it is 327. So a small tablet was getting a
+ * column eight pixels wider than a phone's and a sidebar taking two fifths of the screen, and the
+ * sixty-odd tables with five or more columns were unreadable from 641 all the way to about 1050.
+ *
+ * Below 1024 the page stacks: the navigation goes above the content and the content gets the
+ * whole width, which is what a table needs. Above it the sidebar returns.
+ */
+@media (max-width: 1023.98px) {
     .top-row {
         justify-content: space-between;
     }
@@ -71,13 +82,17 @@ main {
     }
 }
 
-@media (min-width: 641px) {
+@media (min-width: 1024px) {
     .page {
         flex-direction: row;
     }
 
     .sidebar {
-        width: 250px;
+        /*
+         * Narrower on a small laptop and never wider than it was. At 1024 a fixed 250 took a
+         * quarter of the screen from the content beside it.
+         */
+        width: clamp(200px, 20vw, 250px);
         height: 100vh;
         position: sticky;
         top: 0;

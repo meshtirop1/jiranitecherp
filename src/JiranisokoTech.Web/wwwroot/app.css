@@ -456,6 +456,95 @@ button:active:not(:disabled) {
     transform: translateY(1px);
 }
 
+/*
+ * What a phone needs, which this stylesheet had never said anything about.
+ *
+ * Before this there were exactly two @media rules in nineteen hundred lines and both were
+ * prefers-color-scheme. Every width rule in the project lived in the layout's scoped stylesheet
+ * and came from the Blazor template. So the only thing that changed between a 4K monitor and a
+ * 360 pixel phone was that the navigation collapsed; a definition list still laid its terms and
+ * values in two columns, a filter bar still tried to sit on one line, and a submit button was
+ * still 29 pixels tall.
+ *
+ * Section 49 asks for the application to be usable on a telephone and its row says the pages were
+ * checked by hand at 375 pixels. They were, and checking by hand is how these were found — but
+ * nothing in the stylesheet made any of it true, so the next page written inherits none of it.
+ */
+@media (max-width: 47.99rem) {
+    /*
+     * Terms above values. A grid of max-content and 1fr is right on a monitor and on a phone it
+     * gives a long label a column of its own and squeezes the value it labels into what is left —
+     * "Delivered under" against a wrapped contract reference three characters wide.
+     */
+    .facts {
+        grid-template-columns: 1fr;
+        gap: 0 0;
+    }
+
+    .facts dt {
+        margin-top: 0.75rem;
+    }
+
+    /*
+     * One field per line. A filter bar and a field row both wrap already, but wrapping puts two
+     * half-width controls side by side and a third underneath, which reads as a mistake rather
+     * than as a row.
+     */
+    .fields > label,
+    .filters > label,
+    .filters input,
+    .filters select {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    /*
+     * The action comes back into the flow. margin-left: auto is what puts a page's one action to
+     * the right of its title, and on a phone it leaves the button alone on a line with the width
+     * of the screen between it and everything else.
+     */
+    .page-head > .button,
+    .page-head > a.button,
+    .page-head > button {
+        margin-left: 0;
+    }
+
+    .standing {
+        padding-bottom: 1rem;
+    }
+
+    h1 {
+        font-size: 1.5rem;
+    }
+
+    h2 {
+        font-size: 1.25rem;
+    }
+}
+
+/*
+ * A target somebody hits with a thumb rather than a cursor.
+ *
+ * Keyed on the pointer rather than the width, which is the honest test: a tablet with a keyboard
+ * and a phone are the same width and want different things, and a touchscreen laptop wants this
+ * at any width. Forty-four pixels is the figure both platform guidelines have settled on.
+ */
+@media (pointer: coarse) {
+    button,
+    .button,
+    input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    a.nav-link {
+        min-height: 2.75rem;
+    }
+
+    .grid th,
+    .grid td {
+        padding-top: 0.75rem;
+        padding-bottom: 0.75rem;
+    }
+}
+
 @media (prefers-reduced-motion: no-preference) {
     button,
     .button,
