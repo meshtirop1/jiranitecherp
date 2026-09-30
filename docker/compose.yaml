@@ -87,7 +87,7 @@ services:
       # records a question looks up are sent to Anthropic to be read; docs/ai.md says exactly
       # which. The model and the daily allowance per person have defaults and rarely need setting.
       Ai__ApiKey: ${AI_API_KEY:-}
-      Ai__Model: ${AI_MODEL:-claude-opus-5-5}
+      Ai__Model: ${AI_MODEL:-claude-opus-5}
       Ai__DailyLimit: ${AI_DAILY_LIMIT:-40}
       # The networks a proxy may send X-Forwarded-For from, if there is one.
       # Left unset the application reads the address it can see, which behind a

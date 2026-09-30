@@ -35,7 +35,7 @@ public class AnthropicModelTests
         using var body = JsonDocument.Parse(sent.Body);
         var root = body.RootElement;
 
-        Assert.Equal("claude-opus-5-5", root.GetProperty("model").GetString());
+        Assert.Equal("claude-opus-5", root.GetProperty("model").GetString());
         Assert.Equal("medium", root.GetProperty("output_config").GetProperty("effort").GetString());
         Assert.Equal("default", root.GetProperty("fallbacks").GetString());
         Assert.Equal("server-side-fallback-2026-07-01", sent.Beta);
@@ -66,7 +66,7 @@ public class AnthropicModelTests
         const string content = """[{"type":"thinking","thinking":"","signature":"sig"},{"type":"text","text":"Let me look."},{"type":"tool_use","id":"toolu_9","name":"list_projects","input":{}}]""";
 
         var network = new Network().Answer(HttpStatusCode.OK,
-            $$$"""{"model":"claude-opus-5-5","stop_reason":"tool_use","content":{{{content}}},"usage":{"input_tokens":120,"output_tokens":30,"cache_read_input_tokens":400}}""");
+            $$$"""{"model":"claude-opus-5","stop_reason":"tool_use","content":{{{content}}},"usage":{"input_tokens":120,"output_tokens":30,"cache_read_input_tokens":400}}""");
 
         var reply = await Model(network).AskAsync(Question);
 
@@ -96,7 +96,7 @@ public class AnthropicModelTests
     public async Task A_refusal_comes_back_as_declined_rather_than_as_an_empty_answer()
     {
         var network = new Network().Answer(HttpStatusCode.OK,
-            """{"model":"claude-opus-5-5","stop_reason":"refusal","content":[],"usage":{"input_tokens":5,"output_tokens":0}}""");
+            """{"model":"claude-opus-5","stop_reason":"refusal","content":[],"usage":{"input_tokens":5,"output_tokens":0}}""");
 
         var reply = await Model(network).AskAsync(Question);
 
@@ -189,7 +189,7 @@ public class AnthropicModelTests
     }
 
     private static string Finished(string text) =>
-        $$$"""{"model":"claude-opus-5-5","stop_reason":"end_turn","content":[{"type":"text","text":{{{JsonSerializer.Serialize(text)}}}}],"usage":{"input_tokens":10,"output_tokens":3}}""";
+        $$$"""{"model":"claude-opus-5","stop_reason":"end_turn","content":[{"type":"text","text":{{{JsonSerializer.Serialize(text)}}}}],"usage":{"input_tokens":10,"output_tokens":3}}""";
 
     private static AnthropicModel Model(Network network, string key = "the-key", TimeSpan? timeout = null) =>
         new(network, Options.Create(new AiOptions

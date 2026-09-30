@@ -117,7 +117,7 @@ exactly what, and [privacy.md](privacy.md). The key is listed, set or not, on th
 | `.env` | Read as | Default | Meaning |
 |---|---|---|---|
 | `AI_API_KEY` | `Ai:ApiKey` | blank | The Anthropic API key. Blank means off. |
-| `AI_MODEL` | `Ai:Model` | `claude-opus-5-5` | Which model answers. Change it when the provider retires this one; a retired name is refused on every question. |
+| `AI_MODEL` | `Ai:Model` | `claude-opus-5` | Which model answers. Change it when the provider retires this one; a retired name is refused on every question. |
 | `AI_DAILY_LIMIT` | `Ai:DailyLimit` | `40` | How many times one person may use any AI feature in a UTC day. Each use is billed by the token. |
 
 Also read if present, and not set by the compose file:

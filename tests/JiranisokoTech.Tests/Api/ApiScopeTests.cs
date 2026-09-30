@@ -26,7 +26,22 @@ public partial class ApiScopeTests
     {
         var web = WebProject();
 
-        var api = File.ReadAllText(Path.Combine(web, "Api", "PublicApi.cs"));
+        /*
+         * EVERY file that maps an endpoint, not the first one.
+         *
+         * This read PublicApi.cs alone, and the writes had moved into PublicApiWrites.cs. So the
+         * three permissions those endpoints require — clients.manage, tasks.create and
+         * invoices.manage — were absent from the key screen's list and this test was green about
+         * it: all three write endpoints were doors no key could open, which is the exact fault
+         * the remark above says this exists to prevent.
+         *
+         * Enumerated rather than named, so the next file somebody splits out is covered on the
+         * day it appears rather than on the day somebody remembers this test.
+         */
+        var api = string.Concat(Directory
+            .EnumerateFiles(Path.Combine(web, "Api"), "*.cs")
+            .OrderBy(one => one, StringComparer.Ordinal)
+            .Select(File.ReadAllText));
         var keys = File.ReadAllText(
             Path.Combine(web, "Components", "Pages", "ApiKeys.razor"));
 

@@ -19,7 +19,7 @@ it is not configured, and nothing is composed, sent, or made up in its place.
 ## The provider
 
 Anthropic's Messages API, over plain HTTP from `Infrastructure/Ai/AnthropicModel.cs` behind the
-`IAiModel` interface in `Application/Ai`. The model is `claude-opus-5-5` unless `Ai:Model` says
+`IAiModel` interface in `Application/Ai`. The model is `claude-opus-5` unless `Ai:Model` says
 otherwise. The request:
 
 - sets effort explicitly (`Ai:Effort`, default `medium`). This model always reasons before it

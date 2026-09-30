@@ -23,7 +23,7 @@ public sealed class AiOptions
     /// A setting, because models are retired on the provider's timetable rather than ours and a
     /// retired name is a 404 on every question until somebody changes it.
     /// </remarks>
-    public string Model { get; set; } = "claude-opus-5-5";
+    public string Model { get; set; } = "claude-opus-5";
 
     /// <summary>
     /// How hard the model thinks before answering: low, medium, high, xhigh or max.

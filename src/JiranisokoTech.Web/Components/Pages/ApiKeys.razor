@@ -186,6 +186,19 @@ else
         Permissions.InvoicesView,
         Permissions.PostingsManage,
         Permissions.PlatformView,
+
+        /*
+         * The three the write endpoints require. They were missing, so every write in the public
+         * API was a door no key could open — the fault the remark above describes, sitting
+         * directly underneath it, because ApiScopeTests read PublicApi.cs and the writes had
+         * moved to PublicApiWrites.cs. That test now reads every file in Api/.
+         *
+         * A key holding one of these can do through the API exactly what the permission allows on
+         * a screen, and no more: the endpoints call the same services with the same refusals.
+         */
+        Permissions.ClientsManage,
+        Permissions.TasksCreate,
+        Permissions.InvoicesManage,
     ];
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
